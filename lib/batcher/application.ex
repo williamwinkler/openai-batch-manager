@@ -12,11 +12,16 @@ defmodule Batcher.Application do
       Batcher.Repo,
       {Ecto.Migrator,
        repos: Application.fetch_env!(:batcher, :ecto_repos), skip: skip_migrations?()},
-      {DNSCluster, query: Application.get_env(:batcher, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Batcher.PubSub},
+      {Oban,
+       AshOban.config(
+         Application.fetch_env!(:batcher, :ash_domains),
+         Application.fetch_env!(:batcher, Oban)
+       )},
       # Start a worker by calling: Batcher.Worker.start_link(arg)
       # {Batcher.Worker, arg},
       # Start to serve requests, typically the last entry
+      {DNSCluster, query: Application.get_env(:batcher, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: Batcher.PubSub},
       BatcherWeb.Endpoint
     ]
 

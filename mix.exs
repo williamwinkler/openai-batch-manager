@@ -11,7 +11,8 @@ defmodule Batcher.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      consolidate_protocols: Mix.env() != :dev
     ]
   end
 
@@ -40,6 +41,17 @@ defmodule Batcher.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:sourceror, "~> 1.8", only: [:dev, :test]},
+      {:oban, "~> 2.0"},
+      {:usage_rules, "~> 0.1", only: [:dev]},
+      {:live_debugger, "~> 0.4", only: [:dev]},
+      {:ash_state_machine, "~> 0.2"},
+      {:oban_web, "~> 2.0"},
+      {:ash_oban, "~> 0.4"},
+      {:ash_admin, "~> 0.13"},
+      {:ash_sqlite, "~> 0.2"},
+      {:ash_phoenix, "~> 2.0"},
+      {:ash, "~> 3.0"},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:phoenix, "~> 1.8.1"},
       {:phoenix_ecto, "~> 4.5"},
@@ -81,7 +93,7 @@ defmodule Batcher.MixProject do
       setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      test: ["ash.setup --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind batcher", "esbuild batcher"],
       "assets.deploy": [
@@ -89,7 +101,8 @@ defmodule Batcher.MixProject do
         "esbuild batcher --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"],
+      "ash.setup": ["ash.setup", "run priv/repo/seeds.exs"]
     ]
   end
 end
