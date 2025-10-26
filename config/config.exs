@@ -17,6 +17,7 @@ config :batcher, Oban,
   plugins: [{Oban.Plugins.Cron, []}]
 
 config :ash,
+  default_belongs_to_type: :integer,
   allow_forbidden_field_for_relationships_by_default?: true,
   include_embedded_source_by_default?: false,
   show_keysets_for_all_actions?: false,
@@ -58,7 +59,7 @@ config :spark,
 config :batcher,
   ecto_repos: [Batcher.Repo],
   generators: [timestamp_type: :utc_datetime],
-  ash_domains: []
+  ash_domains: [Batcher.Batching]
 
 # Configures the endpoint
 config :batcher, BatcherWeb.Endpoint,

@@ -30,7 +30,23 @@ if config_env() == :prod do
 
   config :batcher, Batcher.Repo,
     database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # SQLite production optimizations
+    timeout: 60_000,
+    queue_target: 5_000,
+    queue_interval: 1_000,
+    after_connect:
+      {Exqlite.Sqlite3, :execute,
+       [
+         """
+         PRAGMA journal_mode=WAL;
+         PRAGMA busy_timeout=5000;
+         PRAGMA synchronous=NORMAL;
+         PRAGMA cache_size=-64000;
+         PRAGMA temp_store=memory;
+         PRAGMA mmap_size=30000000000;
+         """
+       ]}
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

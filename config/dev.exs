@@ -4,9 +4,12 @@ config :ash, policies: [show_policy_breakdowns?: true]
 # Configure your database
 config :batcher, Batcher.Repo,
   database: Path.expand("../batcher_dev.db", __DIR__),
-  pool_size: 5,
+  pool_size: 10,
   stacktrace: true,
-  show_sensitive_data_on_connection_error: true
+  show_sensitive_data_on_connection_error: true,
+  # SQLite optimizations for concurrent access (web requests + Oban jobs + LiveView)
+  timeout: 60_000,
+  after_connect: {Exqlite.Sqlite3, :execute, ["PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"]}
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

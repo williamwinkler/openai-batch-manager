@@ -9,8 +9,12 @@ config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
 # Run `mix help test` for more information.
 config :batcher, Batcher.Repo,
   database: Path.expand("../batcher_test.db", __DIR__),
-  pool_size: 5,
-  pool: Ecto.Adapters.SQL.Sandbox
+  pool_size: 10,
+  pool: Ecto.Adapters.SQL.Sandbox,
+  # SQLite-specific settings for better concurrency
+  timeout: 60_000,
+  # Enable WAL mode and increase busy timeout for concurrent writes
+  after_connect: {Exqlite.Sqlite3, :execute, ["PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"]}
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

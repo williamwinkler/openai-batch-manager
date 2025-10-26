@@ -1,9 +1,28 @@
-This is a web application written using the Phoenix web framework.
+# LLM Batch Manager
 
-## Project guidelines
+This is a **Phoenix 1.8.1** web application built with the **Ash Framework** for managing batching of LLM prompts for processing by providers like OpenAI. The application provides state machine-based workflow management with audit trails for both batches and individual prompts.
+
+**Tech Stack:**
+- Phoenix 1.8.1 + Ash Framework 3.0 (domain-driven development)
+- Database: SQLite with AshSqlite adapter
+- Job Queue: Oban 2.0 for background processing
+- State Management: AshStateMachine extension
+- Admin Dashboard: AshAdmin (dev only)
+- Styling: Tailwind v4 + daisyUI
+
+## Project Overview
+
+The application manages two primary resources:
+- **Batches** - Collections of prompts with 11-state workflow (draft → upload → processing → download → completed/failed/etc)
+- **Prompts** - Individual LLM prompts with 8-state workflow (pending → processing → delivery → delivered/failed/etc)
+
+Both resources use state machines with automatic audit trails tracking every state transition.
+
+## Project Guidelines
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
+- **Never** create traditional Phoenix Contexts - this app uses Ash Framework domains instead (see Ash Framework guidelines below)
 
 ### Phoenix v1.8 guidelines
 
@@ -26,11 +45,13 @@ custom classes must fully style the input
       @import "tailwindcss" source(none);
       @source "../css";
       @source "../js";
-      @source "../../lib/my_app_web";
+      @source "../../lib/batcher_web";
 
-- **Always use and maintain this import syntax** in the app.css file for projects generated with `phx.new`
+- **Always use and maintain this import syntax** in the [app.css](assets/css/app.css) file
 - **Never** use `@apply` when writing raw css
-- **Always** manually write your own tailwind-based components instead of using daisyUI for a unique, world-class design
+- This project includes **daisyUI** for component library - you can use daisyUI components alongside custom Tailwind classes
+- **Heroicons** are available via the `<.icon name="hero-x-mark" />` component from [core_components.ex](lib/batcher_web/components/core_components.ex)
+- The app supports **light and dark themes** - use daisyUI theme classes and test both themes
 - Out of the box **only the app.js and app.css bundles are supported**
   - You cannot reference an external vendor'd script `src` or link `href` in the layouts
   - You must import the vendor deps into app.js and app.css to use them
@@ -257,3 +278,468 @@ custom classes must fully style the input
       document = LazyHTML.from_fragment(html)
       matches = LazyHTML.filter(document, "your-complex-selector")
       IO.inspect(matches, label: "Matches")
+
+<!-- phoenix:liveview-end -->
+
+## Ash Framework Guidelines
+
+This project uses **Ash Framework 3.0** for domain-driven development. Ash replaces traditional Phoenix Contexts with a powerful resource-based architecture.
+
+### Core Concepts
+
+- **Resources** - Domain entities (like `Batcher.Batching.Batch` and `Batcher.Batching.Prompt`) that define attributes, relationships, actions, and validations
+- **Domains** - Collections of related resources (like `Batcher.Batching` domain) that define the API surface
+- **Actions** - Named operations on resources (`:create`, `:read`, `:update`, `:destroy`, or custom actions)
+- **Code Interface** - Functions defined in the domain that provide a clean API for calling actions
+
+### Working with Ash Resources
+
+**Always** use the domain's code interface functions instead of calling Ash APIs directly:
+
+```elixir
+# CORRECT - Use code interface defined in Batcher.Batching domain
+Batcher.Batching.create_batch(:openai, "gpt-4")
+Batcher.Batching.batch_mark_ready(batch)
+
+# INCORRECT - Don't call Ash.create! directly
+Ash.create!(Batcher.Batching.Batch, %{provider: :openai, model: "gpt-4"})
+```
+
+### Defining Code Interfaces
+
+In the domain module ([lib/batcher/batching.ex](lib/batcher/batching.ex)), use `define` to expose actions:
+
+```elixir
+code_interface do
+  define :create_batch, action: :create, args: [:provider, :model]
+  define :batch_mark_ready, action: :mark_ready, args: [:id]
+end
+```
+
+### Custom Actions in Resources
+
+Define custom actions in resource modules for business logic:
+
+```elixir
+actions do
+  # Standard CRUD
+  defaults [:read]
+
+  create :create do
+    accept [:provider, :model]
+  end
+
+  # Custom state transition action
+  update :mark_ready do
+    # Constraints and validations
+    require_attributes [:provider, :model]
+
+    # State machine transition
+    change transition_state(:ready_for_upload)
+  end
+end
+```
+
+### SQLite-Specific Requirements
+
+**CRITICAL**: All state machine actions in this project **must** include `require_atomic? false`:
+
+```elixir
+update :mark_ready do
+  require_atomic? false  # REQUIRED for SQLite
+  change transition_state(:ready_for_upload)
+end
+```
+
+Without this, state transitions will fail with SQLite. This is a known limitation of AshSqlite.
+
+### Relationships
+
+Define relationships in resources:
+
+```elixir
+relationships do
+  belongs_to :batch, Batcher.Batching.Batch
+  has_many :prompts, Batcher.Batching.Prompt
+  has_many :transitions, Batcher.Batching.BatchTransition
+end
+```
+
+**Always** load relationships explicitly when needed:
+
+```elixir
+# Load relationships
+batch = Batcher.Batching.get_batch!(id, load: [:prompts, :transitions])
+
+# Access loaded relationships
+batch.prompts
+```
+
+### Custom Validations
+
+Create validation modules in [lib/batcher/batching/validations/](lib/batcher/batching/validations/):
+
+```elixir
+defmodule Batcher.Batching.Validations.ValidateDeliveryConfig do
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    # Validation logic using Ash.Changeset functions
+    delivery_type = Ash.Changeset.get_attribute(changeset, :delivery_type)
+    # ... add errors with Ash.Changeset.add_error/2
+  end
+end
+```
+
+Use validations in actions:
+
+```elixir
+create :create do
+  validate Batcher.Batching.Validations.ValidateDeliveryConfig
+end
+```
+
+### Accessing Attributes in Changes/Validations
+
+**Never** use map syntax on changesets or resources - use Ash functions:
+
+```elixir
+# CORRECT
+delivery_type = Ash.Changeset.get_attribute(changeset, :delivery_type)
+webhook_url = Ash.Changeset.get_attribute(changeset, :webhook_url)
+
+# INCORRECT - will fail
+delivery_type = changeset[:delivery_type]
+webhook_url = changeset.attributes[:webhook_url]
+```
+
+### Development Tools
+
+The project includes **AshAdmin** dashboard at `/admin` (dev environment only) for exploring resources, viewing data, and testing actions interactively.
+
+## State Machine Guidelines
+
+This project uses **AshStateMachine** extension for managing batch and prompt workflows.
+
+### State Machine Basics
+
+Resources using state machines:
+- [Batch](lib/batcher/batching/batch.ex) - 11 states (draft → ready_for_upload → uploading → validating → in_progress → finalizing → downloading → completed/failed/expired/cancelled)
+- [Prompt](lib/batcher/batching/prompt.ex) - 8 states (pending → processing → processed → delivering → delivered/failed/expired/cancelled)
+
+### Defining State Machines
+
+In resource modules:
+
+```elixir
+use Ash.Resource,
+  domain: Batcher.Batching,
+  data_layer: AshSqlite.DataLayer,
+  extensions: [AshStateMachine]  # Add extension
+
+attributes do
+  # State attribute
+  attribute :state, :atom do
+    allow_nil? false
+    default :draft
+    constraints [one_of: [:draft, :ready_for_upload, ...]]
+  end
+end
+
+state_machine do
+  initial_states [:draft]
+  default_initial_state :draft
+
+  transitions do
+    transition :mark_ready, from: :draft, to: :ready_for_upload
+    transition :begin_upload, from: :ready_for_upload, to: :uploading
+    # ... more transitions
+  end
+end
+```
+
+### Creating Transition Actions
+
+Every state transition needs a corresponding action:
+
+```elixir
+actions do
+  update :mark_ready do
+    require_atomic? false  # REQUIRED for SQLite
+    accept []  # Transitions typically don't accept attributes
+
+    # Trigger the state machine transition
+    change transition_state(:ready_for_upload)
+  end
+end
+```
+
+### State Transition Constraints
+
+Add validation logic to transition actions:
+
+```elixir
+update :mark_ready do
+  require_atomic? false
+
+  # Ensure required fields are present before allowing transition
+  validate present([:provider, :model], at_least: 2)
+
+  change transition_state(:ready_for_upload)
+end
+```
+
+### Calling State Transitions
+
+Use the code interface functions defined in the domain:
+
+```elixir
+# Create batch in initial state
+{:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+# batch.state == :draft
+
+# Transition to next state
+{:ok, batch} = Batcher.Batching.batch_mark_ready(batch)
+# batch.state == :ready_for_upload
+```
+
+## Audit Trail Pattern
+
+This project automatically records **every state transition** for both batches and prompts using a custom change module.
+
+### How Audit Trails Work
+
+The [CreateTransition](lib/batcher/batching/changes/create_transition.ex) change hooks into the after_action lifecycle and creates a transition record whenever a resource's state changes.
+
+### Transition Resources
+
+- `BatchTransition` - Records batch state changes (batch_id, from, to, transitioned_at)
+- `PromptTransition` - Records prompt state changes (prompt_id, from, to, transitioned_at)
+
+### Using CreateTransition
+
+Add the change to every state transition action:
+
+```elixir
+update :mark_ready do
+  require_atomic? false
+  change transition_state(:ready_for_upload)
+
+  # Automatically create audit trail entry
+  change Batcher.Batching.Changes.CreateTransition
+end
+```
+
+### Initial State Recording
+
+For create actions, the change records the initial state with `from: nil`:
+
+```elixir
+create :create do
+  accept [:provider, :model]
+
+  # Records transition from nil → :draft
+  change Batcher.Batching.Changes.CreateTransition
+end
+```
+
+### Accessing Audit History
+
+Load transitions to view the complete state history:
+
+```elixir
+batch = Batcher.Batching.get_batch!(id, load: [:transitions])
+
+Enum.each(batch.transitions, fn t ->
+  IO.puts("#{t.from} → #{t.to} at #{t.transitioned_at}")
+end)
+```
+
+**Important**: Every action that creates or modifies state **must** include the `CreateTransition` change to maintain audit trail integrity.
+
+## Domain-Specific Business Rules
+
+### Batch-Prompt Consistency
+
+Prompts must match their parent batch's configuration:
+
+- **Provider consistency** - Prompt's provider must match batch's provider
+- **Model consistency** - Prompt's model must match batch's model
+
+This is enforced by the [ValidatePromptMatchesBatch](lib/batcher/batching/validations/validate_prompt_matches_batch.ex) validation on prompt creation.
+
+```elixir
+# This will succeed
+{:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+{:ok, prompt} = Batcher.Batching.create_prompt(batch, custom_id: "p1",
+  delivery_type: :webhook, webhook_url: "https://example.com")
+
+# This will fail - model mismatch
+{:error, _} = Batcher.Batching.create_prompt(batch, custom_id: "p2",
+  model: "gpt-3.5-turbo", ...)
+```
+
+### Delivery Configuration Validation
+
+Prompts have two delivery mechanisms: **webhook** or **rabbitmq**.
+
+The [ValidateDeliveryConfig](lib/batcher/batching/validations/validate_delivery_config.ex) validation enforces:
+
+**For webhook delivery:**
+- `webhook_url` must be present and valid HTTP/HTTPS URL
+- `rabbitmq_queue` must be nil
+
+**For RabbitMQ delivery:**
+- `rabbitmq_queue` must be present and non-empty
+- `webhook_url` must be nil
+
+```elixir
+# Valid webhook configuration
+{:ok, prompt} = Batcher.Batching.create_prompt(batch,
+  custom_id: "p1",
+  delivery_type: :webhook,
+  webhook_url: "https://example.com/webhook"
+)
+
+# Valid RabbitMQ configuration
+{:ok, prompt} = Batcher.Batching.create_prompt(batch,
+  custom_id: "p2",
+  delivery_type: :rabbitmq,
+  rabbitmq_queue: "results_queue"
+)
+
+# Invalid - missing webhook_url
+{:error, _} = Batcher.Batching.create_prompt(batch,
+  custom_id: "p3",
+  delivery_type: :webhook
+)
+```
+
+### Custom ID Uniqueness
+
+Each prompt must have a unique `custom_id` within its batch (enforced at database level).
+
+## Oban Integration
+
+The project uses **Oban 2.0** with **AshOban** integration for background job processing.
+
+### Configuration
+
+Oban is configured in [config/config.exs](config/config.exs) with:
+- SQLite engine (`:lite`)
+- Default queue with max 10 concurrent jobs
+- Cron plugin for scheduled tasks
+- PG notifier (works with SQLite via polling)
+
+### AshOban Actions
+
+You can define Oban-powered actions in Ash resources for async processing:
+
+```elixir
+actions do
+  update :process_async do
+    # AshOban will automatically enqueue this as a background job
+  end
+end
+```
+
+### Monitoring
+
+Access the Oban dashboard at `/oban` (dev environment) to monitor jobs, queues, and failures.
+
+## Testing Guidelines
+
+### Test Structure
+
+- **DataCase** ([test/support/data_case.ex](test/support/data_case.ex)) - For domain/business logic tests
+- **ConnCase** ([test/support/conn_case.ex](test/support/conn_case.ex)) - For controller/web tests
+
+### SQLite Sandbox
+
+Tests use Ecto SQL Sandbox for isolation:
+
+```elixir
+setup tags do
+  pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Batcher.Repo, shared: not tags[:async])
+  on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+  :ok
+end
+```
+
+### Testing Ash Resources
+
+Use the code interface in tests:
+
+```elixir
+test "creates batch with valid attributes" do
+  {:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+
+  assert batch.provider == :openai
+  assert batch.model == "gpt-4"
+  assert batch.state == :draft
+end
+
+test "validates state transitions" do
+  {:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+
+  # Should succeed
+  {:ok, batch} = Batcher.Batching.batch_mark_ready(batch)
+  assert batch.state == :ready_for_upload
+
+  # Should fail - invalid transition
+  {:error, _} = Batcher.Batching.batch_begin_finalizing(batch)
+end
+```
+
+### Testing Validations
+
+Test validation rules by attempting invalid operations:
+
+```elixir
+test "validates delivery config" do
+  {:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+
+  # Missing webhook_url for webhook delivery
+  {:error, changeset} = Batcher.Batching.create_prompt(batch,
+    custom_id: "p1",
+    delivery_type: :webhook
+  )
+
+  assert changeset.errors[:webhook_url]
+end
+```
+
+## Database Migrations
+
+The project uses **AshSqlite** which auto-generates migrations.
+
+### Initial Migration
+
+The initial setup migration is at [priv/repo/migrations/20251026064846_initial_setup.exs](priv/repo/migrations/20251026064846_initial_setup.exs)
+
+It creates:
+- `batches` table with state and provider/model fields
+- `prompts` table with delivery config and foreign key to batches
+- `batch_transitions` and `prompt_transitions` audit tables
+- Indexes for foreign keys and state lookups
+
+### Running Migrations
+
+Migrations run automatically on application start via the `Batcher.Release` migrator in the supervision tree.
+
+Manual migration commands:
+```bash
+mix ecto.migrate
+mix ecto.rollback
+```
+
+### Generating Migrations
+
+When you modify Ash resources, generate migrations with:
+
+```bash
+mix ash.codegen initial_migration
+```
+
+This will create migration files based on resource schema changes.
