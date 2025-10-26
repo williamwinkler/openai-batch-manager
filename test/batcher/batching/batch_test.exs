@@ -51,7 +51,8 @@ defmodule Batcher.Batching.BatchTest do
       {:ok, updated_batch} = Batching.batch_mark_ready(batch)
 
       # Load transitions
-      {:ok, batch_with_transitions} = Batching.get_batch_by_id(updated_batch.id, load: [:transitions])
+      {:ok, batch_with_transitions} =
+        Batching.get_batch_by_id(updated_batch.id, load: [:transitions])
 
       assert length(batch_with_transitions.transitions) == 2
 
@@ -85,7 +86,8 @@ defmodule Batcher.Batching.BatchTest do
     test "transitions from uploading to validating with provider_batch_id" do
       batch = batch_fixture(state: :uploading)
 
-      {:ok, updated_batch} = Batching.batch_mark_validating(batch, %{provider_batch_id: "batch_123"})
+      {:ok, updated_batch} =
+        Batching.batch_mark_validating(batch, %{provider_batch_id: "batch_123"})
 
       assert updated_batch.state == :validating
       assert updated_batch.provider_batch_id == "batch_123"
@@ -159,7 +161,8 @@ defmodule Batcher.Batching.BatchTest do
       {batch, _prompts} = batch_with_prompts_fixture(%{prompt_count: 2})
 
       # Load with relationships
-      {:ok, batch_with_prompts} = Batching.get_batch_by_id(batch.id, load: [:prompts, :transitions])
+      {:ok, batch_with_prompts} =
+        Batching.get_batch_by_id(batch.id, load: [:prompts, :transitions])
 
       assert length(batch_with_prompts.prompts) == 2
       assert length(batch_with_prompts.transitions) >= 1

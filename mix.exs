@@ -22,7 +22,7 @@ defmodule Batcher.MixProject do
   def application do
     [
       mod: {Batcher.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :os_mon]
     ]
   end
 
@@ -102,7 +102,8 @@ defmodule Batcher.MixProject do
         "phx.digest"
       ],
       precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"],
-      "ash.setup": ["ash.setup", "run priv/repo/seeds.exs"]
+      "ash.setup": ["ash.setup", "run priv/repo/seeds.exs"],
+      "ash.reset": ["ash.reset", "cmd rm -rf tmp/batches"]
     ]
   end
 end

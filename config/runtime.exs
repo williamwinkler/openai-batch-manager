@@ -7,6 +7,28 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+# Batch storage configuration
+# Production: /var/lib/batcher/batches (Docker volume mount point)
+# Dev/Test: tmp/batches (local writable directory)
+# Can be overridden with BATCH_STORAGE_PATH environment variable
+default_batch_path =
+  cond do
+    System.get_env("BATCH_STORAGE_PATH") ->
+      System.get_env("BATCH_STORAGE_PATH")
+
+    config_env() == :prod ->
+      "/var/lib/batcher/batches"
+
+    config_env() == :test ->
+      Path.expand("../tmp/test_batches", __DIR__)
+
+    true ->
+      # Dev environment - use local tmp directory
+      Path.expand("../tmp/batches", __DIR__)
+  end
+
+config :batcher, :batch_storage, base_path: default_batch_path
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

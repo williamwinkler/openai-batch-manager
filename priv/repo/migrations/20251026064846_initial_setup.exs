@@ -10,7 +10,12 @@ defmodule Batcher.Repo.Migrations.InitialSetup do
   def up do
     create table(:prompts, primary_key: false) do
       add :batch_id,
-          references(:batches, column: :id, name: "prompts_batch_id_fkey", type: :bigint, on_delete: :delete_all),
+          references(:batches,
+            column: :id,
+            name: "prompts_batch_id_fkey",
+            type: :bigint,
+            on_delete: :delete_all
+          ),
           null: false
 
       add :updated_at, :utc_datetime_usec, null: false

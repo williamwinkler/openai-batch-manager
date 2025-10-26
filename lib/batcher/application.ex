@@ -7,6 +7,9 @@ defmodule Batcher.Application do
 
   @impl true
   def start(_type, _args) do
+    # Ensure batch storage directory exists on startup
+    ensure_batch_directory()
+
     children = [
       BatcherWeb.Telemetry,
       Batcher.Repo,
@@ -42,5 +45,16 @@ defmodule Batcher.Application do
   defp skip_migrations?() do
     # By default, sqlite migrations are run when using a release
     System.get_env("RELEASE_NAME") == nil
+  end
+
+  defp ensure_batch_directory do
+    case Batcher.Batching.BatchFile.ensure_directory_exists() do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        raise "Failed to create batch storage directory: #{reason}. " <>
+                "Ensure BATCH_STORAGE_PATH is writable or run with appropriate permissions."
+    end
   end
 end

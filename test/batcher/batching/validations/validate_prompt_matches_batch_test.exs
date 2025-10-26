@@ -91,9 +91,10 @@ defmodule Batcher.Batching.Validations.ValidatePromptMatchesBatchTest do
         })
 
       error_messages = Enum.map(error.errors, & &1.message)
+
       assert Enum.any?(error_messages, fn msg ->
-        String.contains?(msg, "Model 'gpt-4o' does not match batch model 'gpt-4'")
-      end)
+               String.contains?(msg, "Model 'gpt-4o' does not match batch model 'gpt-4'")
+             end)
     end
   end
 

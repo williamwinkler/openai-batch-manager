@@ -21,8 +21,7 @@ defmodule Batcher.Batching.Validations.ValidatePromptMatchesBatch do
           validate_match(batch, prompt_provider, prompt_model)
 
         {:error, _} ->
-          {:error,
-           field: :batch_id, message: "Batch with id #{batch_id} not found"}
+          {:error, field: :batch_id, message: "Batch with id #{batch_id} not found"}
       end
     else
       # If fields are missing, let other validations handle it

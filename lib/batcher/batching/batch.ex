@@ -28,11 +28,22 @@ defmodule Batcher.Batching.Batch do
 
       # Failure transitions
       transition :mark_failed,
-        from: [:draft, :ready_for_upload, :uploading, :validating, :in_progress, :finalizing, :downloading],
+        from: [
+          :draft,
+          :ready_for_upload,
+          :uploading,
+          :validating,
+          :in_progress,
+          :finalizing,
+          :downloading
+        ],
         to: :failed
 
       transition :mark_expired, from: [:validating, :in_progress, :finalizing], to: :expired
-      transition :cancel, from: [:draft, :ready_for_upload, :uploading, :validating], to: :cancelled
+
+      transition :cancel,
+        from: [:draft, :ready_for_upload, :uploading, :validating],
+        to: :cancelled
     end
   end
 
@@ -42,6 +53,7 @@ defmodule Batcher.Batching.Batch do
     create :create do
       description "Create a new batch"
       accept [:provider, :model]
+      change Batching.Changes.CreateBatchFile
     end
 
     # Transition actions

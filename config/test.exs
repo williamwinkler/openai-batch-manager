@@ -14,7 +14,8 @@ config :batcher, Batcher.Repo,
   # SQLite-specific settings for better concurrency
   timeout: 60_000,
   # Enable WAL mode and increase busy timeout for concurrent writes
-  after_connect: {Exqlite.Sqlite3, :execute, ["PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"]}
+  after_connect:
+    {Exqlite.Sqlite3, :execute, ["PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"]}
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

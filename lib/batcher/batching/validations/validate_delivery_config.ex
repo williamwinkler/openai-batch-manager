@@ -19,13 +19,17 @@ defmodule Batcher.Batching.Validations.ValidateDeliveryConfig do
       :webhook ->
         cond do
           not is_nil(rabbitmq_queue) and rabbitmq_queue != "" ->
-            {:error, field: :rabbitmq_queue, message: "rabbitmq_queue should not be provided when delivery_type is webhook"}
+            {:error,
+             field: :rabbitmq_queue,
+             message: "rabbitmq_queue should not be provided when delivery_type is webhook"}
 
           is_nil(webhook_url) or webhook_url == "" ->
-            {:error, field: :webhook_url, message: "webhook_url is required when delivery_type is webhook"}
+            {:error,
+             field: :webhook_url, message: "webhook_url is required when delivery_type is webhook"}
 
           not valid_url?(webhook_url) ->
-            {:error, field: :webhook_url, message: "webhook_url must be a valid HTTP or HTTPS URL"}
+            {:error,
+             field: :webhook_url, message: "webhook_url must be a valid HTTP or HTTPS URL"}
 
           true ->
             :ok
@@ -34,10 +38,14 @@ defmodule Batcher.Batching.Validations.ValidateDeliveryConfig do
       :rabbitmq ->
         cond do
           not is_nil(webhook_url) and webhook_url != "" ->
-            {:error, field: :webhook_url, message: "webhook_url should not be provided when delivery_type is rabbitmq"}
+            {:error,
+             field: :webhook_url,
+             message: "webhook_url should not be provided when delivery_type is rabbitmq"}
 
           is_nil(rabbitmq_queue) or rabbitmq_queue == "" ->
-            {:error, field: :rabbitmq_queue, message: "rabbitmq_queue is required when delivery_type is rabbitmq"}
+            {:error,
+             field: :rabbitmq_queue,
+             message: "rabbitmq_queue is required when delivery_type is rabbitmq"}
 
           true ->
             :ok
