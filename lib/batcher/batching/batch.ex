@@ -52,7 +52,10 @@ defmodule Batcher.Batching.Batch do
 
     create :create do
       description "Create a new batch"
-      accept [:provider, :model]
+      accept [:model, :endpoint]
+
+      # Provider is always :openai
+      change set_attribute(:provider, :openai)
       change Batching.Changes.CreateBatchFile
     end
 
@@ -134,11 +137,20 @@ defmodule Batcher.Batching.Batch do
 
     attribute :provider, Batching.Types.Provider do
       allow_nil? false
-      description "LLM provider: openai (only one supported atm)"
+      default :openai
+      description "LLM provider: always :openai"
+    end
+
+    attribute :endpoint, :string do
+      description "OpenAI Batch API endpoint (e.g., /v1/responses)"
+      allow_nil? false
+      public? true
     end
 
     attribute :model, :string do
       description "Model name - all prompts in batch must use same model"
+      allow_nil? false
+      public? true
     end
 
     attribute :error_msg, :string do

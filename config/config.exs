@@ -7,6 +7,14 @@
 # General application configuration
 import Config
 
+config :mime,
+  extensions: %{"json" => "application/vnd.api+json"},
+  types: %{"application/vnd.api+json" => ["json"]}
+
+config :ash_json_api,
+  show_public_calculations_when_loaded?: false,
+  authorize_update_destroy_with_error?: true
+
 config :ash_oban, pro?: false
 
 config :batcher, Oban,
@@ -15,6 +23,12 @@ config :batcher, Oban,
   queues: [default: 10],
   repo: Batcher.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
+
+# BatchBuilder configuration
+config :batcher, Batcher.BatchBuilder,
+  max_prompts: 50_000,
+  max_age_hours: 1,
+  check_interval_minutes: 5
 
 config :ash,
   default_belongs_to_type: :integer,
@@ -34,6 +48,7 @@ config :spark,
     remove_parens?: true,
     "Ash.Resource": [
       section_order: [
+        :json_api,
         :admin,
         :resource,
         :code_interface,
@@ -52,7 +67,15 @@ config :spark,
       ]
     ],
     "Ash.Domain": [
-      section_order: [:admin, :resources, :policies, :authorization, :domain, :execution]
+      section_order: [
+        :json_api,
+        :admin,
+        :resources,
+        :policies,
+        :authorization,
+        :domain,
+        :execution
+      ]
     ]
   ]
 

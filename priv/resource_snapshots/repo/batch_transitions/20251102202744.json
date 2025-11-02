@@ -7,8 +7,8 @@
       "source": "id",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": true,
-      "generated?": true
+      "generated?": true,
+      "primary_key?": true
     },
     {
       "default": "nil",
@@ -17,8 +17,8 @@
       "source": "from",
       "references": null,
       "allow_nil?": true,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     },
     {
       "default": "nil",
@@ -27,8 +27,8 @@
       "source": "to",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     },
     {
       "default": "nil",
@@ -37,47 +37,47 @@
       "source": "transitioned_at",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     },
     {
       "default": "nil",
       "size": null,
       "type": "bigint",
-      "source": "prompt_id",
+      "source": "batch_id",
       "references": {
-        "name": "prompt_transitions_prompt_id_fkey",
-        "table": "prompts",
+        "name": "batch_transitions_batch_id_fkey",
+        "table": "batches",
         "multitenancy": {
           "global": null,
-          "attribute": null,
-          "strategy": null
+          "strategy": null,
+          "attribute": null
         },
-        "primary_key?": true,
         "destination_attribute": "id",
+        "on_delete": "delete",
+        "primary_key?": true,
         "on_update": null,
-        "on_delete": null,
         "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
       },
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     }
   ],
-  "table": "prompt_transitions",
-  "hash": "E6F1613313FEAE65E038119F95728C7C21B5AF691D7CA4EC99E309700A3E2909",
+  "table": "batch_transitions",
+  "hash": "0959E3C80CF9EB8062EB1D88266912C24E93B0BCAF2D8C7639066D1E368380EE",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_indexes": [],
   "base_filter": null,
+  "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true
 }

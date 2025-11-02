@@ -1,11 +1,19 @@
 defmodule Batcher.Batching do
   use Ash.Domain,
-    otp_app: :batcher
+    otp_app: :batcher,
+    extensions: [AshJsonApi.Domain]
+
+  json_api do
+    routes do
+      base_route "/prompts/responses", Batcher.Batching.Prompt do
+        post :create_for_responses
+      end
+    end
+  end
 
   resources do
-    # Batch resource
     resource Batcher.Batching.Batch do
-      define :create_batch, action: :create, args: [:provider, :model]
+      define :create_batch, action: :create, args: [:model, :endpoint]
       define :get_batches, action: :read
       define :get_batch_by_id, action: :read, get_by: :id
       define :destroy_batch, action: :destroy
@@ -23,9 +31,14 @@ defmodule Batcher.Batching do
       define :batch_cancel, action: :cancel
     end
 
-    # Prompt resource
     resource Batcher.Batching.Prompt do
-      define :create_prompt, action: :create
+      # Public API actions
+      define :create_prompt_for_responses, action: :create_for_responses
+
+      # Internal actions (called by BatchBuilder)
+      define :create_prompt_internal, action: :create_internal
+
+      # Query actions
       define :get_prompt_by_id, action: :read, get_by: :id
       define :get_prompts, action: :read
 

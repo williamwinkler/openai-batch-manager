@@ -15,6 +15,10 @@ defmodule Batcher.Application do
       Batcher.Repo,
       {Ecto.Migrator,
        repos: Application.fetch_env!(:batcher, :ecto_repos), skip: skip_migrations?()},
+      # Registry for BatchBuilder GenServers (keyed by {endpoint, model})
+      {Registry, keys: :unique, name: Batcher.BatchRegistry},
+      # DynamicSupervisor for BatchBuilder instances
+      {DynamicSupervisor, name: Batcher.BatchSupervisor, strategy: :one_for_one},
       {Oban,
        AshOban.config(
          Application.fetch_env!(:batcher, :ash_domains),

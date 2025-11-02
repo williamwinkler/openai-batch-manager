@@ -1,4 +1,4 @@
-defmodule Batcher.Repo.Migrations.InitialSetup do
+defmodule Batcher.Repo.Migrations.InitialSetupWithEndpoints do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 
@@ -9,6 +9,19 @@ defmodule Batcher.Repo.Migrations.InitialSetup do
 
   def up do
     create table(:prompts, primary_key: false) do
+      add :updated_at, :utc_datetime_usec, null: false
+      add :created_at, :utc_datetime_usec, null: false
+      add :rabbitmq_queue, :text
+      add :webhook_url, :text
+      add :delivery_type, :text, null: false
+      add :error_msg, :text
+      add :state, :text, null: false
+      add :tag, :text
+      add :request_payload, :map, null: false
+      add :custom_id, :text, null: false
+      add :model, :text, null: false
+      add :endpoint, :text, null: false
+
       add :batch_id,
           references(:batches,
             column: :id,
@@ -18,15 +31,6 @@ defmodule Batcher.Repo.Migrations.InitialSetup do
           ),
           null: false
 
-      add :updated_at, :utc_datetime_usec, null: false
-      add :created_at, :utc_datetime_usec, null: false
-      add :webhook_url, :text
-      add :rabbitmq_queue, :text
-      add :delivery_type, :text, null: false
-      add :error_msg, :text
-      add :state, :text, null: false
-      add :tag, :text
-      add :custom_id, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end
 
@@ -50,12 +54,15 @@ defmodule Batcher.Repo.Migrations.InitialSetup do
       add :updated_at, :utc_datetime_usec, null: false
       add :created_at, :utc_datetime_usec, null: false
       add :error_msg, :text
-      add :model, :text
+      add :model, :text, null: false
+      add :endpoint, :text, null: false
       add :provider, :text, null: false
       add :provider_batch_id, :text
       add :state, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end
+
+    create index(:prompts, ["custom_id"], unique: true)
 
     create table(:batch_transitions, primary_key: false) do
       add :batch_id,
@@ -78,6 +85,8 @@ defmodule Batcher.Repo.Migrations.InitialSetup do
     drop constraint(:batch_transitions, "batch_transitions_batch_id_fkey")
 
     drop table(:batch_transitions)
+
+    drop_if_exists index(:prompts, ["custom_id"], name: "prompts_custom_id_index")
 
     drop table(:batches)
 

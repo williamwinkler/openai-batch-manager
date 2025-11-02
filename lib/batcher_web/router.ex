@@ -22,10 +22,24 @@ defmodule BatcherWeb.Router do
     get "/", PageController, :home
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", BatcherWeb do
-  #   pipe_through :api
-  # end
+  scope "/api/json" do
+    pipe_through [:api]
+
+    forward "/swaggerui", OpenApiSpex.Plug.SwaggerUI,
+      path: "/api/json/open_api",
+      default_model_expand_depth: 4
+
+    forward "/", BatcherWeb.AshJsonApiRouter
+  end
+
+  # AshJsonApi routes
+  scope "/api" do
+    pipe_through :api
+
+    forward "/", AshJsonApi.Router,
+      domains: [Batcher.Batching],
+      forward_target: BatcherWeb.Endpoint
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:batcher, :dev_routes) do
