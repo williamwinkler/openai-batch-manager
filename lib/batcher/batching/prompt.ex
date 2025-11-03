@@ -56,7 +56,52 @@ defmodule Batcher.Batching.Prompt do
     defaults [:read, :destroy]
 
     # ============================================
-    # /v1/responses endpoint
+    # Universal ingest endpoint (supports all 3 body types)
+    # ============================================
+
+    create :ingest do
+      description """
+      Ingest a prompt for batch processing via OpenAI APIs.
+
+      Supports three endpoint types (discriminated by 'endpoint' field):
+
+      1. /v1/responses - For chat completions/responses
+         Required: custom_id, model, endpoint, input, delivery
+         Optional: instructions, temperature, max_output_tokens, top_p, store
+
+      2. /v1/embeddings - For generating embeddings
+         Required: custom_id, model, endpoint, input, delivery
+         Optional: dimensions, encoding_format
+
+      3. /v1/moderations - For content moderation
+         Required: custom_id, model, endpoint, input, delivery
+
+      All request bodies must include a 'delivery' object with 'type' (webhook/rabbitmq)
+      and corresponding delivery configuration (webhook_url or rabbitmq_queue).
+      """
+
+      accept []
+
+      # Single argument containing the full request body (union type)
+      argument :request_body, Batching.Types.PromptRequestBodyType, do: (
+        description """
+        Request body containing prompt details. Must include: custom_id, model, endpoint, input, delivery.
+        The structure varies based on the 'endpoint' field value.
+        """
+        allow_nil? false
+      )
+
+      # Validations
+      validate Batching.Validations.ValidatePromptRequestBody
+
+      # Extract fields from request body and build payload
+      change Batching.Changes.ExtractRequestBody
+      change Batching.Changes.BuildPromptPayload
+      change Batching.Changes.AssignToBatch
+    end
+
+    # ============================================
+    # /v1/responses endpoint (legacy - kept for backward compatibility)
     # ============================================
 
     create :create_for_responses do
@@ -64,20 +109,23 @@ defmodule Batcher.Batching.Prompt do
       accept [:custom_id, :tag]
 
       # Request parameters (typed and validated)
+      # Required arguments
       argument :model, :string, allow_nil?: false
       argument :input, Batching.Types.ResponsesInputType, allow_nil?: false
-      argument :text, Batching.Resources.TextFormat, allow_nil?: true
-      argument :instructions, :string, allow_nil?: true
-      argument :temperature, :float, allow_nil?: true
-      argument :max_output_tokens, :integer, allow_nil?: true
-      argument :top_p, :float, allow_nil?: true
-      argument :store, :boolean, default: true
-      argument :additional_params, :map, allow_nil?: true
-
-      # Delivery configuration
       argument :delivery_type, Batching.Types.PromptDeliveryType, allow_nil?: false
-      argument :webhook_url, :string, allow_nil?: true
-      argument :rabbitmq_queue, :string, allow_nil?: true
+
+      # Optional arguments (not nullable, just optional)
+      argument :text, Batching.Resources.TextFormat
+      argument :instructions, :string
+      argument :temperature, :float
+      argument :max_output_tokens, :integer
+      argument :top_p, :float
+      argument :store, :boolean, default: true
+      argument :additional_params, :map
+
+      # Delivery configuration (conditional based on delivery_type)
+      argument :webhook_url, :string
+      argument :rabbitmq_queue, :string
 
       # Validations
       validate Batching.Validations.ValidateDeliveryConfig

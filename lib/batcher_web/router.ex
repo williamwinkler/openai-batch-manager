@@ -27,18 +27,9 @@ defmodule BatcherWeb.Router do
 
     forward "/swaggerui", OpenApiSpex.Plug.SwaggerUI,
       path: "/api/json/open_api",
-      default_model_expand_depth: 4
+      default_model_expand_depth: 8
 
     forward "/", BatcherWeb.AshJsonApiRouter
-  end
-
-  # AshJsonApi routes
-  scope "/api" do
-    pipe_through :api
-
-    forward "/", AshJsonApi.Router,
-      domains: [Batcher.Batching],
-      forward_target: BatcherWeb.Endpoint
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

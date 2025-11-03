@@ -5,8 +5,9 @@ defmodule Batcher.Batching do
 
   json_api do
     routes do
-      base_route "/prompts/responses", Batcher.Batching.Prompt do
-        post :create_for_responses
+      # Universal ingest endpoint (supports all 3 body types)
+      base_route "/prompt", Batcher.Batching.Prompt do
+        post :ingest
       end
     end
   end
@@ -33,6 +34,7 @@ defmodule Batcher.Batching do
 
     resource Batcher.Batching.Prompt do
       # Public API actions
+      define :ingest_prompt, action: :ingest, args: [:request_body]
       define :create_prompt_for_responses, action: :create_for_responses
 
       # Internal actions (called by BatchBuilder)

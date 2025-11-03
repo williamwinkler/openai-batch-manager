@@ -1,4 +1,4 @@
-defmodule Batcher.Repo.Migrations.InitialSetupWithEndpoints do
+defmodule Batcher.Repo.Migrations.InitialMigration do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 
