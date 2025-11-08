@@ -1,17 +1,6 @@
 defmodule Batcher.Batching.Types.PromptDeliveryType do
   @moduledoc """
-  This module defines the possible delivery options for
-  the result of a succesfully processed prompt.
+  Prompt delivery type enum (webhook or rabbitmq).
   """
-  use Ash.Type.Enum,
-    values: [
-      rabbitmq: [
-        description: "The prompt result will be delivered via RabbitMQ",
-        label: "RabbitMQ"
-      ],
-      webhook: [
-        description: "The prompt result will be delivered via webhook",
-        label: "Webhook"
-      ]
-    ]
+  use Ash.Type.Enum, values: [:webhook, :rabbitmq]
 end

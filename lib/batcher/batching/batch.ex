@@ -51,12 +51,27 @@ defmodule Batcher.Batching.Batch do
     defaults [:read, :destroy]
 
     create :create do
-      description "Create a new batch"
+      description "Create a new batch for OpenAI"
       accept [:model, :endpoint]
 
-      # Provider is always :openai
-      change set_attribute(:provider, :openai)
       change Batching.Changes.CreateBatchFile
+    end
+
+    read :find_draft_batch do
+      description "Find a draft batch for the given model and endpoint"
+
+      argument :model, :string do
+        allow_nil? false
+      end
+
+      argument :endpoint, :string do
+        allow_nil? false
+      end
+
+      filter expr(state == :draft and model == ^arg(:model) and endpoint == ^arg(:endpoint))
+
+      # Return the first match (there should only be one draft batch per model/endpoint combo)
+      get? true
     end
 
     # Transition actions
@@ -71,7 +86,7 @@ defmodule Batcher.Batching.Batch do
     end
 
     update :mark_validating do
-      accept [:provider_batch_id]
+      accept [:openai_batch_id]
       require_atomic? false
       change transition_state(:validating)
     end
@@ -131,14 +146,8 @@ defmodule Batcher.Batching.Batch do
       default :draft
     end
 
-    attribute :provider_batch_id, :string do
-      description "Batch ID given by the provider"
-    end
-
-    attribute :provider, Batching.Types.Provider do
-      allow_nil? false
-      default :openai
-      description "LLM provider: always :openai"
+    attribute :openai_batch_id, :string do
+      description "Batch ID given by the OpenAI API"
     end
 
     attribute :endpoint, :string do

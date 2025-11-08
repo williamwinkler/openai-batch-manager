@@ -14,6 +14,7 @@ defmodule BatcherWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug OpenApiSpex.Plug.PutApiSpec, module: BatcherWeb.ApiSpec
   end
 
   scope "/", BatcherWeb do
@@ -22,14 +23,19 @@ defmodule BatcherWeb.Router do
     get "/", PageController, :home
   end
 
-  scope "/api/json" do
+  # OpenApiSpex-based API
+  scope "/api" do
     pipe_through [:api]
 
+    # OpenAPI specification and documentation
+    get "/openapi", OpenApiSpex.Plug.RenderSpec, []
+
     forward "/swaggerui", OpenApiSpex.Plug.SwaggerUI,
-      path: "/api/json/open_api",
+      path: "/api/openapi",
       default_model_expand_depth: 8
 
-    forward "/", BatcherWeb.AshJsonApiRouter
+    # API endpoints
+    post "/prompt", BatcherWeb.PromptController, :create
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

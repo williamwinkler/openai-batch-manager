@@ -298,11 +298,11 @@ This project uses **Ash Framework 3.0** for domain-driven development. Ash repla
 
 ```elixir
 # CORRECT - Use code interface defined in Batcher.Batching domain
-Batcher.Batching.create_batch(:openai, "gpt-4")
+Batcher.Batching.create_batch("gpt-4", "/v1/responses")
 Batcher.Batching.batch_mark_ready(batch)
 
 # INCORRECT - Don't call Ash.create! directly
-Ash.create!(Batcher.Batching.Batch, %{provider: :openai, model: "gpt-4"})
+Ash.create!(Batcher.Batching.Batch, %{model: "gpt-4", endpoint: "/v1/responses"})
 ```
 
 ### Defining Code Interfaces
@@ -311,7 +311,7 @@ In the domain module ([lib/batcher/batching.ex](lib/batcher/batching.ex)), use `
 
 ```elixir
 code_interface do
-  define :create_batch, action: :create, args: [:provider, :model]
+  define :create_batch, action: :create, args: [:model, :endpoint]
   define :batch_mark_ready, action: :mark_ready, args: [:id]
 end
 ```
@@ -326,14 +326,11 @@ actions do
   defaults [:read]
 
   create :create do
-    accept [:provider, :model]
+    accept [:model, :endpoint]
   end
 
   # Custom state transition action
   update :mark_ready do
-    # Constraints and validations
-    require_attributes [:provider, :model]
-
     # State machine transition
     change transition_state(:ready_for_upload)
   end
@@ -564,20 +561,14 @@ end)
 
 Prompts must match their parent batch's configuration:
 
-- **Provider consistency** - Prompt's provider must match batch's provider
 - **Model consistency** - Prompt's model must match batch's model
+- **Endpoint consistency** - Prompt's endpoint must match batch's endpoint
 
-This is enforced by the [ValidatePromptMatchesBatch](lib/batcher/batching/validations/validate_prompt_matches_batch.ex) validation on prompt creation.
+Batches are created for a specific model/endpoint combination, and all prompts in that batch must use the same values.
 
 ```elixir
-# This will succeed
-{:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
-{:ok, prompt} = Batcher.Batching.create_prompt(batch, custom_id: "p1",
-  delivery_type: :webhook, webhook_url: "https://example.com")
-
-# This will fail - model mismatch
-{:error, _} = Batcher.Batching.create_prompt(batch, custom_id: "p2",
-  model: "gpt-3.5-turbo", ...)
+# Prompts are automatically assigned to batches with matching model/endpoint
+# by the BatchBuilder GenServer
 ```
 
 ### Delivery Configuration Validation
@@ -673,15 +664,15 @@ Use the code interface in tests:
 
 ```elixir
 test "creates batch with valid attributes" do
-  {:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+  {:ok, batch} = Batcher.Batching.create_batch("gpt-4", "/v1/responses")
 
-  assert batch.provider == :openai
   assert batch.model == "gpt-4"
+  assert batch.endpoint == "/v1/responses"
   assert batch.state == :draft
 end
 
 test "validates state transitions" do
-  {:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
+  {:ok, batch} = Batcher.Batching.create_batch("gpt-4", "/v1/responses")
 
   # Should succeed
   {:ok, batch} = Batcher.Batching.batch_mark_ready(batch)
@@ -698,15 +689,8 @@ Test validation rules by attempting invalid operations:
 
 ```elixir
 test "validates delivery config" do
-  {:ok, batch} = Batcher.Batching.create_batch(:openai, "gpt-4")
-
-  # Missing webhook_url for webhook delivery
-  {:error, changeset} = Batcher.Batching.create_prompt(batch,
-    custom_id: "p1",
-    delivery_type: :webhook
-  )
-
-  assert changeset.errors[:webhook_url]
+  # Prompts are validated when sent via the API
+  # The validation checks for required delivery configuration
 end
 ```
 
@@ -719,7 +703,7 @@ The project uses **AshSqlite** which auto-generates migrations.
 The initial setup migration is at [priv/repo/migrations/20251026064846_initial_setup.exs](priv/repo/migrations/20251026064846_initial_setup.exs)
 
 It creates:
-- `batches` table with state and provider/model fields
+- `batches` table with state, model, and endpoint fields
 - `prompts` table with delivery config and foreign key to batches
 - `batch_transitions` and `prompt_transitions` audit tables
 - Indexes for foreign keys and state lookups

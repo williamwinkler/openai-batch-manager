@@ -27,10 +27,10 @@ defmodule Batcher.BatchingFixtures do
     # Convert keyword list to map if needed
     attrs = if is_list(attrs), do: Map.new(attrs), else: attrs
 
-    provider = attrs[:provider] || :openai
-    model = attrs[:model] || "gpt-4"
+    model = attrs[:model] || "gpt-4o-mini"
+    endpoint = attrs[:endpoint] || "/v1/responses"
 
-    {:ok, batch} = Batching.create_batch(provider, model)
+    {:ok, batch} = Batching.create_batch(model, endpoint)
 
     # If a specific state is requested, transition to it
     batch =
@@ -89,14 +89,19 @@ defmodule Batcher.BatchingFixtures do
       end
 
     # Merge all attributes and arguments
-    # Note: provider and model come from batch
-    prompt_params =
-      Map.merge(delivery_attrs, %{
-        batch_id: batch.id,
-        custom_id: custom_id,
-        provider: batch.provider,
-        model: batch.model
-      })
+    # Note: endpoint and model come from batch
+    base_params = %{
+      batch_id: batch.id,
+      custom_id: custom_id,
+      endpoint: batch.endpoint,
+      model: batch.model,
+      request_payload: attrs[:request_payload] || %{"test" => "data"}
+    }
+
+    # Add tag if provided
+    base_params = if Map.has_key?(attrs, :tag), do: Map.put(base_params, :tag, attrs[:tag]), else: base_params
+
+    prompt_params = Map.merge(delivery_attrs, base_params)
 
     {:ok, prompt} = Batching.create_prompt(prompt_params)
 
@@ -132,7 +137,7 @@ defmodule Batcher.BatchingFixtures do
     # Convert keyword list to map if needed
     attrs = if is_list(attrs), do: Map.new(attrs), else: attrs
 
-    batch = batch_fixture(Map.take(attrs, [:provider, :model, :state]))
+    batch = batch_fixture(Map.take(attrs, [:endpoint, :model, :state]))
 
     prompt_count = attrs[:prompt_count] || 1
     prompt_attrs_list = attrs[:prompt_attrs] || List.duplicate(%{}, prompt_count)
@@ -155,6 +160,9 @@ defmodule Batcher.BatchingFixtures do
   Creates a webhook delivery prompt (shorthand).
   """
   def webhook_prompt_fixture(attrs \\ %{}) do
+    # Convert keyword list to map if needed
+    attrs = if is_list(attrs), do: Map.new(attrs), else: attrs
+
     attrs =
       attrs
       |> Map.put(:delivery_type, :webhook)
@@ -167,6 +175,9 @@ defmodule Batcher.BatchingFixtures do
   Creates a RabbitMQ delivery prompt (shorthand).
   """
   def rabbitmq_prompt_fixture(attrs \\ %{}) do
+    # Convert keyword list to map if needed
+    attrs = if is_list(attrs), do: Map.new(attrs), else: attrs
+
     attrs =
       attrs
       |> Map.put(:delivery_type, :rabbitmq)
@@ -233,10 +244,10 @@ defmodule Batcher.BatchingFixtures do
         batch
 
       :validating ->
-        # This action requires provider_batch_id attribute as a map
+        # This action requires openai_batch_id attribute as a map
         {:ok, batch} =
           Batching.batch_mark_validating(batch, %{
-            provider_batch_id: "batch_#{Ecto.UUID.generate()}"
+            openai_batch_id: "batch_#{Ecto.UUID.generate()}"
           })
 
         batch

@@ -1,4 +1,4 @@
-defmodule Batcher.Repo.Migrations.InitialMigration do
+defmodule Batcher.Repo.Migrations.Init do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 
@@ -56,8 +56,7 @@ defmodule Batcher.Repo.Migrations.InitialMigration do
       add :error_msg, :text
       add :model, :text, null: false
       add :endpoint, :text, null: false
-      add :provider, :text, null: false
-      add :provider_batch_id, :text
+      add :openai_batch_id, :text
       add :state, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end

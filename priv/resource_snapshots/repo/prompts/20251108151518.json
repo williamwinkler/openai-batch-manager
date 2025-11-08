@@ -20,14 +20,14 @@
         "table": "batches",
         "multitenancy": {
           "global": null,
-          "attribute": null,
-          "strategy": null
+          "strategy": null,
+          "attribute": null
         },
         "destination_attribute": "id",
         "primary_key?": true,
         "on_update": null,
-        "deferrable": false,
         "on_delete": "delete",
+        "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
       },
@@ -157,30 +157,30 @@
     }
   ],
   "table": "prompts",
-  "hash": "876EBB7648457B922546DED1DB2DCAB0DB1C3AF9CA9F77AB35CDA4C1CC76C910",
+  "hash": "003543917ECA7E4B1F3DB2F8F1D43D87E2B4D4B2B0B225E46AD7EE5487B87943",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [
     {
       "message": null,
       "name": null,
       "table": null,
       "include": null,
-      "where": null,
       "fields": [
         "custom_id"
       ],
+      "where": null,
       "unique": true,
       "using": null
     }
   ],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }

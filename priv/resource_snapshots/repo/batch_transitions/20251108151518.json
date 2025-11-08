@@ -44,20 +44,20 @@
       "default": "nil",
       "size": null,
       "type": "bigint",
-      "source": "prompt_id",
+      "source": "batch_id",
       "references": {
-        "name": "prompt_transitions_prompt_id_fkey",
-        "table": "prompts",
+        "name": "batch_transitions_batch_id_fkey",
+        "table": "batches",
         "multitenancy": {
           "global": null,
-          "attribute": null,
-          "strategy": null
+          "strategy": null,
+          "attribute": null
         },
         "destination_attribute": "id",
         "primary_key?": true,
         "on_update": null,
-        "deferrable": false,
         "on_delete": "delete",
+        "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
       },
@@ -66,18 +66,18 @@
       "primary_key?": false
     }
   ],
-  "table": "prompt_transitions",
-  "hash": "0164EF93DA15B734B1CA7C1934571C0004E019BFFA7D4053B841F7F8CE03C878",
+  "table": "batch_transitions",
+  "hash": "3E727A4AC7CA0CAC7D6B2B289695E6F6DEB79EA8FF6FDC2C9DDE0BF5095E43D0",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }

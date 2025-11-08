@@ -13,7 +13,7 @@ defmodule Batcher.Batching.Prompt do
     otp_app: :batcher,
     domain: Batcher.Batching,
     data_layer: AshSqlite.DataLayer,
-    extensions: [AshJsonApi.Resource, AshStateMachine]
+    extensions: [AshStateMachine]
 
   alias Batcher.Batching
 
@@ -28,10 +28,6 @@ defmodule Batcher.Batching.Prompt do
     references do
       reference :batch, on_delete: :delete
     end
-  end
-
-  json_api do
-    type "prompt"
   end
 
   state_machine do
@@ -55,107 +51,8 @@ defmodule Batcher.Batching.Prompt do
   actions do
     defaults [:read, :destroy]
 
-    # ============================================
-    # Universal ingest endpoint (supports all 3 body types)
-    # ============================================
-
-    create :ingest do
-      description """
-      Ingest a prompt for batch processing via OpenAI APIs.
-
-      Supports three endpoint types (discriminated by 'endpoint' field):
-
-      1. /v1/responses - For chat completions/responses
-         Required: custom_id, model, endpoint, input, delivery
-         Optional: instructions, temperature, max_output_tokens, top_p, store
-
-      2. /v1/embeddings - For generating embeddings
-         Required: custom_id, model, endpoint, input, delivery
-         Optional: dimensions, encoding_format
-
-      3. /v1/moderations - For content moderation
-         Required: custom_id, model, endpoint, input, delivery
-
-      All request bodies must include a 'delivery' object with 'type' (webhook/rabbitmq)
-      and corresponding delivery configuration (webhook_url or rabbitmq_queue).
-      """
-
-      accept []
-
-      # Single argument containing the full request body (union type)
-      argument :request_body, Batching.Types.PromptRequestBodyType, do: (
-        description """
-        Request body containing prompt details. Must include: custom_id, model, endpoint, input, delivery.
-        The structure varies based on the 'endpoint' field value.
-        """
-        allow_nil? false
-      )
-
-      # Validations
-      validate Batching.Validations.ValidatePromptRequestBody
-
-      # Extract fields from request body and build payload
-      change Batching.Changes.ExtractRequestBody
-      change Batching.Changes.BuildPromptPayload
-      change Batching.Changes.AssignToBatch
-    end
-
-    # ============================================
-    # /v1/responses endpoint (legacy - kept for backward compatibility)
-    # ============================================
-
-    create :create_for_responses do
-      description "Submit a prompt for /v1/responses endpoint"
-      accept [:custom_id, :tag]
-
-      # Request parameters (typed and validated)
-      # Required arguments
-      argument :model, :string, allow_nil?: false
-      argument :input, Batching.Types.ResponsesInputType, allow_nil?: false
-      argument :delivery_type, Batching.Types.PromptDeliveryType, allow_nil?: false
-
-      # Optional arguments (not nullable, just optional)
-      argument :text, Batching.Resources.TextFormat
-      argument :instructions, :string
-      argument :temperature, :float
-      argument :max_output_tokens, :integer
-      argument :top_p, :float
-      argument :store, :boolean, default: true
-      argument :additional_params, :map
-
-      # Delivery configuration (conditional based on delivery_type)
-      argument :webhook_url, :string
-      argument :rabbitmq_queue, :string
-
-      # Validations
-      validate Batching.Validations.ValidateDeliveryConfig
-
-      validate compare(:temperature, greater_than_or_equal_to: 0),
-        where: present(:temperature)
-
-      validate compare(:temperature, less_than_or_equal_to: 2), where: present(:temperature)
-      validate compare(:top_p, greater_than_or_equal_to: 0), where: present(:top_p)
-      validate compare(:top_p, less_than_or_equal_to: 1), where: present(:top_p)
-
-      validate compare(:max_output_tokens, greater_than: 0),
-        where: present(:max_output_tokens)
-
-      # Build request payload and assign to batch
-      change Batching.Changes.BuildResponsesPayload
-      change Batching.Changes.AssignToBatch
-
-      # Set delivery fields
-      change set_attribute(:delivery_type, arg(:delivery_type))
-      change set_attribute(:webhook_url, arg(:webhook_url))
-      change set_attribute(:rabbitmq_queue, arg(:rabbitmq_queue))
-    end
-
-    # ============================================
-    # Internal action (called by BatchBuilder)
-    # ============================================
-
-    create :create_internal do
-      description "Internal: Create prompt with batch_id assigned by BatchBuilder"
+    create :create do
+      description "Create prompt with batch_id assigned by BatchBuilder"
 
       accept [
         :batch_id,

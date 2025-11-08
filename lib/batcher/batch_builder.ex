@@ -76,10 +76,32 @@ defmodule Batcher.BatchBuilder do
 
   @impl true
   def init({endpoint, model}) do
-    # Create new Batch in database (provider defaults to :openai)
-    {:ok, batch} = Batcher.Batching.create_batch(model, endpoint)
+    # Try to find an existing draft batch for this model/endpoint combination
+    # If none exists, create a new one
+    batch =
+      case Batcher.Batching.find_draft_batch(model, endpoint) do
+        {:ok, existing_batch} ->
+          Logger.info(
+            "BatchBuilder reusing existing draft batch: endpoint=#{endpoint} model=#{model} batch_id=#{existing_batch.id}"
+          )
 
-    Logger.info("BatchBuilder started: endpoint=#{endpoint} model=#{model} batch_id=#{batch.id}")
+          existing_batch
+
+        {:error, _} ->
+          # No draft batch found, create a new one
+          {:ok, new_batch} = Batcher.Batching.create_batch(model, endpoint)
+
+          Logger.info(
+            "BatchBuilder created new batch: endpoint=#{endpoint} model=#{model} batch_id=#{new_batch.id}"
+          )
+
+          new_batch
+      end
+
+    # Count existing prompts in this batch to maintain accurate state
+    prompt_count = count_prompts_in_batch(batch.id)
+
+    Logger.info("BatchBuilder initialized: batch_id=#{batch.id} existing_prompts=#{prompt_count}")
 
     # Schedule periodic check
     schedule_check()
@@ -89,7 +111,7 @@ defmodule Batcher.BatchBuilder do
        batch_id: batch.id,
        endpoint: endpoint,
        model: model,
-       prompt_count: 0,
+       prompt_count: prompt_count,
        started_at: DateTime.utc_now(),
        status: :collecting
      }}
@@ -109,9 +131,14 @@ defmodule Batcher.BatchBuilder do
         # Create Prompt record via internal action
         full_data = Map.put(prompt_data, :batch_id, state.batch_id)
 
-        case Batcher.Batching.create_prompt_internal(full_data) do
+        Logger.debug(
+          "Creating prompt via Ash: batch_id=#{full_data.batch_id} custom_id=#{full_data.custom_id} delivery_type=#{full_data.delivery_type} webhook_url=#{inspect(full_data.webhook_url)} rabbitmq_queue=#{inspect(full_data.rabbitmq_queue)}"
+        )
+
+        case Batcher.Batching.create_prompt(full_data) do
           {:ok, prompt} ->
             new_state = %{state | prompt_count: state.prompt_count + 1}
+            Logger.debug("[Batch #{state.batch_id}] Prompt created successfully. Total prompts: #{new_state.prompt_count}")
 
             # Check if should mark ready (don't block the caller)
             if should_mark_ready?(new_state) do
@@ -120,7 +147,33 @@ defmodule Batcher.BatchBuilder do
 
             {:reply, {:ok, prompt}, new_state}
 
+          {:error, %Ash.Error.Invalid{} = error} ->
+            # Check if this is a unique constraint violation on custom_id
+            is_duplicate =
+              Enum.any?(error.errors, fn err ->
+                err.field == :custom_id and String.contains?(err.message, "already been taken")
+              end)
+
+            if is_duplicate do
+              Logger.warning("Duplicate custom_id attempted",
+                custom_id: full_data.custom_id,
+                batch_id: state.batch_id
+              )
+
+              {:reply, {:error, :custom_id_already_taken}, state}
+            else
+              Logger.error(
+                "Failed to create prompt in database: #{inspect(error, pretty: true, limit: :infinity)}"
+              )
+
+              {:reply, {:error, error}, state}
+            end
+
           {:error, error} ->
+            Logger.error(
+              "Failed to create prompt in database: #{inspect(error, pretty: true, limit: :infinity)}"
+            )
+
             {:reply, {:error, error}, state}
         end
     end
@@ -172,5 +225,15 @@ defmodule Batcher.BatchBuilder do
 
   defp via_tuple(endpoint, model) do
     {:via, Registry, {Batcher.BatchRegistry, {endpoint, model}}}
+  end
+
+  defp count_prompts_in_batch(batch_id_value) do
+    # Ash.count! runs a SELECT COUNT(*) query - does NOT load records
+    require Ash.Query
+
+    Batcher.Batching.Prompt
+    |> Ash.Query.for_read(:read)
+    |> Ash.Query.filter(batch_id == ^batch_id_value)
+    |> Ash.count!()
   end
 end

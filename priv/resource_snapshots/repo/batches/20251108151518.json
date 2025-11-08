@@ -24,19 +24,9 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "provider_batch_id",
+      "source": "openai_batch_id",
       "references": null,
       "allow_nil?": true,
-      "generated?": false,
-      "primary_key?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "provider",
-      "references": null,
-      "allow_nil?": false,
       "generated?": false,
       "primary_key?": false
     },
@@ -92,17 +82,17 @@
     }
   ],
   "table": "batches",
-  "hash": "0AA0393853DB1C196BB1A37A71BE609104C3394912675A8FA0C71A0DE2769C11",
+  "hash": "525AFE87E434CDE98B53337E6C9FD5D6675AF5D0E3FEA10724670A154B746DF4",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }

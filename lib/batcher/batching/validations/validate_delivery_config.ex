@@ -9,11 +9,17 @@ defmodule Batcher.Batching.Validations.ValidateDeliveryConfig do
 
   @impl true
   def validate(changeset, _opts, _context) do
-    # delivery_type is in the accept list, so it's an attribute change
+    # Try to get values from both arguments and attributes
+    # (create_for_responses uses arguments, create_internal uses attributes)
     delivery_type = Ash.Changeset.get_attribute(changeset, :delivery_type)
-    # webhook_url and rabbitmq_queue are arguments
-    webhook_url = Ash.Changeset.get_argument(changeset, :webhook_url)
-    rabbitmq_queue = Ash.Changeset.get_argument(changeset, :rabbitmq_queue)
+
+    webhook_url =
+      Ash.Changeset.get_argument(changeset, :webhook_url) ||
+      Ash.Changeset.get_attribute(changeset, :webhook_url)
+
+    rabbitmq_queue =
+      Ash.Changeset.get_argument(changeset, :rabbitmq_queue) ||
+      Ash.Changeset.get_attribute(changeset, :rabbitmq_queue)
 
     case delivery_type do
       :webhook ->
