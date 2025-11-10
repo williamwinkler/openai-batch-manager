@@ -95,7 +95,9 @@ defmodule Batcher.Batching.Handlers.RequestExtractor do
     webhook_url = get_field(delivery, "webhook_url")
     rabbitmq_queue = get_field(delivery, "rabbitmq_queue")
 
-    Logger.debug("Delivery fields extracted: delivery_type=#{inspect(delivery_type)} webhook_url=#{inspect(webhook_url)} rabbitmq_queue=#{inspect(rabbitmq_queue)}")
+    Logger.debug(
+      "Delivery fields extracted: delivery_type=#{inspect(delivery_type)} webhook_url=#{inspect(webhook_url)} rabbitmq_queue=#{inspect(rabbitmq_queue)}"
+    )
 
     %{
       delivery_type: delivery_type,
@@ -116,7 +118,9 @@ defmodule Batcher.Batching.Handlers.RequestExtractor do
         rescue
           ArgumentError -> nil
         end
-      value -> value
+
+      value ->
+        value
     end
   end
 end

@@ -18,7 +18,8 @@ defmodule BatcherWeb.Schemas.EmbeddingsRequestBodySchema do
       },
       model: %Schema{
         type: :string,
-        description: "OpenAI embedding model to use (e.g., 'text-embedding-3-large', 'text-embedding-3-small')",
+        description:
+          "OpenAI embedding model to use (e.g., 'text-embedding-3-large', 'text-embedding-3-small')",
         example: "text-embedding-3-large"
       },
       endpoint: %Schema{
@@ -46,7 +47,8 @@ defmodule BatcherWeb.Schemas.EmbeddingsRequestBodySchema do
       dimensions: %Schema{
         type: :integer,
         minimum: 1,
-        description: "Number of dimensions for the embedding vectors (only supported by text-embedding-3 models)",
+        description:
+          "Number of dimensions for the embedding vectors (only supported by text-embedding-3 models)",
         example: 1536
       },
       encoding_format: %Schema{

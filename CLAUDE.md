@@ -1,4 +1,4 @@
-# LLM Batch Manager
+# OpenAI Batch Manager
 
 This is a **Phoenix 1.8.1** web application built with the **Ash Framework** for managing batching of LLM prompts for processing by providers like OpenAI. The application provides state machine-based workflow management with audit trails for both batches and individual prompts.
 

@@ -66,8 +66,11 @@ defmodule Batcher.Batching.Prompt do
         :tag
       ]
 
-      validate Batching.Validations.ValidateDeliveryConfig
+      change Batching.Changes.ComputePayloadSize
+
       validate Batching.Validations.ValidateEndpointSupported
+      validate Batching.Validations.ValidateDeliveryConfig
+      validate Batching.Validations.ValidateBatchSizeLimit
     end
 
     # ============================================
@@ -150,7 +153,13 @@ defmodule Batcher.Batching.Prompt do
 
     # Full request payload (endpoint-specific)
     attribute :request_payload, :map do
-      description "Complete request body for the OpenAI endpoint"
+      description "Complete request body ready for JSONL batch file"
+      allow_nil? false
+      public? true
+    end
+
+    attribute :request_payload_size, :integer do
+      description "Size of the request payload in bytes"
       allow_nil? false
       public? true
     end

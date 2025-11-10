@@ -3,7 +3,7 @@ defmodule Batcher.Batching.Batch do
     otp_app: :batcher,
     domain: Batcher.Batching,
     data_layer: AshSqlite.DataLayer,
-    extensions: [AshStateMachine]
+    extensions: [AshStateMachine, AshOban]
 
   alias Batcher.Batching
 
@@ -78,6 +78,7 @@ defmodule Batcher.Batching.Batch do
     update :mark_ready do
       require_atomic? false
       change transition_state(:ready_for_upload)
+      change run_oban_trigger(:mark_ready)
     end
 
     update :begin_upload do
@@ -88,6 +89,7 @@ defmodule Batcher.Batching.Batch do
     update :mark_validating do
       accept [:openai_batch_id]
       require_atomic? false
+      validate present(:openai_batch_id)
       change transition_state(:validating)
     end
 
@@ -178,6 +180,18 @@ defmodule Batcher.Batching.Batch do
 
     has_many :transitions, Batching.BatchTransition do
       description "Audit trail of status transitions"
+    end
+  end
+
+  oban do
+    triggers do
+      trigger :build_openai_batch_file do
+        action :build_openai_batch_file
+        where expr(state == :ready_for_upload)
+        scheduler_cron "*/1 * * * *" # Every minute
+        on_error :retry
+        max_attempts 5
+      end
     end
   end
 end

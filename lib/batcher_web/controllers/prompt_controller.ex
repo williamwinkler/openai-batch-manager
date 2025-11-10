@@ -21,7 +21,9 @@ defmodule BatcherWeb.PromptController do
     responses: [
       accepted: {"Prompt accepted for processing", "application/json", PromptResponseSchema},
       bad_request: {"Bad request - validation errors", "application/json", ErrorResponseSchema},
-      conflict: {"Duplicate custom_id - a prompt with this custom_id already exists", "application/json", ErrorResponseSchema}
+      conflict:
+        {"Duplicate custom_id - a prompt with this custom_id already exists", "application/json",
+         ErrorResponseSchema}
     ]
   )
 
@@ -92,37 +94,6 @@ defmodule BatcherWeb.PromptController do
             }
           ]
         })
-
-        # {:error, %Ash.Error.Invalid{} = error} ->
-        #   # Handle Ash validation errors from BatchBuilder
-        #   errors =
-        #     error.errors
-        #     |> Enum.map(fn err ->
-        #       %{
-        #         code: err.class || "invalid",
-        #         title: err.message || "Validation failed",
-        #         detail: Exception.message(err),
-        #         source: %{pointer: "/#{err.field || "unknown"}"}
-        #       }
-        #     end)
-
-        #   conn
-        #   |> put_status(:unprocessable_entity)
-        #   |> json(%{errors: errors})
-
-        # {:error, other} ->
-        #   # Generic error handler for unexpected errors
-        #   conn
-        #   |> put_status(:unprocessable_entity)
-        #   |> json(%{
-        #     errors: [
-        #       %{
-        #         code: "unknown_error",
-        #         title: "Unknown Error",
-        #         detail: inspect(other)
-        #       }
-        #     ]
-        #   })
     end
   end
 end

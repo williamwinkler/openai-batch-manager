@@ -18,7 +18,8 @@ defmodule BatcherWeb.Schemas.ModerationRequestBodySchema do
       },
       model: %Schema{
         type: :string,
-        description: "OpenAI moderation model to use (e.g., 'omni-moderation-latest', 'text-moderation-latest')",
+        description:
+          "OpenAI moderation model to use (e.g., 'omni-moderation-latest', 'text-moderation-latest')",
         example: "omni-moderation-latest"
       },
       endpoint: %Schema{

@@ -93,7 +93,7 @@ defmodule BatcherWeb.Schemas.ResponsesRequestBodySchema do
       "delivery" => %{
         "type" => "webhook",
         "webhook_url" => "https://api.example.com/webhook?auth=secret"
-      },
+      }
     }
   })
 end

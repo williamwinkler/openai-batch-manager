@@ -94,7 +94,9 @@ defmodule Batcher.Batching.Handlers.PromptRequestHandler do
       tag: extracted.tag
     }
 
-    Logger.debug("Prompt data prepared for BatchBuilder: custom_id=#{prompt_data.custom_id} endpoint=#{prompt_data.endpoint} model=#{prompt_data.model} delivery_type=#{inspect(prompt_data.delivery_type)} webhook_url=#{inspect(prompt_data.webhook_url)} rabbitmq_queue=#{inspect(prompt_data.rabbitmq_queue)} tag=#{inspect(prompt_data.tag)}")
+    Logger.debug(
+      "Prompt data prepared for BatchBuilder: custom_id=#{prompt_data.custom_id} endpoint=#{prompt_data.endpoint} model=#{prompt_data.model} delivery_type=#{inspect(prompt_data.delivery_type)} webhook_url=#{inspect(prompt_data.webhook_url)} rabbitmq_queue=#{inspect(prompt_data.rabbitmq_queue)} tag=#{inspect(prompt_data.tag)}"
+    )
 
     # Add to batch via BatchBuilder GenServer (preserves existing logic)
     Logger.debug("Calling BatchBuilder.add_prompt", endpoint: endpoint, model: extracted.model)
@@ -105,6 +107,7 @@ defmodule Batcher.Batching.Handlers.PromptRequestHandler do
           prompt_id: prompt.id,
           batch_id: prompt.batch_id
         )
+
         {:ok, prompt}
 
       {:error, :batch_full} ->
@@ -116,6 +119,7 @@ defmodule Batcher.Batching.Handlers.PromptRequestHandler do
               prompt_id: prompt.id,
               batch_id: prompt.batch_id
             )
+
             {:ok, prompt}
 
           error ->

@@ -99,7 +99,8 @@ defmodule Batcher.BatchingFixtures do
     }
 
     # Add tag if provided
-    base_params = if Map.has_key?(attrs, :tag), do: Map.put(base_params, :tag, attrs[:tag]), else: base_params
+    base_params =
+      if Map.has_key?(attrs, :tag), do: Map.put(base_params, :tag, attrs[:tag]), else: base_params
 
     prompt_params = Map.merge(delivery_attrs, base_params)
 

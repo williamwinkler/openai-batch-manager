@@ -6,13 +6,14 @@ defmodule Batcher.Batching.PromptTest do
 
   describe "create_prompt/1" do
     test "creates a prompt with webhook delivery" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "test-prompt-1",
-        request_payload: %{
-          "input" => [%{"role" => "user", "content" => "Hello"}],
-          "max_output_tokens" => 100
-        }
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "test-prompt-1",
+          request_payload: %{
+            "input" => [%{"role" => "user", "content" => "Hello"}],
+            "max_output_tokens" => 100
+          }
+        )
 
       assert prompt.custom_id == "test-prompt-1"
       assert prompt.state == :pending
@@ -23,12 +24,13 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "creates a prompt with RabbitMQ delivery" do
-      prompt = rabbitmq_prompt_fixture(
-        custom_id: "test-prompt-2",
-        request_payload: %{
-          "input" => [%{"role" => "user", "content" => "Hello"}]
-        }
-      )
+      prompt =
+        rabbitmq_prompt_fixture(
+          custom_id: "test-prompt-2",
+          request_payload: %{
+            "input" => [%{"role" => "user", "content" => "Hello"}]
+          }
+        )
 
       assert prompt.delivery_type == :rabbitmq
       assert prompt.rabbitmq_queue == "results_queue"
@@ -48,10 +50,11 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "creates prompt with optional tag" do
-      prompt = prompt_fixture(
-        custom_id: "test-prompt-4",
-        tag: "production-batch"
-      )
+      prompt =
+        prompt_fixture(
+          custom_id: "test-prompt-4",
+          tag: "production-batch"
+        )
 
       assert prompt.tag == "production-batch"
     end
@@ -436,10 +439,11 @@ defmodule Batcher.Batching.PromptTest do
 
   describe "edge cases" do
     test "handles empty request_payload" do
-      prompt = prompt_fixture(
-        custom_id: "empty-payload",
-        request_payload: %{}
-      )
+      prompt =
+        prompt_fixture(
+          custom_id: "empty-payload",
+          request_payload: %{}
+        )
 
       assert prompt.request_payload == %{}
     end
@@ -463,10 +467,11 @@ defmodule Batcher.Batching.PromptTest do
         ]
       }
 
-      prompt = prompt_fixture(
-        custom_id: "complex-payload",
-        request_payload: complex_payload
-      )
+      prompt =
+        prompt_fixture(
+          custom_id: "complex-payload",
+          request_payload: complex_payload
+        )
 
       assert prompt.request_payload == complex_payload
     end
@@ -490,10 +495,11 @@ defmodule Batcher.Batching.PromptTest do
     test "handles webhook URL with query parameters" do
       url_with_params = "https://example.com/webhook?auth=secret&id=123"
 
-      prompt = webhook_prompt_fixture(
-        custom_id: "url-params-test",
-        webhook_url: url_with_params
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "url-params-test",
+          webhook_url: url_with_params
+        )
 
       assert prompt.webhook_url == url_with_params
     end
@@ -521,10 +527,11 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "handles nil tag" do
-      prompt = prompt_fixture(
-        custom_id: "nil-tag-test",
-        tag: nil
-      )
+      prompt =
+        prompt_fixture(
+          custom_id: "nil-tag-test",
+          tag: nil
+        )
 
       assert is_nil(prompt.tag)
     end
@@ -542,37 +549,41 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "can query prompts by batch" do
-      {batch, prompts} = batch_with_prompts_fixture(
-        prompt_count: 2,
-        prompt_attrs: [
-          [custom_id: "query-1"],
-          [custom_id: "query-2"]
-        ]
-      )
+      {batch, prompts} =
+        batch_with_prompts_fixture(
+          prompt_count: 2,
+          prompt_attrs: [
+            [custom_id: "query-1"],
+            [custom_id: "query-2"]
+          ]
+        )
 
       {:ok, batch_with_prompts} = Batching.get_batch_by_id(batch.id, load: [:prompts])
 
       assert length(batch_with_prompts.prompts) == 2
+
       assert Enum.map(prompts, & &1.id) |> Enum.sort() ==
-             Enum.map(batch_with_prompts.prompts, & &1.id) |> Enum.sort()
+               Enum.map(batch_with_prompts.prompts, & &1.id) |> Enum.sort()
     end
   end
 
   describe "URL validation edge cases" do
     test "accepts localhost webhook URL" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "localhost-test",
-        webhook_url: "http://localhost:4000/webhook"
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "localhost-test",
+          webhook_url: "http://localhost:4000/webhook"
+        )
 
       assert prompt.webhook_url == "http://localhost:4000/webhook"
     end
 
     test "accepts IP address in webhook URL" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "ip-test",
-        webhook_url: "https://192.168.1.1/webhook"
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "ip-test",
+          webhook_url: "https://192.168.1.1/webhook"
+        )
 
       assert prompt.webhook_url == "https://192.168.1.1/webhook"
     end
@@ -623,37 +634,41 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "handles webhook URL with encoded characters" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "encoded-url-test",
-        webhook_url: "https://example.com/webhook?token=abc%20def"
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "encoded-url-test",
+          webhook_url: "https://example.com/webhook?token=abc%20def"
+        )
 
       assert prompt.webhook_url == "https://example.com/webhook?token=abc%20def"
     end
 
     test "handles webhook URL with fragment" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "fragment-url-test",
-        webhook_url: "https://example.com/webhook#section"
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "fragment-url-test",
+          webhook_url: "https://example.com/webhook#section"
+        )
 
       assert prompt.webhook_url == "https://example.com/webhook#section"
     end
 
     test "handles webhook URL with port" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "port-url-test",
-        webhook_url: "https://example.com:8080/webhook"
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "port-url-test",
+          webhook_url: "https://example.com:8080/webhook"
+        )
 
       assert prompt.webhook_url == "https://example.com:8080/webhook"
     end
 
     test "handles webhook URL with authentication" do
-      prompt = webhook_prompt_fixture(
-        custom_id: "auth-url-test",
-        webhook_url: "https://user:pass@example.com/webhook"
-      )
+      prompt =
+        webhook_prompt_fixture(
+          custom_id: "auth-url-test",
+          webhook_url: "https://user:pass@example.com/webhook"
+        )
 
       assert prompt.webhook_url == "https://user:pass@example.com/webhook"
     end
@@ -683,7 +698,12 @@ defmodule Batcher.Batching.PromptTest do
       results = Task.await_many(tasks, 5000)
 
       # Only one should succeed
-      successful = Enum.count(results, fn {:ok, _} -> true; _ -> false end)
+      successful =
+        Enum.count(results, fn
+          {:ok, _} -> true
+          _ -> false
+        end)
+
       assert successful == 1
     end
 
@@ -711,12 +731,13 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "handles unicode in request_payload" do
-      prompt = prompt_fixture(
-        request_payload: %{
-          "content" => "Hello 世界 🌍 مرحبا Привет",
-          "emoji" => "🎉🚀✨"
-        }
-      )
+      prompt =
+        prompt_fixture(
+          request_payload: %{
+            "content" => "Hello 世界 🌍 مرحبا Привет",
+            "emoji" => "🎉🚀✨"
+          }
+        )
 
       assert prompt.request_payload["content"] =~ "世界"
       assert prompt.request_payload["emoji"] =~ "🎉"
@@ -740,21 +761,23 @@ defmodule Batcher.Batching.PromptTest do
     end
 
     test "handles newlines in request_payload" do
-      prompt = prompt_fixture(
-        request_payload: %{
-          "content" => "Line 1\nLine 2\nLine 3"
-        }
-      )
+      prompt =
+        prompt_fixture(
+          request_payload: %{
+            "content" => "Line 1\nLine 2\nLine 3"
+          }
+        )
 
       assert prompt.request_payload["content"] =~ "\n"
     end
 
     test "handles tabs and special whitespace" do
-      prompt = prompt_fixture(
-        request_payload: %{
-          "content" => "Tab\there\nSpace  here"
-        }
-      )
+      prompt =
+        prompt_fixture(
+          request_payload: %{
+            "content" => "Tab\there\nSpace  here"
+          }
+        )
 
       assert prompt.request_payload["content"] =~ "\t"
     end

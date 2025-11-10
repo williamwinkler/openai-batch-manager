@@ -15,11 +15,11 @@ defmodule Batcher.Batching.Validations.ValidateDeliveryConfig do
 
     webhook_url =
       Ash.Changeset.get_argument(changeset, :webhook_url) ||
-      Ash.Changeset.get_attribute(changeset, :webhook_url)
+        Ash.Changeset.get_attribute(changeset, :webhook_url)
 
     rabbitmq_queue =
       Ash.Changeset.get_argument(changeset, :rabbitmq_queue) ||
-      Ash.Changeset.get_attribute(changeset, :rabbitmq_queue)
+        Ash.Changeset.get_attribute(changeset, :rabbitmq_queue)
 
     case delivery_type do
       :webhook ->

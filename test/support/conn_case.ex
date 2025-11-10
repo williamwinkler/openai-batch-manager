@@ -33,6 +33,16 @@ defmodule BatcherWeb.ConnCase do
 
   setup tags do
     Batcher.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+
+    # Switch to shared mode so GenServer processes (like BatchBuilder) can access the sandbox
+    unless tags[:async] do
+      Ecto.Adapters.SQL.Sandbox.mode(Batcher.Repo, {:shared, self()})
+    end
+
+    conn =
+      Phoenix.ConnTest.build_conn()
+      |> Plug.Conn.put_req_header("content-type", "application/json")
+
+    {:ok, conn: conn}
   end
 end

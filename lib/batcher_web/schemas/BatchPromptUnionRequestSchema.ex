@@ -1,6 +1,7 @@
 defmodule BatcherWeb.Schemas.BatchPromptUnionRequestSchema do
   @moduledoc "Union of request bodies for responses, embeddings, and moderations."
   alias OpenApiSpex.{Schema, Discriminator}
+
   alias BatcherWeb.Schemas.{
     ResponsesRequestBodySchema,
     EmbeddingsRequestBodySchema,

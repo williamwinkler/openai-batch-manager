@@ -20,7 +20,14 @@ defmodule Batcher.BatchBuilder do
   use GenServer
   require Logger
 
-  @max_prompts Application.compile_env(:batcher, [__MODULE__, :max_prompts], 50_000)
+  alias Batcher.Batching.{BatchLimits, BatchQueries}
+  alias Batcher.Utils.Format
+
+  @max_prompts Application.compile_env(
+                 :batcher,
+                 [__MODULE__, :max_prompts],
+                 BatchLimits.max_prompts_per_batch()
+               )
   @max_age_hours Application.compile_env(:batcher, [__MODULE__, :max_age_hours], 1)
   @check_interval_ms Application.compile_env(
                        :batcher,
@@ -32,9 +39,16 @@ defmodule Batcher.BatchBuilder do
 
   @doc """
   Starts a BatchBuilder for the given endpoint and model combination.
+
+  Options:
+  - `test_pid` - Optional PID of the test process for sandbox allowance
   """
   def start_link({endpoint, model}) do
     GenServer.start_link(__MODULE__, {endpoint, model}, name: via_tuple(endpoint, model))
+  end
+
+  def start_link({endpoint, model, opts}) when is_list(opts) do
+    GenServer.start_link(__MODULE__, {endpoint, model, opts}, name: via_tuple(endpoint, model))
   end
 
   @doc """
@@ -76,6 +90,15 @@ defmodule Batcher.BatchBuilder do
 
   @impl true
   def init({endpoint, model}) do
+    init({endpoint, model, []})
+  end
+
+  def init({endpoint, model, opts}) do
+    # Allow sandbox access for testing
+    if test_pid = Keyword.get(opts, :test_pid) do
+      Ecto.Adapters.SQL.Sandbox.allow(Batcher.Repo, test_pid, self())
+    end
+
     # Try to find an existing draft batch for this model/endpoint combination
     # If none exists, create a new one
     batch =
@@ -98,10 +121,13 @@ defmodule Batcher.BatchBuilder do
           new_batch
       end
 
-    # Count existing prompts in this batch to maintain accurate state
-    prompt_count = count_prompts_in_batch(batch.id)
+    # Count existing prompts and sum their sizes to maintain accurate state
+    prompt_count = BatchQueries.count_prompts_in_batch(batch.id)
+    total_size_bytes = BatchQueries.sum_prompt_sizes_in_batch(batch.id)
 
-    Logger.info("BatchBuilder initialized: batch_id=#{batch.id} existing_prompts=#{prompt_count}")
+    Logger.info(
+      "BatchBuilder initialized: batch_id=#{batch.id} existing_prompts=#{prompt_count} total_size=#{Format.bytes(total_size_bytes)}"
+    )
 
     # Schedule periodic check
     schedule_check()
@@ -112,6 +138,7 @@ defmodule Batcher.BatchBuilder do
        endpoint: endpoint,
        model: model,
        prompt_count: prompt_count,
+       total_size_bytes: total_size_bytes,
        started_at: DateTime.utc_now(),
        status: :collecting
      }}
@@ -128,53 +155,75 @@ defmodule Batcher.BatchBuilder do
         {:reply, {:error, :batch_full}, state}
 
       true ->
-        # Create Prompt record via internal action
-        full_data = Map.put(prompt_data, :batch_id, state.batch_id)
+        # Compute the size of this prompt to check if it fits
+        # (The Ash change will compute it again, but we need it now for the check)
+        prompt_size = BatchQueries.compute_payload_size(prompt_data.request_payload)
+        new_total_size = state.total_size_bytes + prompt_size
 
-        Logger.debug(
-          "Creating prompt via Ash: batch_id=#{full_data.batch_id} custom_id=#{full_data.custom_id} delivery_type=#{full_data.delivery_type} webhook_url=#{inspect(full_data.webhook_url)} rabbitmq_queue=#{inspect(full_data.rabbitmq_queue)}"
-        )
+        # Check if adding this prompt would exceed 200 MB limit
+        if new_total_size > BatchLimits.max_batch_size_bytes() do
+          Logger.info(
+            "Batch #{state.batch_id} size limit reached. Current: #{Format.bytes(state.total_size_bytes)}, prompt: #{Format.bytes(prompt_size)}, would be: #{Format.bytes(new_total_size)}"
+          )
 
-        case Batcher.Batching.create_prompt(full_data) do
-          {:ok, prompt} ->
-            new_state = %{state | prompt_count: state.prompt_count + 1}
-            Logger.debug("[Batch #{state.batch_id}] Prompt created successfully. Total prompts: #{new_state.prompt_count}")
+          mark_ready_and_close(state)
+          {:reply, {:error, :batch_full}, state}
+        else
+          # Create Prompt record via internal action
+          full_data = Map.put(prompt_data, :batch_id, state.batch_id)
 
-            # Check if should mark ready (don't block the caller)
-            if should_mark_ready?(new_state) do
-              spawn(fn -> mark_ready_and_close(new_state) end)
-            end
+          Logger.debug(
+            "Creating prompt via Ash: batch_id=#{full_data.batch_id} custom_id=#{full_data.custom_id} delivery_type=#{full_data.delivery_type} webhook_url=#{inspect(full_data.webhook_url)} rabbitmq_queue=#{inspect(full_data.rabbitmq_queue)}"
+          )
 
-            {:reply, {:ok, prompt}, new_state}
+          case Batcher.Batching.create_prompt(full_data) do
+            {:ok, prompt} ->
+              new_state = %{
+                state
+                | prompt_count: state.prompt_count + 1,
+                  total_size_bytes: state.total_size_bytes + prompt.request_payload_size
+              }
 
-          {:error, %Ash.Error.Invalid{} = error} ->
-            # Check if this is a unique constraint violation on custom_id
-            is_duplicate =
-              Enum.any?(error.errors, fn err ->
-                err.field == :custom_id and String.contains?(err.message, "already been taken")
-              end)
-
-            if is_duplicate do
-              Logger.warning("Duplicate custom_id attempted",
-                custom_id: full_data.custom_id,
-                batch_id: state.batch_id
+              Logger.debug(
+                "[Batch #{state.batch_id}] Prompt created successfully. Total prompts: #{new_state.prompt_count}, total size: #{Format.bytes(new_state.total_size_bytes)}"
               )
 
-              {:reply, {:error, :custom_id_already_taken}, state}
-            else
+              # Check if should mark ready (don't block the caller)
+              if should_mark_ready?(new_state) do
+                spawn(fn -> mark_ready_and_close(new_state) end)
+              end
+
+              {:reply, {:ok, prompt}, new_state}
+
+            {:error, %Ash.Error.Invalid{} = error} ->
+              # Check if this is a unique constraint violation on custom_id
+              is_duplicate =
+                Enum.any?(error.errors, fn err ->
+                  err.field == :custom_id and String.contains?(err.message, "already been taken")
+                end)
+
+              if is_duplicate do
+                Logger.warning("Duplicate custom_id attempted",
+                  custom_id: full_data.custom_id,
+                  batch_id: state.batch_id
+                )
+
+                {:reply, {:error, :custom_id_already_taken}, state}
+              else
+                Logger.error(
+                  "Failed to create prompt in database: #{inspect(error, pretty: true, limit: :infinity)}"
+                )
+
+                {:reply, {:error, error}, state}
+              end
+
+            {:error, error} ->
               Logger.error(
                 "Failed to create prompt in database: #{inspect(error, pretty: true, limit: :infinity)}"
               )
 
               {:reply, {:error, error}, state}
-            end
-
-          {:error, error} ->
-            Logger.error(
-              "Failed to create prompt in database: #{inspect(error, pretty: true, limit: :infinity)}"
-            )
-
-            {:reply, {:error, error}, state}
+          end
         end
     end
   end
@@ -203,14 +252,9 @@ defmodule Batcher.BatchBuilder do
   end
 
   defp mark_ready_and_close(state) do
-    Logger.info(
-      "Marking batch #{state.batch_id} ready for upload (#{state.prompt_count} prompts)"
-    )
-
     # Call batch :mark_ready action
     {:ok, _batch} = Batcher.Batching.batch_mark_ready(state.batch_id)
-
-    # TODO: Trigger Oban job to upload batch
+    Logger.info("Batch #{state.batch_id} marked ready for upload")
 
     # Unregister from registry (new requests will create new BatchBuilder)
     Registry.unregister(Batcher.BatchRegistry, {state.endpoint, state.model})
@@ -225,15 +269,5 @@ defmodule Batcher.BatchBuilder do
 
   defp via_tuple(endpoint, model) do
     {:via, Registry, {Batcher.BatchRegistry, {endpoint, model}}}
-  end
-
-  defp count_prompts_in_batch(batch_id_value) do
-    # Ash.count! runs a SELECT COUNT(*) query - does NOT load records
-    require Ash.Query
-
-    Batcher.Batching.Prompt
-    |> Ash.Query.for_read(:read)
-    |> Ash.Query.filter(batch_id == ^batch_id_value)
-    |> Ash.count!()
   end
 end

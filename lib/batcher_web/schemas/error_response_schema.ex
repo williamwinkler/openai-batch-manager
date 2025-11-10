@@ -18,7 +18,11 @@ defmodule BatcherWeb.Schemas.ErrorResponseSchema do
           properties: %{
             code: %Schema{type: :string, description: "Error code", example: "required"},
             title: %Schema{type: :string, description: "Error title", example: "is required"},
-            detail: %Schema{type: :string, description: "Detailed error message", example: "custom_id is required"},
+            detail: %Schema{
+              type: :string,
+              description: "Detailed error message",
+              example: "custom_id is required"
+            },
             source: %Schema{
               type: :object,
               properties: %{
