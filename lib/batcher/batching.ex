@@ -7,20 +7,10 @@ defmodule Batcher.Batching do
       define :create_batch, action: :create, args: [:model, :endpoint]
       define :get_batches, action: :read
       define :get_batch_by_id, action: :read, get_by: :id
-      define :find_draft_batch, action: :find_draft_batch, args: [:model, :endpoint]
+      define :find_building_batch, action: :find_building_batch, args: [:model, :endpoint]
       define :destroy_batch, action: :destroy
 
-      # Transitions
-      define :batch_mark_ready, action: :mark_ready
-      define :batch_begin_upload, action: :begin_upload
-      define :batch_mark_validating, action: :mark_validating
-      define :batch_mark_in_progress, action: :mark_in_progress
-      define :batch_mark_finalizing, action: :mark_finalizing
-      define :batch_begin_download, action: :begin_download
-      define :batch_mark_completed, action: :mark_completed
-      define :batch_mark_failed, action: :mark_failed
-      define :batch_mark_expired, action: :mark_expired
-      define :batch_cancel, action: :cancel
+      define :start_batch_upload, action: :start_upload
     end
 
     resource Batcher.Batching.Prompt do

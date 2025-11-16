@@ -52,13 +52,8 @@ defmodule Batcher.Application do
   end
 
   defp ensure_batch_directory do
-    case Batcher.Batching.BatchFile.ensure_directory_exists() do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        raise "Failed to create batch storage directory: #{reason}. " <>
-                "Ensure BATCH_STORAGE_PATH is writable or run with appropriate permissions."
-    end
+    batches_dir = System.get_env("BATCHES_DIR") || "./data/batches"
+    File.mkdir_p!(batches_dir)
+    :ok
   end
 end

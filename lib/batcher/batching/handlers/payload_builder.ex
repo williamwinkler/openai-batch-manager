@@ -37,6 +37,7 @@ defmodule Batcher.Batching.Handlers.PayloadBuilder do
     |> normalize_keys()
     |> Map.drop(["delivery", "tag"])
     |> rename_key("endpoint", "url")
+    |> Map.put("method", "POST")
     |> Map.update("input", nil, &normalize_input/1)
   end
 
@@ -64,6 +65,7 @@ defmodule Batcher.Batching.Handlers.PayloadBuilder do
     |> normalize_keys()
     |> Map.drop(["delivery", "tag"])
     |> rename_key("endpoint", "url")
+    |> Map.put("method", "POST")
     |> Map.update("input", nil, &normalize_input/1)
   end
 
@@ -90,6 +92,7 @@ defmodule Batcher.Batching.Handlers.PayloadBuilder do
     |> normalize_keys()
     |> Map.drop(["delivery", "tag"])
     |> rename_key("endpoint", "url")
+    |> Map.put("method", "POST")
     |> Map.update("input", nil, &normalize_input/1)
   end
 

@@ -23,12 +23,21 @@ defmodule Batcher.Batching.Changes.ComputePayloadSize do
         nil ->
           changeset
 
-        payload when is_map(payload) ->
-          # Encode the payload to JSON and get byte size
-          size = payload |> Jason.encode!() |> byte_size()
-
+        payload when is_binary(payload) ->
           # Set the computed size
-          Ash.Changeset.force_change_attribute(changeset, :request_payload_size, size)
+          Ash.Changeset.force_change_attribute(
+            changeset,
+            :request_payload_size,
+            payload |> byte_size()
+          )
+
+        payload when is_map(payload) ->
+          Ash.Changeset.force_change_attribute(
+            changeset,
+            :request_payload_size,
+            # If payload is a map, encode to JSON first
+            payload |> JSON.encode!() |> byte_size()
+          )
 
         _other ->
           changeset

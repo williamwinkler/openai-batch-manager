@@ -78,10 +78,11 @@ defmodule Batcher.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 0.26"},
-      {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
-      {:ex_json_schema, "~> 0.11.1"}
+      {:ex_json_schema, "~> 0.11.1"},
+      {:dotenvy, "~> 1.1.0"},
+      {:multipart, "~> 0.4.0"}
     ]
   end
 

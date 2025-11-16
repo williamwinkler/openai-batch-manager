@@ -1,3 +1,40 @@
+# Docker Usage & Batch File Storage
+
+
+This project stores temporary batch files in `/data` inside the container. For both development and production, mount a local directory to `/data` for easy access and persistence.
+
+## Docker Run Example
+
+
+
+To run the application and persist batch files, mount a volume to `/data`:
+
+```sh
+docker run \
+   -v $(pwd)/data:/data \
+   -e DATABASE_URL=sqlite:///data/db.sqlite3 \
+   -p 4000:4000 \
+   openai-batch-manager:latest
+```
+
+## Docker Compose Example
+
+```yaml
+version: '3.8'
+services:
+   batcher:
+      image: openai-batch-manager:latest
+      ports:
+         - "4000:4000"
+      environment:
+         - DATABASE_URL=sqlite:///var/lib/openai-batch-manager/db.sqlite3
+         volumes:
+         - ./data:/data
+```
+
+**Note:**
+- The host directory `./data` will persist batch files outside the container.
+- You can change the host path as needed, but the container path must remain `/data`.
 # LLM Batch Manager
 
 A Phoenix 1.8.1 web application built with the Ash Framework for managing batching of LLM prompts for processing by providers like OpenAI.

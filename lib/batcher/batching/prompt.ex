@@ -151,9 +151,8 @@ defmodule Batcher.Batching.Prompt do
       public? true
     end
 
-    # Full request payload (endpoint-specific)
-    attribute :request_payload, :map do
-      description "Complete request body ready for JSONL batch file"
+    attribute :request_payload, :string do
+      description "Complete request payload as JSON object"
       allow_nil? false
       public? true
     end

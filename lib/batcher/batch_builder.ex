@@ -20,6 +20,7 @@ defmodule Batcher.BatchBuilder do
   use GenServer
   require Logger
 
+  require Ash.Query
   alias Batcher.Batching.{BatchLimits, BatchQueries}
   alias Batcher.Utils.Format
 
@@ -76,6 +77,10 @@ defmodule Batcher.BatchBuilder do
     end
   end
 
+  def upload_batch(endpoint, model) do
+    GenServer.cast(via_tuple(endpoint, model), :upload_batch)
+  end
+
   @doc """
   Get current state of a BatchBuilder (for monitoring/debugging).
   """
@@ -102,7 +107,7 @@ defmodule Batcher.BatchBuilder do
     # Try to find an existing draft batch for this model/endpoint combination
     # If none exists, create a new one
     batch =
-      case Batcher.Batching.find_draft_batch(model, endpoint) do
+      case Batcher.Batching.find_building_batch(model, endpoint) do
         {:ok, existing_batch} ->
           Logger.info(
             "BatchBuilder reusing existing draft batch: endpoint=#{endpoint} model=#{model} batch_id=#{existing_batch.id}"
@@ -176,6 +181,9 @@ defmodule Batcher.BatchBuilder do
             "Creating prompt via Ash: batch_id=#{full_data.batch_id} custom_id=#{full_data.custom_id} delivery_type=#{full_data.delivery_type} webhook_url=#{inspect(full_data.webhook_url)} rabbitmq_queue=#{inspect(full_data.rabbitmq_queue)}"
           )
 
+          # Turn the request_payload into a JSON string
+          full_data = Map.update!(full_data, :request_payload, &JSON.encode!/1)
+
           case Batcher.Batching.create_prompt(full_data) do
             {:ok, prompt} ->
               new_state = %{
@@ -234,10 +242,16 @@ defmodule Batcher.BatchBuilder do
   end
 
   @impl true
+  def handle_cast(:upload_batch, state) do
+    new_state = mark_ready_and_close(state)
+    {:noreply, new_state}
+  end
+
+  @impl true
   def handle_info(:check_if_ready, state) do
     if should_mark_ready?(state) do
-      mark_ready_and_close(state)
-      {:noreply, state}
+      new_state = mark_ready_and_close(state)
+      {:noreply, new_state}
     else
       schedule_check()
       {:noreply, state}
@@ -252,14 +266,16 @@ defmodule Batcher.BatchBuilder do
   end
 
   defp mark_ready_and_close(state) do
-    # Call batch :mark_ready action
-    {:ok, _batch} = Batcher.Batching.batch_mark_ready(state.batch_id)
-    Logger.info("Batch #{state.batch_id} marked ready for upload")
-
-    # Unregister from registry (new requests will create new BatchBuilder)
     Registry.unregister(Batcher.BatchRegistry, {state.endpoint, state.model})
 
-    # Update status to prevent new prompts
+    batch = Batcher.Batching.get_batch_by_id!(state.batch_id)
+
+    Batcher.Batching.start_batch_upload!(batch)
+
+    Logger.info(
+      "Batch #{state.batch_id} marked ready for upload: total_prompts=#{state.prompt_count} total_size=#{Format.bytes(state.total_size_bytes)}"
+    )
+
     %{state | status: :ready_for_upload}
   end
 

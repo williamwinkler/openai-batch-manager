@@ -502,32 +502,32 @@ defmodule Batcher.Batching.BatchTest do
     end
   end
 
-  describe "find_draft_batch/2" do
+  describe "find_building_batch/2" do
     test "finds existing draft batch for model/endpoint" do
       {:ok, batch} = Batching.create_batch("gpt-4", "/v1/responses")
 
-      {:ok, found_batch} = Batching.find_draft_batch("gpt-4", "/v1/responses")
+      {:ok, found_batch} = Batching.find_building_batch("gpt-4", "/v1/responses")
 
       assert found_batch.id == batch.id
       assert found_batch.state == :draft
     end
 
     test "returns error when no draft batch exists" do
-      {:error, _} = Batching.find_draft_batch("nonexistent-model", "/v1/nonexistent")
+      {:error, _} = Batching.find_building_batch("nonexistent-model", "/v1/nonexistent")
     end
 
     test "only finds draft batches, not other states" do
       {:ok, batch} = Batching.create_batch("gpt-4-ready", "/v1/responses")
       {:ok, _} = Batching.batch_mark_ready(batch)
 
-      {:error, _} = Batching.find_draft_batch("gpt-4-ready", "/v1/responses")
+      {:error, _} = Batching.find_building_batch("gpt-4-ready", "/v1/responses")
     end
 
     test "finds correct batch when multiple exist for different models" do
       {:ok, batch1} = Batching.create_batch("gpt-4", "/v1/responses")
       {:ok, _batch2} = Batching.create_batch("gpt-4o", "/v1/responses")
 
-      {:ok, found} = Batching.find_draft_batch("gpt-4", "/v1/responses")
+      {:ok, found} = Batching.find_building_batch("gpt-4", "/v1/responses")
 
       assert found.id == batch1.id
     end
@@ -536,7 +536,7 @@ defmodule Batcher.Batching.BatchTest do
       {:ok, batch1} = Batching.create_batch("gpt-4", "/v1/responses")
       {:ok, _batch2} = Batching.create_batch("gpt-4", "/v1/embeddings")
 
-      {:ok, found} = Batching.find_draft_batch("gpt-4", "/v1/responses")
+      {:ok, found} = Batching.find_building_batch("gpt-4", "/v1/responses")
 
       assert found.id == batch1.id
     end

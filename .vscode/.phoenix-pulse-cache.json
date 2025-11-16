@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1762714514016,
+  "timestamp": 1763156106060,
   "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager",
   "registries": {
     "components": {
@@ -595,6 +595,26 @@
           ]
         ],
         [
+          "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex",
+          []
+        ],
+        [
           "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex",
           [
             {
@@ -672,6 +692,11 @@
       ],
       "fileHashes": {
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex": "e458838a259fb2cf0cffafeff0fc63ba4a6a0dfd",
+        "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex": "edeacbe56e47bc4d8963fc04b46944c78a992529",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex": "67014a729026062c8b0e5700e32990388cff5ae8",
+        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "3fdae749f28e083d718b83d6f61fca9182b85f3a",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex": "9914cb9f74610e2b8b74b5dd39d6051d4a3c1b32",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex": "77b658533195af1e9536b58d5fa025619216046a",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/error_html.ex": "04bab988e949d70d3082537959d710ed0e53f193",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex": "ed1c04c8d48841dfcffeabfa81ab2a70242cf16d"
@@ -685,46 +710,108 @@
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
     "events": {
-      "events": [],
-      "fileHashes": {},
+      "events": [
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex",
+          [
+            {
+              "name": "check_if_ready",
+              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex",
+              "moduleName": "Batcher.BatchBuilder",
+              "line": 258,
+              "params": ":atom",
+              "kind": "handle_info",
+              "doc": "Get current state of a BatchBuilder (for monitoring/debugging).",
+              "clause": "def handle_info(:check_if_ready, state) do",
+              "nameKind": "atom"
+            }
+          ]
+        ]
+      ],
+      "fileHashes": {
+        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "3fdae749f28e083d718b83d6f61fca9182b85f3a",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex": "67014a729026062c8b0e5700e32990388cff5ae8",
+        "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex": "edeacbe56e47bc4d8963fc04b46944c78a992529",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex": "9914cb9f74610e2b8b74b5dd39d6051d4a3c1b32"
+      },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
     "routes": {
       "routes": [
         {
-          "path": "/api/prompt",
-          "verb": "POST",
-          "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
-          "line": 38,
-          "helperBase": "api_prompt",
-          "params": [],
-          "isResource": false,
-          "controller": "BatcherWeb.PromptController",
-          "action": "create",
-          "scopePath": "/api"
-        },
-        {
-          "path": "/api/swaggerui",
-          "verb": "FORWARD",
-          "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
-          "line": 33,
-          "helperBase": "api_swaggerui",
-          "params": [],
-          "isResource": false,
-          "forwardTo": "OpenApiSpex.Plug.SwaggerUI",
-          "scopePath": "/api"
-        },
-        {
-          "path": "/",
           "verb": "GET",
+          "path": "/",
           "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
           "line": 23,
+          "controller": "PageController",
+          "action": "home",
           "helperBase": "root",
           "params": [],
           "isResource": false,
-          "controller": "PageController",
-          "action": "home",
-          "scopePath": "/"
+          "pipeline": "browser"
+        },
+        {
+          "verb": "GET",
+          "path": "/api/openapi",
+          "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
+          "line": 31,
+          "controller": "OpenApiSpex.Plug.RenderSpec",
+          "helperBase": "openapi",
+          "params": [],
+          "isResource": false,
+          "scopePath": "/api"
+        },
+        {
+          "verb": "FORWARD",
+          "path": "/api/swaggerui",
+          "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
+          "line": 33,
+          "forwardTo": "OpenApiSpex.Plug.SwaggerUI",
+          "helperBase": "swaggerui",
+          "params": [],
+          "isResource": false,
+          "scopePath": "/api"
+        },
+        {
+          "verb": "POST",
+          "path": "/api/prompt",
+          "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
+          "line": 38,
+          "controller": "BatcherWeb.PromptController",
+          "action": "create",
+          "helperBase": "prompt",
+          "params": [],
+          "isResource": false,
+          "scopePath": "/api"
+        },
+        {
+          "verb": "FORWARD",
+          "path": "/dev/mailbox",
+          "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
+          "line": 54,
+          "forwardTo": "Plug.Swoosh.MailboxPreview",
+          "helperBase": "mailbox",
+          "params": [],
+          "isResource": false,
+          "pipeline": "browser",
+          "scopePath": "/dev"
         }
       ],
       "fileHashes": {
@@ -777,7 +864,7 @@
       ],
       "fileHashes": {
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_controller.ex": "00916c1ace47bc36d0ef0cfa7b90fbe555ee3d82",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/prompt_controller.ex": "1ef3fb88d2c23cbd7aa36a823f4cf3dbfbf92f24"
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/prompt_controller.ex": "e091e0aab94462fea58616a7dffa23745327e811"
       },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },

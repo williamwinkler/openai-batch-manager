@@ -17,7 +17,8 @@ defmodule Batcher.Repo.Migrations.Init do
       add :error_msg, :text
       add :state, :text, null: false
       add :tag, :text
-      add :request_payload, :map, null: false
+      add :request_payload_size, :bigint, null: false
+      add :request_payload, :text, null: false
       add :custom_id, :text, null: false
       add :model, :text, null: false
       add :endpoint, :text, null: false
@@ -57,6 +58,7 @@ defmodule Batcher.Repo.Migrations.Init do
       add :model, :text, null: false
       add :endpoint, :text, null: false
       add :openai_batch_id, :text
+      add :openai_file_id, :text
       add :state, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end

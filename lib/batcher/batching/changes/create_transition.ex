@@ -4,28 +4,6 @@ defmodule Batcher.Batching.Changes.CreateTransition do
 
   This change automatically creates a transition record when a resource's state changes.
   It handles both initial state creation and subsequent state transitions.
-
-  ## Options
-
-  * `:transition_resource` - The transition resource module (e.g., `Batcher.Batching.PromptTransition`)
-  * `:state_attribute` - The attribute name for the state (defaults to `:status`)
-  * `:parent_id_field` - The field name for the parent resource ID (e.g., `:prompt_id`, `:batch_id`)
-
-  ## Example
-
-      # In a resource's actions:
-      create :create do
-        change Batcher.Batching.Changes.CreateTransition,
-          transition_resource: Batcher.Batching.PromptTransition,
-          parent_id_field: :prompt_id
-      end
-
-      update :some_transition do
-        change transition_state(:new_state)
-        change Batcher.Batching.Changes.CreateTransition,
-          transition_resource: Batcher.Batching.PromptTransition,
-          parent_id_field: :prompt_id
-      end
   """
   use Ash.Resource.Change
 

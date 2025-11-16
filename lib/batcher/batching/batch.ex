@@ -13,37 +13,57 @@ defmodule Batcher.Batching.Batch do
   end
 
   state_machine do
-    initial_states [:draft]
-    default_initial_state :draft
+    initial_states [:building]
+    default_initial_state :building
 
     transitions do
-      # Normal workflow
-      transition :mark_ready, from: :draft, to: :ready_for_upload
-      transition :begin_upload, from: :ready_for_upload, to: :uploading
-      transition :mark_validating, from: :uploading, to: :validating
-      transition :mark_in_progress, from: :validating, to: :in_progress
-      transition :mark_finalizing, from: :in_progress, to: :finalizing
-      transition :begin_download, from: :finalizing, to: :downloading
-      transition :mark_completed, from: :downloading, to: :completed
+      transition :start_upload, from: :building, to: :uploading
+      transition :upload, from: :uploading, to: :uploaded
+      transition :create_openai_batch, from: :uploaded, to: :openai_batch_created
+      transition :openai_validating, from: :openai_batch_created, to: :openai_validating
+      transition :openai_processing, from: :openai_validating, to: :openai_processing
+      transition :openai_completed, from: :openai_processing, to: :openai_completed
+      transition :downloading, from: :openai_completed, to: :downloading
+      transition :downloaded, from: :downloading, to: :downloaded
+      transition :ready_to_deliver, from: :downloaded, to: :ready_to_deliver
+      transition :delivering, from: :ready_to_deliver, to: :delivering
+      transition :completed, from: :delivering, to: :completed
 
-      # Failure transitions
-      transition :mark_failed,
+      transition :failed,
         from: [
-          :draft,
-          :ready_for_upload,
+          :building,
           :uploading,
-          :validating,
-          :in_progress,
-          :finalizing,
-          :downloading
+          :uploaded,
+          :openai_batch_created,
+          :openai_validating,
+          :openai_processing,
+          :openai_completed,
+          :downloading,
+          :downloaded,
+          :ready_to_deliver,
+          :delivering
         ],
         to: :failed
+    end
+  end
 
-      transition :mark_expired, from: [:validating, :in_progress, :finalizing], to: :expired
+  oban do
+    triggers do
+      trigger :upload do
+        action :upload
+        queue :batch_uploads
+        where expr(state == :uploading)
+        worker_module_name Batching.Batch.AshOban.Worker.UploadBatch
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.UploadBatch
+      end
 
-      transition :cancel,
-        from: [:draft, :ready_for_upload, :uploading, :validating],
-        to: :cancelled
+      trigger :create_openai_batch do
+        action :create_openai_batch
+        where expr(state == :uploaded)
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
+      end
     end
   end
 
@@ -53,81 +73,83 @@ defmodule Batcher.Batching.Batch do
     create :create do
       description "Create a new batch for OpenAI"
       accept [:model, :endpoint]
-
-      change Batching.Changes.CreateBatchFile
     end
 
-    read :find_draft_batch do
+    read :find_building_batch do
       description "Find a draft batch for the given model and endpoint"
-
-      argument :model, :string do
-        allow_nil? false
-      end
-
-      argument :endpoint, :string do
-        allow_nil? false
-      end
-
-      filter expr(state == :draft and model == ^arg(:model) and endpoint == ^arg(:endpoint))
-
-      # Return the first match (there should only be one draft batch per model/endpoint combo)
+      argument :model, :string, allow_nil?: false
+      argument :endpoint, :string, allow_nil?: false
+      filter expr(state == :building and model == ^arg(:model) and endpoint == ^arg(:endpoint))
       get? true
     end
 
-    # Transition actions
-    update :mark_ready do
-      require_atomic? false
-      change transition_state(:ready_for_upload)
-      change run_oban_trigger(:mark_ready)
-    end
-
-    update :begin_upload do
+    update :start_upload do
+      description "Start upload process for the batch"
       require_atomic? false
       change transition_state(:uploading)
+      change run_oban_trigger(:upload)
     end
 
-    update :mark_validating do
-      accept [:openai_batch_id]
+    update :upload do
+      description "Upload batch file to OpenAI"
       require_atomic? false
-      validate present(:openai_batch_id)
-      change transition_state(:validating)
+      change Batcher.Batching.Changes.UploadBatchFile
+      change transition_state(:uploaded)
+      change run_oban_trigger(:create_openai_batch)
     end
 
-    update :mark_in_progress do
+    update :create_openai_batch do
+      description "Create batch on OpenAI platform for processing"
       require_atomic? false
-      change transition_state(:in_progress)
+      change Batcher.Batching.Changes.CreateOpenaiBatch
+      change transition_state(:openai_batch_created)
     end
 
-    update :mark_finalizing do
+    # Add all missing state transition actions
+    update :openai_validating do
+      change transition_state(:openai_validating)
       require_atomic? false
-      change transition_state(:finalizing)
     end
 
-    update :begin_download do
+    update :openai_processing do
+      change transition_state(:openai_processing)
       require_atomic? false
+    end
+
+    update :openai_completed do
+      change transition_state(:openai_completed)
+      require_atomic? false
+    end
+
+    update :downloading do
       change transition_state(:downloading)
+      require_atomic? false
     end
 
-    update :mark_completed do
+    update :downloaded do
+      change transition_state(:downloaded)
       require_atomic? false
+    end
+
+    update :ready_to_deliver do
+      change transition_state(:ready_to_deliver)
+      require_atomic? false
+    end
+
+    update :delivering do
+      change transition_state(:delivering)
+      require_atomic? false
+    end
+
+    update :completed do
       change transition_state(:completed)
+      require_atomic? false
     end
 
-    update :mark_failed do
+    update :failed do
       accept [:error_msg]
-      require_atomic? false
       change transition_state(:failed)
-    end
-
-    update :mark_expired do
-      accept [:error_msg]
       require_atomic? false
-      change transition_state(:expired)
-    end
-
-    update :cancel do
-      require_atomic? false
-      change transition_state(:cancelled)
     end
   end
 
@@ -145,7 +167,11 @@ defmodule Batcher.Batching.Batch do
     attribute :state, Batching.Types.BatchStatus do
       description "Current state of the batch"
       allow_nil? false
-      default :draft
+      default :building
+    end
+
+    attribute :openai_file_id, :string do
+      description "File ID given by the OpenAI API"
     end
 
     attribute :openai_batch_id, :string do
@@ -180,18 +206,6 @@ defmodule Batcher.Batching.Batch do
 
     has_many :transitions, Batching.BatchTransition do
       description "Audit trail of status transitions"
-    end
-  end
-
-  oban do
-    triggers do
-      trigger :build_openai_batch_file do
-        action :build_openai_batch_file
-        where expr(state == :ready_for_upload)
-        scheduler_cron "*/1 * * * *" # Every minute
-        on_error :retry
-        max_attempts 5
-      end
     end
   end
 end

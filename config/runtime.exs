@@ -7,6 +7,11 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+import Dotenvy
+source!([Path.absname(".env"), System.get_env()])
+
+config :batcher, :openai_api_key, env!("OPENAI_API_KEY", :string)
+
 # Batch storage configuration
 # Production: /var/lib/batcher/batches (Docker volume mount point)
 # Dev/Test: tmp/batches (local writable directory)

@@ -59,7 +59,7 @@ defmodule Batcher.Batching.BatchQueries do
   """
   def compute_payload_size(request_payload) when is_map(request_payload) do
     request_payload
-    |> Jason.encode!()
+    |> JSON.encode!()
     |> byte_size()
   end
 end
