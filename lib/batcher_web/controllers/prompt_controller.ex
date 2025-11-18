@@ -3,26 +3,24 @@ defmodule BatcherWeb.PromptController do
   use OpenApiSpex.ControllerSpecs
 
   alias Batcher.Batching.Handlers.PromptRequestHandler
-  alias BatcherWeb.Schemas.{PromptResponseSchema, ErrorResponseSchema}
+  alias BatcherWeb.Schemas.{RequestInputObject, ErrorResponseSchema, PromptResponseSchema}
 
   # OpenApiSpex plugs automatically validate and cast the request
   plug OpenApiSpex.Plug.CastAndValidate, json_render_error_v2: true
 
-  alias BatcherWeb.Schemas.BatchPromptUnionRequestSchema
-
   operation(:create,
-    summary: "Send a prompt for batch processing",
+    summary: "Send a request for batch processing",
     request_body: {
       "Request body",
       "application/json",
-      BatchPromptUnionRequestSchema,
+      RequestInputObject,
       required: true
     },
     responses: [
-      accepted: {"Prompt accepted for processing", "application/json", PromptResponseSchema},
+      accepted: {"Request accepted for processing", "application/json", PromptResponseSchema},
       bad_request: {"Bad request - validation errors", "application/json", ErrorResponseSchema},
       conflict:
-        {"Duplicate custom_id - a prompt with this custom_id already exists", "application/json",
+        {"Duplicate custom_id - a request with this custom_id already exists", "application/json",
          ErrorResponseSchema}
     ]
   )

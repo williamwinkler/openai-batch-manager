@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1763156106060,
+  "timestamp": 1763402042693,
   "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager",
   "registries": {
     "components": {
@@ -259,26 +259,233 @@
           "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
           [
             {
-              "name": "icon",
+              "name": "flash",
               "moduleName": "BatcherWeb.CoreComponents",
               "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
-              "line": 416,
+              "line": 50,
               "attributes": [
+                {
+                  "name": "id",
+                  "type": "string",
+                  "rawType": ":string",
+                  "required": false,
+                  "doc": "the optional id of flash container"
+                },
+                {
+                  "name": "flash",
+                  "type": "map",
+                  "rawType": ":map",
+                  "required": false,
+                  "default": "%{}",
+                  "doc": "the map of flash messages to display"
+                },
+                {
+                  "name": "title",
+                  "type": "string",
+                  "rawType": ":string",
+                  "required": false,
+                  "default": "nil"
+                },
+                {
+                  "name": "kind",
+                  "type": "atom",
+                  "rawType": ":atom",
+                  "required": false,
+                  "values": [
+                    "info",
+                    "error"
+                  ],
+                  "doc": "used for styling and flash lookup"
+                },
+                {
+                  "name": "rest",
+                  "type": "global",
+                  "rawType": ":global",
+                  "required": false,
+                  "doc": "the arbitrary HTML attributes to add to the flash container"
+                }
+              ],
+              "slots": [
+                {
+                  "name": "inner_block",
+                  "required": false,
+                  "attributes": [],
+                  "doc": "the optional inner block that renders the flash message"
+                }
+              ]
+            },
+            {
+              "name": "button",
+              "moduleName": "BatcherWeb.CoreComponents",
+              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
+              "line": 96,
+              "attributes": [
+                {
+                  "name": "rest",
+                  "type": "global",
+                  "rawType": ":global",
+                  "required": false
+                },
                 {
                   "name": "class",
                   "type": "string",
-                  "required": false,
-                  "default": "\"size-4\"",
-                  "rawType": "string"
+                  "rawType": ":string",
+                  "required": false
                 },
                 {
-                  "name": "name",
+                  "name": "variant",
                   "type": "string",
+                  "rawType": ":string",
+                  "required": false
+                }
+              ],
+              "slots": [
+                {
+                  "name": "inner_block",
                   "required": true,
-                  "rawType": "string"
+                  "attributes": []
+                }
+              ]
+            },
+            {
+              "name": "input",
+              "moduleName": "BatcherWeb.CoreComponents",
+              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
+              "line": 181,
+              "attributes": [
+                {
+                  "name": "options",
+                  "type": "list",
+                  "rawType": ":list",
+                  "required": false,
+                  "doc": "the options to pass to Phoenix.HTML.Form.options_for_select/2"
+                },
+                {
+                  "name": "multiple",
+                  "type": "boolean",
+                  "rawType": ":boolean",
+                  "required": false,
+                  "default": "false",
+                  "doc": "the multiple flag for select inputs"
+                },
+                {
+                  "name": "class",
+                  "type": "string",
+                  "rawType": ":string",
+                  "required": false,
+                  "default": "nil",
+                  "doc": "the input class to use over defaults"
+                },
+                {
+                  "name": "error_class",
+                  "type": "string",
+                  "rawType": ":string",
+                  "required": false,
+                  "default": "nil",
+                  "doc": "the input error class to use over defaults"
+                },
+                {
+                  "name": "rest",
+                  "type": "global",
+                  "rawType": ":global",
+                  "required": false
                 }
               ],
               "slots": []
+            },
+            {
+              "name": "error",
+              "moduleName": "BatcherWeb.CoreComponents",
+              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
+              "line": 273,
+              "attributes": [],
+              "slots": []
+            },
+            {
+              "name": "header",
+              "moduleName": "BatcherWeb.CoreComponents",
+              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
+              "line": 289,
+              "attributes": [],
+              "slots": [
+                {
+                  "name": "inner_block",
+                  "required": true,
+                  "attributes": []
+                },
+                {
+                  "name": "subtitle",
+                  "required": false,
+                  "attributes": []
+                },
+                {
+                  "name": "actions",
+                  "required": false,
+                  "attributes": []
+                }
+              ]
+            },
+            {
+              "name": "table",
+              "moduleName": "BatcherWeb.CoreComponents",
+              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
+              "line": 330,
+              "attributes": [
+                {
+                  "name": "id",
+                  "type": "string",
+                  "rawType": ":string",
+                  "required": true
+                },
+                {
+                  "name": "rows",
+                  "type": "list",
+                  "rawType": ":list",
+                  "required": true
+                },
+                {
+                  "name": "row_id",
+                  "type": "any",
+                  "rawType": ":any",
+                  "required": false,
+                  "default": "nil",
+                  "doc": "the function for generating the row id"
+                },
+                {
+                  "name": "row_click",
+                  "type": "any",
+                  "rawType": ":any",
+                  "required": false,
+                  "default": "nil",
+                  "doc": "the function for handling phx-click on each row"
+                },
+                {
+                  "name": "row_item",
+                  "type": "any",
+                  "rawType": ":any",
+                  "required": false
+                }
+              ],
+              "slots": [
+                {
+                  "name": "col",
+                  "required": true,
+                  "attributes": [
+                    {
+                      "name": "label",
+                      "type": "string",
+                      "rawType": ":string",
+                      "required": false
+                    }
+                  ]
+                },
+                {
+                  "name": "action",
+                  "required": false,
+                  "attributes": [],
+                  "doc": "the slot for showing user actions in the last table column"
+                }
+              ]
             },
             {
               "name": "list",
@@ -292,12 +499,9 @@
                   "required": true,
                   "attributes": [
                     {
-                      "default": null,
-                      "line": 379,
                       "name": "title",
                       "type": "string",
-                      "values": null,
-                      "doc": null,
+                      "rawType": ":string",
                       "required": true
                     }
                   ]
@@ -305,325 +509,59 @@
               ]
             },
             {
-              "name": "table",
+              "name": "icon",
               "moduleName": "BatcherWeb.CoreComponents",
               "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
-              "line": 330,
+              "line": 416,
               "attributes": [
                 {
-                  "name": "row_item",
-                  "type": "any",
-                  "required": false,
-                  "default": "{:&, [line: 321, column: 14], [{:/, [line: 321, column: 32], [{{:., [line: 321, column: 23], [{:__aliases__, [last: [line: 321, column: 15], line: 321, column: 15], [:Function]}, :identity]}, [no_parens: true, line: 321, column: 24], []}, 1]}]}",
-                  "doc": "the function for mapping each row before calling the :col and :action slots",
-                  "rawType": "any"
-                },
-                {
-                  "name": "row_click",
-                  "type": "any",
-                  "required": false,
-                  "default": "nil",
-                  "doc": "the function for handling phx-click on each row",
-                  "rawType": "any"
-                },
-                {
-                  "name": "row_id",
-                  "type": "any",
-                  "required": false,
-                  "default": "nil",
-                  "doc": "the function for generating the row id",
-                  "rawType": "any"
-                },
-                {
-                  "name": "rows",
-                  "type": "list",
-                  "required": true,
-                  "rawType": "list"
-                },
-                {
-                  "name": "id",
+                  "name": "name",
                   "type": "string",
-                  "required": true,
-                  "rawType": "string"
-                }
-              ],
-              "slots": [
-                {
-                  "name": "action",
-                  "required": false,
-                  "doc": "the slot for showing user actions in the last table column",
-                  "attributes": []
-                },
-                {
-                  "name": "col",
-                  "required": true,
-                  "attributes": [
-                    {
-                      "default": null,
-                      "line": 325,
-                      "name": "label",
-                      "type": "string",
-                      "values": null,
-                      "doc": null,
-                      "required": false
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "header",
-              "moduleName": "BatcherWeb.CoreComponents",
-              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
-              "line": 289,
-              "attributes": [],
-              "slots": [
-                {
-                  "name": "actions",
-                  "required": false,
-                  "attributes": []
-                },
-                {
-                  "name": "subtitle",
-                  "required": false,
-                  "attributes": []
-                },
-                {
-                  "name": "inner_block",
-                  "required": true,
-                  "attributes": []
-                }
-              ]
-            },
-            {
-              "name": "input",
-              "moduleName": "BatcherWeb.CoreComponents",
-              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
-              "line": 170,
-              "attributes": [
-                {
-                  "name": "rest",
-                  "type": "global",
-                  "required": false,
-                  "rawType": "global"
-                },
-                {
-                  "name": "error_class",
-                  "type": "string",
-                  "required": false,
-                  "default": "nil",
-                  "doc": "the input error class to use over defaults",
-                  "rawType": "string"
+                  "rawType": ":string",
+                  "required": true
                 },
                 {
                   "name": "class",
                   "type": "string",
+                  "rawType": ":string",
                   "required": false,
-                  "default": "nil",
-                  "doc": "the input class to use over defaults",
-                  "rawType": "string"
-                },
-                {
-                  "name": "multiple",
-                  "type": "boolean",
-                  "required": false,
-                  "default": "false",
-                  "doc": "the multiple flag for select inputs",
-                  "rawType": "boolean"
-                },
-                {
-                  "name": "options",
-                  "type": "list",
-                  "required": false,
-                  "doc": "the options to pass to Phoenix.HTML.Form.options_for_select/2",
-                  "rawType": "list"
-                },
-                {
-                  "name": "prompt",
-                  "type": "string",
-                  "required": false,
-                  "default": "nil",
-                  "doc": "the prompt for select inputs",
-                  "rawType": "string"
-                },
-                {
-                  "name": "checked",
-                  "type": "boolean",
-                  "required": false,
-                  "doc": "the checked flag for checkbox inputs",
-                  "rawType": "boolean"
-                },
-                {
-                  "name": "errors",
-                  "type": "list",
-                  "required": false,
-                  "default": "[]",
-                  "rawType": "list"
-                },
-                {
-                  "name": "field",
-                  "type": "{:__aliases__, [last: [line: 155, column: 29], line: 155, column: 16], [:Phoenix, :HTML, :FormField]}",
-                  "required": false,
-                  "doc": "a form field struct retrieved from the form, for example: @form[:email]",
-                  "rawType": "{:__aliases__, [last: [line: 155, column: 29], line: 155, column: 16], [:Phoenix, :HTML, :FormField]}"
-                },
-                {
-                  "name": "type",
-                  "type": "string",
-                  "required": false,
-                  "default": "\"text\"",
-                  "rawType": "string"
-                },
-                {
-                  "name": "value",
-                  "type": "any",
-                  "required": false,
-                  "rawType": "any"
-                },
-                {
-                  "name": "label",
-                  "type": "string",
-                  "required": false,
-                  "default": "nil",
-                  "rawType": "string"
-                },
-                {
-                  "name": "name",
-                  "type": "any",
-                  "required": false,
-                  "rawType": "any"
-                },
-                {
-                  "name": "id",
-                  "type": "any",
-                  "required": false,
-                  "default": "nil",
-                  "rawType": "any"
+                  "default": "\"size-4\""
                 }
               ],
               "slots": []
-            },
-            {
-              "name": "button",
-              "moduleName": "BatcherWeb.CoreComponents",
-              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
-              "line": 96,
-              "attributes": [
-                {
-                  "name": "variant",
-                  "type": "string",
-                  "required": false,
-                  "rawType": "string"
-                },
-                {
-                  "name": "class",
-                  "type": "string",
-                  "required": false,
-                  "rawType": "string"
-                },
-                {
-                  "name": "rest",
-                  "type": "global",
-                  "required": false,
-                  "rawType": "global"
-                }
-              ],
-              "slots": [
-                {
-                  "name": "inner_block",
-                  "required": true,
-                  "attributes": []
-                }
-              ]
-            },
-            {
-              "name": "flash",
-              "moduleName": "BatcherWeb.CoreComponents",
-              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex",
-              "line": 50,
-              "attributes": [
-                {
-                  "name": "rest",
-                  "type": "global",
-                  "required": false,
-                  "doc": "the arbitrary HTML attributes to add to the flash container",
-                  "rawType": "global"
-                },
-                {
-                  "name": "kind",
-                  "type": "atom",
-                  "required": false,
-                  "values": [
-                    "info",
-                    "error"
-                  ],
-                  "doc": "used for styling and flash lookup",
-                  "rawType": "atom"
-                },
-                {
-                  "name": "title",
-                  "type": "string",
-                  "required": false,
-                  "default": "nil",
-                  "rawType": "string"
-                },
-                {
-                  "name": "flash",
-                  "type": "map",
-                  "required": false,
-                  "default": "{:%{}, [closing: [line: 43, column: 33], line: 43, column: 31], []}",
-                  "doc": "the map of flash messages to display",
-                  "rawType": "map"
-                },
-                {
-                  "name": "id",
-                  "type": "string",
-                  "required": false,
-                  "doc": "the optional id of flash container",
-                  "rawType": "string"
-                }
-              ],
-              "slots": [
-                {
-                  "name": "inner_block",
-                  "required": false,
-                  "doc": "the optional inner block that renders the flash message",
-                  "attributes": []
-                }
-              ]
             }
           ]
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex",
-          []
         ],
         [
           "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex",
           [
             {
-              "name": "theme_toggle",
+              "name": "app",
               "moduleName": "BatcherWeb.Layouts",
               "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex",
-              "line": 123,
-              "attributes": [],
-              "slots": []
+              "line": 36,
+              "attributes": [
+                {
+                  "name": "flash",
+                  "type": "map",
+                  "rawType": ":map",
+                  "required": true,
+                  "doc": "the map of flash messages"
+                },
+                {
+                  "name": "current_scope",
+                  "type": "map",
+                  "rawType": ":map",
+                  "required": false
+                }
+              ],
+              "slots": [
+                {
+                  "name": "inner_block",
+                  "required": true,
+                  "attributes": []
+                }
+              ]
             },
             {
               "name": "flash_group",
@@ -632,52 +570,30 @@
               "line": 85,
               "attributes": [
                 {
-                  "name": "id",
-                  "type": "string",
-                  "required": false,
-                  "default": "\"flash-group\"",
-                  "doc": "the optional id of flash container",
-                  "rawType": "string"
-                },
-                {
                   "name": "flash",
                   "type": "map",
+                  "rawType": ":map",
                   "required": true,
-                  "doc": "the map of flash messages",
-                  "rawType": "map"
+                  "doc": "the map of flash messages"
+                },
+                {
+                  "name": "id",
+                  "type": "string",
+                  "rawType": ":string",
+                  "required": false,
+                  "default": "\"flash-group\"",
+                  "doc": "the optional id of flash container"
                 }
               ],
               "slots": []
             },
             {
-              "name": "app",
+              "name": "theme_toggle",
               "moduleName": "BatcherWeb.Layouts",
               "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex",
-              "line": 36,
-              "attributes": [
-                {
-                  "name": "current_scope",
-                  "type": "map",
-                  "required": false,
-                  "default": "nil",
-                  "doc": "the current [scope](https://hexdocs.pm/phoenix/scopes.html)",
-                  "rawType": "map"
-                },
-                {
-                  "name": "flash",
-                  "type": "map",
-                  "required": true,
-                  "doc": "the map of flash messages",
-                  "rawType": "map"
-                }
-              ],
-              "slots": [
-                {
-                  "name": "inner_block",
-                  "required": true,
-                  "attributes": []
-                }
-              ]
+              "line": 123,
+              "attributes": [],
+              "slots": []
             }
           ]
         ],
@@ -688,18 +604,38 @@
         [
           "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex",
           []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex",
+          []
         ]
       ],
       "fileHashes": {
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex": "e458838a259fb2cf0cffafeff0fc63ba4a6a0dfd",
-        "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex": "edeacbe56e47bc4d8963fc04b46944c78a992529",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex": "67014a729026062c8b0e5700e32990388cff5ae8",
-        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "3fdae749f28e083d718b83d6f61fca9182b85f3a",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex": "9914cb9f74610e2b8b74b5dd39d6051d4a3c1b32",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex": "77b658533195af1e9536b58d5fa025619216046a",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/error_html.ex": "04bab988e949d70d3082537959d710ed0e53f193",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex": "ed1c04c8d48841dfcffeabfa81ab2a70242cf16d"
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex": "ed1c04c8d48841dfcffeabfa81ab2a70242cf16d",
+        "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex": "8a49e472b3f34b0019d88b4255fa07acf7c173b3",
+        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "859329f4322223fe64ffd833406671e2d3ae5f4f",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex": "6d8af71b06637b4ab383aa3db04d2dfdcb4fa587",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex": "6877b40530f7517341ce4a853e5988089ec1937e"
       },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
@@ -712,44 +648,32 @@
     "events": {
       "events": [
         [
-          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex",
-          []
-        ],
-        [
           "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
           []
         ],
         [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex",
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex",
           []
         ],
         [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex",
-          [
-            {
-              "name": "check_if_ready",
-              "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex",
-              "moduleName": "Batcher.BatchBuilder",
-              "line": 258,
-              "params": ":atom",
-              "kind": "handle_info",
-              "doc": "Get current state of a BatchBuilder (for monitoring/debugging).",
-              "clause": "def handle_info(:check_if_ready, state) do",
-              "nameKind": "atom"
-            }
-          ]
+          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex",
+          []
+        ],
+        [
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex",
+          []
         ]
       ],
       "fileHashes": {
-        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "3fdae749f28e083d718b83d6f61fca9182b85f3a",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/application.ex": "67014a729026062c8b0e5700e32990388cff5ae8",
         "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/openai_batch_client.ex": "edeacbe56e47bc4d8963fc04b46944c78a992529",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batch_builder.ex": "9914cb9f74610e2b8b74b5dd39d6051d4a3c1b32"
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex": "8a49e472b3f34b0019d88b4255fa07acf7c173b3",
+        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "859329f4322223fe64ffd833406671e2d3ae5f4f",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex": "6d8af71b06637b4ab383aa3db04d2dfdcb4fa587",
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex": "6877b40530f7517341ce4a853e5988089ec1937e"
       },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },

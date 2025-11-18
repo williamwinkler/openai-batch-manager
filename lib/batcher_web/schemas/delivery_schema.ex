@@ -1,16 +1,11 @@
 defmodule BatcherWeb.Schemas.DeliverySchema do
-  @moduledoc """
-  Delivery configuration. Exactly one of:
-  - webhook: { type: "webhook", webhook_url }
-  - rabbitmq: { type: "rabbitmq", rabbitmq_exchange, rabbitmq_queue }
-  """
   require OpenApiSpex
   alias OpenApiSpex.{Schema, Discriminator}
 
   OpenApiSpex.schema(%Schema{
     title: "Delivery",
     description:
-      "Delivery configuration for receiving results. Choose exactly one method via `type`.",
+      "Delivery configuration for receiving results. Choose exactly one method via `type`. This won't be included in the request to OpenAI.",
     discriminator: %Discriminator{
       propertyName: "type",
       mapping: %{

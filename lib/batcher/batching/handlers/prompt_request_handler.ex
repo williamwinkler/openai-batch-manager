@@ -55,7 +55,7 @@ defmodule Batcher.Batching.Handlers.PromptRequestHandler do
 
     # Build payload for the specific endpoint
     Logger.debug("Building payload for endpoint", endpoint: endpoint)
-    payload = build_payload(endpoint, request_body) |> Map.put("method", "POST")
+    payload = build_payload(endpoint, request_body)
     Logger.debug("Payload built", payload_keys: Map.keys(payload))
 
     # Assign to batch
