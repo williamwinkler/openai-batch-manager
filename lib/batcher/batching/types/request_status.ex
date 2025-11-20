@@ -1,6 +1,6 @@
-defmodule Batcher.Batching.Types.PromptStatus do
+defmodule Batcher.Batching.Types.RequestStatus do
   @moduledoc """
-  Prompt status enum type for state machine.
+  Request status enum type for state machine.
   """
   use Ash.Type.Enum,
     values: [

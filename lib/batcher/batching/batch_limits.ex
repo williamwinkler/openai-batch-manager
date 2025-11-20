@@ -7,11 +7,9 @@ defmodule Batcher.Batching.BatchLimits do
   Ref: https://platform.openai.com/docs/guides/batch
   """
 
-  # 200 MB limit for batch JSONL files
-  @max_batch_size_bytes 200 * 1024 * 1024
-  # 50,000 prompts per batch
-  @max_prompts_per_batch 50_000
+  @max_batch_size_bytes 200 * 1024 * 1024 # 200 MB limit for batch JSONL files
+  @max_requests_per_batch 50_000          # 50,000 requests per batch limit
 
   def max_batch_size_bytes, do: @max_batch_size_bytes
-  def max_prompts_per_batch, do: @max_prompts_per_batch
+  def max_requests_per_batch, do: @max_requests_per_batch
 end

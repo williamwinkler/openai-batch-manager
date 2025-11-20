@@ -1,14 +1,4 @@
-defmodule Batcher.Batching.Prompt do
-  @moduledoc """
-  Represents a prompt to be processed via OpenAI Batch API.
-
-  Prompts are automatically assigned to batches based on their endpoint and model.
-  Clients never specify batch_id - it's assigned by the BatchBuilder GenServer.
-
-  The prompt stores:
-  - Metadata: batch_id, custom_id, endpoint, model, delivery config, state
-  - Request payload: Full request body as JSON for JSONL generation
-  """
+defmodule Batcher.Batching.Request do
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Batching,
@@ -18,11 +8,12 @@ defmodule Batcher.Batching.Prompt do
   alias Batcher.Batching
 
   sqlite do
-    table "prompts"
+    table "requests"
     repo Batcher.Repo
 
     custom_indexes do
-      index [:custom_id], unique: true
+      # Ensure custom_id is unique within a batch
+      index [:custom_id, :batch_id], unique: true
     end
 
     references do
@@ -52,18 +43,18 @@ defmodule Batcher.Batching.Prompt do
     defaults [:read, :destroy]
 
     create :create do
-      description "Create prompt with batch_id assigned by BatchBuilder"
+      description "Create request with batch_id assigned by BatchBuilder"
 
       accept [
         :batch_id,
-        :endpoint,
+        :url,
         :model,
         :custom_id,
         :request_payload,
         :delivery_type,
         :webhook_url,
+        :rabbitmq_exchange,
         :rabbitmq_queue,
-        :tag
       ]
 
       change Batching.Changes.ComputePayloadSize
@@ -117,8 +108,8 @@ defmodule Batcher.Batching.Prompt do
 
   changes do
     change {Batching.Changes.CreateTransition,
-            transition_resource: Batching.PromptTransition,
-            parent_id_field: :prompt_id,
+            transition_resource: Batching.RequestTransition,
+            parent_id_field: :request_id,
             state_attribute: :state},
            where: [changing(:state)]
   end
@@ -126,14 +117,13 @@ defmodule Batcher.Batching.Prompt do
   attributes do
     integer_primary_key :id
 
-    # Batch relationship
-    attribute :batch_id, :integer do
+    attribute :custom_id, :string do
+      description "Custom identifier for the request (must be unique in it's batch)"
       allow_nil? false
       public? true
     end
 
-    # Endpoint identification
-    attribute :endpoint, :string do
+    attribute :url, :string do
       description "OpenAI Batch API endpoint (e.g., /v1/responses)"
       allow_nil? false
       public? true
@@ -141,12 +131,6 @@ defmodule Batcher.Batching.Prompt do
 
     attribute :model, :string do
       description "Model name (e.g., gpt-4o, text-embedding-3-large)"
-      allow_nil? false
-      public? true
-    end
-
-    attribute :custom_id, :string do
-      description "Globally unique identifier for this prompt"
       allow_nil? false
       public? true
     end
@@ -163,26 +147,16 @@ defmodule Batcher.Batching.Prompt do
       public? true
     end
 
-    # Optional tag for client-side organization
-    attribute :tag, :string do
-      description "Optional tag for grouping/filtering prompts"
-      public? true
-    end
-
     # State machine
-    attribute :state, Batching.Types.PromptStatus do
-      description "Current state of the prompt"
+    attribute :state, Batching.Types.RequestStatus do
+      description "Current state of the request"
       allow_nil? false
       default :pending
       public? true
     end
 
-    attribute :error_msg, :string do
-      description "Error message if processing or delivery failed"
-    end
-
     # Delivery configuration
-    attribute :delivery_type, Batching.Types.PromptDeliveryType do
+    attribute :delivery_type, Batching.Types.RequestDeliveryType do
       allow_nil? false
       description "How to deliver the processed result"
       public? true
@@ -193,9 +167,18 @@ defmodule Batcher.Batching.Prompt do
       public? true
     end
 
+    attribute :rabbitmq_exchange, :string do
+      description "RabbitMQ exchange"
+      public? true
+    end
+
     attribute :rabbitmq_queue, :string do
       description "RabbitMQ queue (required if delivery_type is rabbitmq)"
       public? true
+    end
+
+    attribute :error_msg, :string do
+      description "Error message if processing or delivery failed"
     end
 
     create_timestamp :created_at
@@ -204,12 +187,12 @@ defmodule Batcher.Batching.Prompt do
 
   relationships do
     belongs_to :batch, Batching.Batch do
-      description "The batch this prompt belongs to"
+      description "The batch this request belongs to"
       allow_nil? false
       public? true
     end
 
-    has_many :transitions, Batching.PromptTransition do
+    has_many :transitions, Batching.RequestTransition do
       description "Audit trail of status transitions"
     end
   end

@@ -2,21 +2,21 @@ defmodule Batcher.Batching.BatchQueries do
   @moduledoc """
   Database query helpers for batch operations.
 
-  Provides optimized queries for counting prompts, summing sizes, and other
+  Provides optimized queries for counting requests, summing sizes, and other
   batch-related database operations.
   """
 
   @doc """
-  Counts the number of prompts in a batch.
+  Counts the number of requests in a batch.
 
   Uses SELECT COUNT(*) for optimal performance - does NOT load records.
 
   ## Examples
 
-      iex> BatchQueries.count_prompts_in_batch(123)
+      iex> BatchQueries.count_requests_in_batch(123)
       42
   """
-  def count_prompts_in_batch(batch_id) do
+  def count_requests_in_batch(batch_id) do
     require Ash.Query
 
     Batcher.Batching.Prompt
@@ -26,16 +26,16 @@ defmodule Batcher.Batching.BatchQueries do
   end
 
   @doc """
-  Sums the request_payload_size for all prompts in a batch.
+  Sums the request_payload_size for all requests in a batch.
 
   Only selects the size field for efficiency, then reduces to get the total.
 
   ## Examples
 
-      iex> BatchQueries.sum_prompt_sizes_in_batch(123)
+      iex> BatchQueries.sum_request_sizes_in_batch(123)
       10485760  # 10 MB
   """
-  def sum_prompt_sizes_in_batch(batch_id) do
+  def sum_request_sizes_in_batch(batch_id) do
     require Ash.Query
 
     Batcher.Batching.Prompt
@@ -43,7 +43,7 @@ defmodule Batcher.Batching.BatchQueries do
     |> Ash.Query.filter(batch_id == ^batch_id)
     |> Ash.Query.select([:request_payload_size])
     |> Ash.read!()
-    |> Enum.reduce(0, fn prompt, acc -> acc + prompt.request_payload_size end)
+    |> Enum.reduce(0, fn request, acc -> acc + request.request_payload_size end)
   end
 
   @doc """

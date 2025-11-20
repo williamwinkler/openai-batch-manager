@@ -1,4 +1,4 @@
-defmodule Batcher.Batching.PromptTransition do
+defmodule Batcher.Batching.RequestTransition do
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Batching,
@@ -7,11 +7,11 @@ defmodule Batcher.Batching.PromptTransition do
   alias Batcher.Batching
 
   sqlite do
-    table "prompt_transitions"
+    table "request_transitions"
     repo Batcher.Repo
 
     references do
-      reference :prompt, on_delete: :delete
+      reference :request, on_delete: :delete
     end
   end
 
@@ -19,7 +19,7 @@ defmodule Batcher.Batching.PromptTransition do
     defaults [:read]
 
     create :create do
-      accept [:prompt_id, :from, :to]
+      accept [:request_id, :from, :to]
       primary? true
     end
   end
@@ -27,12 +27,12 @@ defmodule Batcher.Batching.PromptTransition do
   attributes do
     integer_primary_key :id
 
-    attribute :from, Batching.Types.PromptStatus do
+    attribute :from, Batching.Types.RequestStatus do
       description "Previous status (nil for initial creation)"
       allow_nil? true
     end
 
-    attribute :to, Batching.Types.PromptStatus do
+    attribute :to, Batching.Types.RequestStatus do
       description "New status after transition"
       allow_nil? false
     end
@@ -41,7 +41,7 @@ defmodule Batcher.Batching.PromptTransition do
   end
 
   relationships do
-    belongs_to :prompt, Batching.Prompt do
+    belongs_to :request, Batching.Request do
       allow_nil? false
     end
   end

@@ -44,3 +44,6 @@ npm-debug.log
 /data
 
 .vscode
+.elixir-tools
+.expert
+.lexical

@@ -1,9 +1,5 @@
 defmodule BatcherWeb.Schemas.RequestInputObject do
-  @moduledoc """
-  Request input object for OpenAI batches - with delivery metadata.
-  """
   alias OpenApiSpex.Schema
-
   alias BatcherWeb.Schemas.DeliverySchema
 
   @behaviour OpenApiSpex.Schema
@@ -21,7 +17,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
           type: :string,
           description:
             "A developer-provided per-request id that will be used to match outputs to inputs. Must be unique for each request in a batch.",
-          example: "2a6c0a28-95d0-412f-bf50-f598dd541630"
+          example: "my"
         },
         url: %Schema{
           type: :string,
@@ -33,35 +29,35 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
             "/v1/completions"
           ],
           description:
-            "The OpenAI API relative URL to be used for the request. Currently /v1/responses, /v1/chat/completions, /v1/embeddings, /v1/completions, and /v1/moderations are supported."
+            "The OpenAI API relative URL to be used for the request."
         },
         method: %Schema{
           type: :string,
           enum: ["POST"],
           description:
-            "The HTTP method to be used for the request. Currently only POST is supported."
+            "The HTTP method to be used for the request. Currently only 'POST' is supported."
         },
         delivery: DeliverySchema.schema(),
         body: body_schema()
       },
-      example: %{
-        "method" => "POST",
-        "url" => "/v1/responses",
-        "custom_id" => "2a6c0a28-95d0-412f-bf50-f598dd541630",
-        "delivery" => %{
-          "type" => "webhook",
-          "webhook_url" => "https://api.example.com/webhook?auth=secret"
-        },
-        "body" => %{
-          "model" => "gpt-4o-mini",
-          "input" => [
-            %{"role" => "developer", "content" => "You are a helpful assistant"},
-            %{"role" => "user", "content" => "Tell me a joke."}
-          ],
-          "temperature" => 0.7,
-          "max_output_tokens" => 500
-        }
-      }
+      # example: %{
+      #   "method" => "POST",
+      #   "url" => "/v1/responses",
+      #   "custom_id" => "2a6c0a28-95d0-412f-bf50-f598dd541630",
+      #   "delivery" => %{
+      #     "type" => "webhook",
+      #     "webhook_url" => "https://api.example.com/webhook?auth=secret"
+      #   },
+      #   "body" => %{
+      #     "model" => "gpt-4o-mini",
+      #     "input" => [
+      #       %{"role" => "developer", "content" => "You are a helpful assistant"},
+      #       %{"role" => "user", "content" => "Tell me a joke."}
+      #     ],
+      #     "temperature" => 0.7,
+      #     "max_output_tokens" => 500
+      #   }
+      # }
     }
   end
 

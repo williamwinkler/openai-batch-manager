@@ -54,7 +54,7 @@ defmodule BatcherWeb.Schemas.DeliverySchema do
         },
         example: %{
           "type" => "rabbitmq",
-          "rabbitmq_exchange" => "batcher.results",
+          "rabbitmq_exchange" => "batching.results",
           "rabbitmq_queue" => "results_queue"
         }
       }

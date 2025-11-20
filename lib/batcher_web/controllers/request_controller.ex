@@ -1,9 +1,9 @@
-defmodule BatcherWeb.PromptController do
+defmodule BatcherWeb.RequestController do
   use BatcherWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Batcher.Batching.Handlers.PromptRequestHandler
-  alias BatcherWeb.Schemas.{RequestInputObject, ErrorResponseSchema, PromptResponseSchema}
+  alias Batcher.Batching.Handlers
+  alias BatcherWeb.Schemas.{RequestInputObject, ErrorResponseSchema, RequestResponseSchema}
 
   # OpenApiSpex plugs automatically validate and cast the request
   plug OpenApiSpex.Plug.CastAndValidate, json_render_error_v2: true
@@ -17,7 +17,7 @@ defmodule BatcherWeb.PromptController do
       required: true
     },
     responses: [
-      accepted: {"Request accepted for processing", "application/json", PromptResponseSchema},
+      accepted: {"Request accepted for processing", "application/json", RequestResponseSchema},
       bad_request: {"Bad request - validation errors", "application/json", ErrorResponseSchema},
       conflict:
         {"Duplicate custom_id - a request with this custom_id already exists", "application/json",
@@ -26,7 +26,7 @@ defmodule BatcherWeb.PromptController do
   )
 
   @doc """
-  Creates a new prompt for batch processing.
+  Creates a new request for batch processing.
 
   The request body has already been validated and cast by OpenApiSpex.CastAndValidate plug.
   If validation fails, the plug automatically returns a 400 error before this action is called.
@@ -38,44 +38,30 @@ defmodule BatcherWeb.PromptController do
     # Access the validated body from conn.body_params
     request_body = conn.body_params
 
-    Logger.debug("Prompt ingestion request received",
-      custom_id: request_body["custom_id"],
-      endpoint: request_body["endpoint"],
-      model: request_body["model"]
-    )
+    Logger.debug("Incomming request received with custom_id=#{request_body["custom_id"]}")
 
-    case PromptRequestHandler.handle_ingest_request(request_body) do
-      {:ok, prompt} ->
-        Logger.info("Prompt created successfully",
-          custom_id: prompt.custom_id,
-          prompt_id: prompt.id
-        )
+    case Handlers.RequestHandler.handle(request_body) do
+      {:ok, request} ->
+        Logger.info("Request add succesfully to batch #{request.batch_id}")
 
-        # Return JSON:API compatible response
         conn
         |> put_status(:accepted)
-        |> json(%{custom_id: prompt.custom_id})
+        |> json(%RequestResponseSchema{
+          custom_id: request.custom_id
+        })
 
       {:error, :custom_id_already_taken} ->
         Logger.info("Duplicate custom_id rejected",
-          custom_id: request_body["custom_id"]
+          custom_id: request_body.custom_id
         )
 
         conn
         |> put_status(:conflict)
-        |> json(%{
-          errors: [
-            %{
-              code: "custom_id_already_taken",
-              title: "Duplicate Custom ID",
-              detail: "A prompt with this custom_id already exists."
-            }
-          ]
-        })
+        |> json(Error)
 
       {:error, error} ->
         # Log the internal error details at error level
-        Logger.error("Failed to create prompt",
+        Logger.error("Failed to create request",
           custom_id: request_body["custom_id"],
           error: inspect(error, pretty: true)
         )
