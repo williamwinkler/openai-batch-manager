@@ -107,6 +107,8 @@ defmodule Batcher.BatchBuilder do
 
   @impl true
   def handle_call({:add_request, request_data}, _from, state) do
+    IO.inspect(request_data)
+
     cond do
       state.status != :building ->
         {:reply, {:error, :batch_full}, state}
@@ -119,7 +121,7 @@ defmodule Batcher.BatchBuilder do
         # Compute the size of this request to check if it fits
         # (The Ash change will compute it again, but we need it now for the check)
         # TODO: rely on ash?
-        request_size = BatchQueries.compute_payload_size(request_data.request_payload)
+        request_size = BatchQueries.compute_payload_size(request_data)
         new_total_size = state.total_size_bytes + request_size
 
         # Check if adding this request would exceed 200 MB limit
@@ -132,16 +134,18 @@ defmodule Batcher.BatchBuilder do
           {:reply, {:error, :batch_full}, state}
         else
           # Create Prompt record via internal action
-          full_data = Map.put(request_data, :batch_id, state.batch_id)
+          request_data = Map.put(request_data, :batch_id, state.batch_id)
 
-          Logger.debug(
-            "Creating new request"
-          )
+          Logger.debug("Creating new request")
 
-          # Turn the request_payload into a JSON string
-          full_data = Map.update!(full_data, :request_payload, &JSON.encode!/1)
-
-          case Batcher.Batching.create_request(full_data) do
+          case Batcher.Batching.create_request(%{
+                 batch_id: state.batch_id,
+                 custom_id: request_data.custom_id,
+                 url: request_data.url,
+                 model: request_data.body.model,
+                 delivery: request_data.delivery,
+                 request_payload: request_data
+               }) do
             {:ok, request} ->
               new_state = %{
                 state
@@ -169,7 +173,7 @@ defmodule Batcher.BatchBuilder do
 
               if is_duplicate do
                 Logger.warning("Duplicate custom_id attempted",
-                  custom_id: full_data.custom_id,
+                  custom_id: request_data.custom_id,
                   batch_id: state.batch_id
                 )
 

@@ -44,20 +44,20 @@
       "default": "nil",
       "size": null,
       "type": "bigint",
-      "source": "batch_id",
+      "source": "request_id",
       "references": {
-        "name": "batch_transitions_batch_id_fkey",
-        "table": "batches",
+        "name": "request_transitions_request_id_fkey",
+        "table": "requests",
         "multitenancy": {
           "global": null,
-          "attribute": null,
-          "strategy": null
+          "strategy": null,
+          "attribute": null
         },
         "destination_attribute": "id",
-        "on_delete": "delete",
         "on_update": null,
-        "deferrable": false,
         "primary_key?": true,
+        "on_delete": "delete",
+        "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
       },
@@ -66,18 +66,18 @@
       "generated?": false
     }
   ],
-  "table": "batch_transitions",
-  "hash": "D6B8B796D9710BF32E693D5372DB0099BA4EB04342792B5580FF1C39FFA93BB0",
+  "table": "request_transitions",
+  "hash": "E043D7562B7949FE4CFEBC4F1773A58D8A90E4C15D089D8491BCE9726B210AEB",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_indexes": [],
   "custom_statements": [],
+  "custom_indexes": [],
   "base_filter": null,
   "has_create_action": true
 }

@@ -43,25 +43,22 @@ defmodule Batcher.Batching.Request do
     defaults [:read, :destroy]
 
     create :create do
-      description "Create request with batch_id assigned by BatchBuilder"
+      description "Create a new request in a batch"
+      accept [:batch_id, :custom_id, :url, :model]
 
-      accept [
-        :batch_id,
-        :url,
-        :model,
-        :custom_id,
-        :request_payload,
-        :delivery_type,
-        :webhook_url,
-        :rabbitmq_exchange,
-        :rabbitmq_queue,
-      ]
+      argument :request_payload, :map do
+        description "The request payload as a map"
+        allow_nil? false
+      end
 
-      change Batching.Changes.ComputePayloadSize
+      argument :delivery, :map do
+        description "How to deliver the processed result"
+        allow_nil? false
+      end
 
-      validate Batching.Validations.ValidateEndpointSupported
-      validate Batching.Validations.ValidateDeliveryConfig
-      validate Batching.Validations.ValidateBatchSizeLimit
+      change Batching.Changes.SetDeliveryConfig
+      change Batching.Changes.SetPayload
+      primary? true
     end
 
     # ============================================

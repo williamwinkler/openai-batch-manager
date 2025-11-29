@@ -116,24 +116,10 @@ defmodule Batcher.OpenaiApiClient do
   @doc """
     Creates a batch on OpenAI's platform using the provided file ID and endpoint.
   """
-  def create_batch(file_id, endpoint, completion_window \\ "24h")
-
-  def create_batch("file-" <> _ = file_id, "/" <> _ = endpoint, completion_window) do
-    do_create_batch(file_id, endpoint, completion_window)
-  end
-
-  def create_batch(file_id, endpoint, _completion_window) do
-    cond do
-      not String.starts_with?(file_id, "file-") -> {:error, :invalid_file_id}
-      not String.starts_with?(endpoint, "/") -> {:error, :invalid_endpoint}
-      true -> {:error, :invalid_arguments}
-    end
-  end
-
-  defp do_create_batch(file_id, endpoint, completion_window) do
+  def create_batch(input_file_id, endpoint, completion_window \\ "24h") do
     openai_api_key = Application.fetch_env!(:batcher, :openai_api_key)
 
-    Logger.debug("Creating OpenAI batch with file_id: #{file_id}, endpoint: #{endpoint}")
+    Logger.debug("Creating OpenAI batch with file_id: #{input_file_id}, endpoint: #{endpoint}")
 
     case Req.post(
            "https://api.openai.com/v1/batches",
@@ -142,7 +128,7 @@ defmodule Batcher.OpenaiApiClient do
              {"Content-Type", "application/json"}
            ],
            json: %{
-             input_file_id: file_id,
+             input_file_id: input_file_id,
              endpoint: endpoint,
              completion_window: completion_window
            }

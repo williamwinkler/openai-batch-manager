@@ -44,7 +44,7 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "endpoint",
+      "source": "url",
       "references": null,
       "allow_nil?": false,
       "primary_key?": false,
@@ -92,17 +92,17 @@
     }
   ],
   "table": "batches",
-  "hash": "02C199C84F17C8AA10BE2CB68D18A6CB94FE4750D337EB5A5FC97C6B180FA501",
+  "hash": "B0C3AB3A8553438DCCBEDA07E33D276A10235506E57CDBA7D9289D0094AD2942",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_indexes": [],
   "custom_statements": [],
+  "custom_indexes": [],
   "base_filter": null,
   "has_create_action": true
 }

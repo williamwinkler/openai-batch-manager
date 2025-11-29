@@ -35,7 +35,7 @@ defmodule BatcherWeb.Router do
       default_model_expand_depth: 8
 
     # API endpoints
-    post "/prompt", BatcherWeb.PromptController, :create
+    post "/requests", BatcherWeb.RequestController, :create
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -17,7 +17,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
           type: :string,
           description:
             "A developer-provided per-request id that will be used to match outputs to inputs. Must be unique for each request in a batch.",
-          example: "my"
+          example: "my-custom-id-123"
         },
         url: %Schema{
           type: :string,

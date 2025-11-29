@@ -287,7 +287,7 @@ This project uses **Ash Framework 3.0** for domain-driven development. Ash repla
 
 ### Core Concepts
 
-- **Resources** - Domain entities (like `Batcher.Batching.Batch` and `Batcher.Batching.Prompt`) that define attributes, relationships, actions, and validations
+- **Resources** - Domain entities (like `Batcher.Batching.Batch` and `Batcher.Batching.Request`) that define attributes, relationships, actions, and validations
 - **Domains** - Collections of related resources (like `Batcher.Batching` domain) that define the API surface
 - **Actions** - Named operations on resources (`:create`, `:read`, `:update`, `:destroy`, or custom actions)
 - **Code Interface** - Functions defined in the domain that provide a clean API for calling actions
@@ -357,7 +357,7 @@ Define relationships in resources:
 ```elixir
 relationships do
   belongs_to :batch, Batcher.Batching.Batch
-  has_many :prompts, Batcher.Batching.Prompt
+  has_many :prompts, Batcher.Batching.Request
   has_many :transitions, Batcher.Batching.BatchTransition
 end
 ```

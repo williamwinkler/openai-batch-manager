@@ -72,14 +72,14 @@ defmodule Batcher.Batching.Batch do
 
     create :create do
       description "Create a new batch for OpenAI"
-      accept [:model, :endpoint]
+      accept [:model, :url]
     end
 
     read :find_building_batch do
-      description "Find a draft batch for the given model and endpoint"
+      description "Find a draft batch for the given model and url"
       argument :model, :string, allow_nil?: false
-      argument :endpoint, :string, allow_nil?: false
-      filter expr(state == :building and model == ^arg(:model) and endpoint == ^arg(:endpoint))
+      argument :url, :string, allow_nil?: false
+      filter expr(state == :building and model == ^arg(:model) and url == ^arg(:url))
       get? true
     end
 
@@ -178,14 +178,14 @@ defmodule Batcher.Batching.Batch do
       description "Batch ID given by the OpenAI API"
     end
 
-    attribute :endpoint, :string do
-      description "OpenAI Batch API endpoint (e.g., /v1/responses)"
+    attribute :url, :string do
+      description "OpenAI Batch API request url (e.g., '/v1/responses')"
       allow_nil? false
       public? true
     end
 
     attribute :model, :string do
-      description "Model name - all prompts in batch must use same model"
+      description "Model name - all request in batch must use same model"
       allow_nil? false
       public? true
     end
@@ -199,8 +199,8 @@ defmodule Batcher.Batching.Batch do
   end
 
   relationships do
-    has_many :prompts, Batching.Prompt do
-      description "Prompts included in this batch"
+    has_many :requests, Batching.Request do
+      description "Requests included in this batch"
       public? true
     end
 

@@ -13,24 +13,9 @@
     {
       "default": "nil",
       "size": null,
-      "type": "bigint",
-      "source": "batch_id",
-      "references": {
-        "name": "prompts_batch_id_fkey",
-        "table": "batches",
-        "multitenancy": {
-          "global": null,
-          "attribute": null,
-          "strategy": null
-        },
-        "destination_attribute": "id",
-        "on_delete": "delete",
-        "on_update": null,
-        "deferrable": false,
-        "primary_key?": true,
-        "destination_attribute_default": null,
-        "destination_attribute_generated": null
-      },
+      "type": "text",
+      "source": "custom_id",
+      "references": null,
       "allow_nil?": false,
       "primary_key?": false,
       "generated?": false
@@ -39,7 +24,7 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "endpoint",
+      "source": "url",
       "references": null,
       "allow_nil?": false,
       "primary_key?": false,
@@ -50,16 +35,6 @@
       "size": null,
       "type": "text",
       "source": "model",
-      "references": null,
-      "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "custom_id",
       "references": null,
       "allow_nil?": false,
       "primary_key?": false,
@@ -89,29 +64,9 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "tag",
-      "references": null,
-      "allow_nil?": true,
-      "primary_key?": false,
-      "generated?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
       "source": "state",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "error_msg",
-      "references": null,
-      "allow_nil?": true,
       "primary_key?": false,
       "generated?": false
     },
@@ -139,7 +94,27 @@
       "default": "nil",
       "size": null,
       "type": "text",
+      "source": "rabbitmq_exchange",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
       "source": "rabbitmq_queue",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "error_msg",
       "references": null,
       "allow_nil?": true,
       "primary_key?": false,
@@ -164,33 +139,59 @@
       "allow_nil?": false,
       "primary_key?": false,
       "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "batch_id",
+      "references": {
+        "name": "requests_batch_id_fkey",
+        "table": "batches",
+        "multitenancy": {
+          "global": null,
+          "strategy": null,
+          "attribute": null
+        },
+        "destination_attribute": "id",
+        "on_update": null,
+        "primary_key?": true,
+        "on_delete": "delete",
+        "deferrable": false,
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null
+      },
+      "allow_nil?": false,
+      "primary_key?": false,
+      "generated?": false
     }
   ],
-  "table": "prompts",
-  "hash": "938FCD2F6FB9611D04FF44771F49E3947692FF97FEB2A66489DB125FFAA65853",
+  "table": "requests",
+  "hash": "0D6EC83F09C34D6B01BF5C0B26F94CA640D1DB309B238B91039B45EBB395836B",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
+  "custom_statements": [],
   "custom_indexes": [
     {
       "message": null,
       "name": null,
       "table": null,
       "include": null,
-      "where": null,
       "fields": [
-        "custom_id"
+        "custom_id",
+        "batch_id"
       ],
+      "where": null,
       "unique": true,
       "using": null
     }
   ],
-  "custom_statements": [],
   "base_filter": null,
   "has_create_action": true
 }

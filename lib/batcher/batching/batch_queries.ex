@@ -19,7 +19,7 @@ defmodule Batcher.Batching.BatchQueries do
   def count_requests_in_batch(batch_id) do
     require Ash.Query
 
-    Batcher.Batching.Prompt
+    Batcher.Batching.Request
     |> Ash.Query.for_read(:read)
     |> Ash.Query.filter(batch_id == ^batch_id)
     |> Ash.count!()
@@ -38,7 +38,7 @@ defmodule Batcher.Batching.BatchQueries do
   def sum_request_sizes_in_batch(batch_id) do
     require Ash.Query
 
-    Batcher.Batching.Prompt
+    Batcher.Batching.Request
     |> Ash.Query.for_read(:read)
     |> Ash.Query.filter(batch_id == ^batch_id)
     |> Ash.Query.select([:request_payload_size])

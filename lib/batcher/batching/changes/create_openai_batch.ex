@@ -8,10 +8,10 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
   def change(changeset, _opts, _context) do
     batch = changeset.data
 
-    Logger.info("Creating OpenAI batch for batch #{batch.id}")
+    Logger.info("Creating OpenAI batch for batch #{batch.id} (#{batch.url} - #{batch.model})")
 
     try do
-      case OpenaiApiClient.create_batch(batch.openai_file_id, batch.endpoint) do
+      case OpenaiApiClient.create_batch(batch.openai_file_id, batch.url) do
         {:ok, response} ->
           openai_batch_id = response["id"]
           Logger.info("OpenAI batch created successfully (OpenAI Batch ID: #{openai_batch_id})")

@@ -40,7 +40,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
     file = File.open!(batch_file_path, [:write])
 
     try do
-      Batcher.Batching.Prompt
+      Batcher.Batching.Request
       |> Ash.Query.filter(batch_id: batch.id)
       |> Ash.Query.select([:request_payload])
       |> Ash.stream!(batch_size: 100)

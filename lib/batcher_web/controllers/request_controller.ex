@@ -38,7 +38,7 @@ defmodule BatcherWeb.RequestController do
     # Access the validated body from conn.body_params
     request_body = conn.body_params
 
-    Logger.debug("Incomming request received with custom_id=#{request_body["custom_id"]}")
+    Logger.debug("Incomming request received with custom_id=#{request_body.custom_id}")
 
     case Handlers.RequestHandler.handle(request_body) do
       {:ok, request} ->

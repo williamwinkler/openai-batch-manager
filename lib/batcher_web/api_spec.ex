@@ -16,13 +16,7 @@ defmodule BatcherWeb.ApiSpec do
         title: "OpenAPI Batch Manager API",
         version: "1.0.0",
         description: """
-        API for managing batch processing of LLM prompts.
-
-        The main endpoint `/v1/prompt` accepts three different request body types,
-        discriminated by the `endpoint` field:
-        - `/v1/responses` - Chat completions
-        - `/v1/embeddings` - Text embeddings
-        - `/v1/moderations` - Content moderation
+        API for managing batch processing of OpenAI requests.
         """
       },
       servers: [

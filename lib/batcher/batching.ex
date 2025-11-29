@@ -4,11 +4,9 @@ defmodule Batcher.Batching do
 
   resources do
     resource Batcher.Batching.Batch do
-      define :create_batch, action: :create, args: [:model, :endpoint]
-
+      define :create_batch, action: :create, args: [:model, :url]
       define :get_batch_by_id, action: :read, get_by: :id
-      define :find_building_batch, action: :find_building_batch, args: [:model, :endpoint]
-
+      define :find_building_batch, action: :find_building_batch, args: [:model, :url]
       define :start_batch_upload, action: :start_upload
     end
 
