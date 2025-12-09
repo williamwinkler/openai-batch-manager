@@ -187,4 +187,51 @@ defmodule Batcher.OpenaiApiClient do
         {:error, error_msg}
     end
   end
+
+  @doc """
+  Checks the status of a batch on OpenAI's platform given its batch ID.
+  """
+  def check_batch_status("batch_" <> _ = batch_id) do
+      openai_api_key = Application.fetch_env!(:batcher, :openai_api_key)
+
+      case Req.get(
+             "https://api.openai.com/v1/batches/#{batch_id}",
+             headers: [
+               {"Authorization", "Bearer #{openai_api_key}"},
+               {"Content-Type", "application/json"}
+             ]
+           ) do
+        {:ok, %{status: 200, body: body}} ->
+          {:ok, body}
+
+        {:ok, %{status: 404}} ->
+          {:error, :not_found}
+
+        {:ok, %{status: status}} ->
+          error_msg = "HTTP error #{status}"
+          Logger.error(error_msg)
+          {:error, error_msg}
+
+        {:error, reason} ->
+          error_msg = "Request failed: #{inspect(reason)}"
+          Logger.error(error_msg)
+          {:error, error_msg}
+      end
+    end
+
+    def extract_token_usage_from_batch_status(batch_response) do
+      %{
+        "input_tokens" => input_tokens,
+        "input_tokens_details" => %{"cached_tokens" => cached_tokens},
+        "output_token_details" => %{"reasoning_tokens" => reasoning_tokens},
+        "output_tokens" => output_tokens
+      } = batch_response["usage"] || %{}
+
+      %{
+        input_tokens: input_tokens || 0,
+        cached_tokens: cached_tokens || 0,
+        reasoning_tokens: reasoning_tokens || 0,
+        output_tokens: output_tokens || 0
+      }
+    end
 end

@@ -19,23 +19,19 @@ defmodule Batcher.Batching.Batch do
     transitions do
       transition :start_upload, from: :building, to: :uploading
       transition :upload, from: :uploading, to: :uploaded
-      transition :create_openai_batch, from: :uploaded, to: :openai_batch_created
-      transition :openai_validating, from: :openai_batch_created, to: :openai_validating
-      transition :openai_processing, from: :openai_validating, to: :openai_processing
-      transition :openai_completed, from: :openai_processing, to: :openai_completed
+      transition :create_openai_batch, from: :uploaded, to: :openai_processing
+      transition :check_batch_status, from: :openai_processing, to: :openai_completed
       transition :downloading, from: :openai_completed, to: :downloading
       transition :downloaded, from: :downloading, to: :downloaded
       transition :ready_to_deliver, from: :downloaded, to: :ready_to_deliver
       transition :delivering, from: :ready_to_deliver, to: :delivering
-      transition :completed, from: :delivering, to: :completed
+      transition :done, from: :delivering, to: :done
 
-      transition :failed,
+      transition :check_batch_status,
         from: [
           :building,
           :uploading,
           :uploaded,
-          :openai_batch_created,
-          :openai_validating,
           :openai_processing,
           :openai_completed,
           :downloading,
@@ -44,6 +40,20 @@ defmodule Batcher.Batching.Batch do
           :delivering
         ],
         to: :failed
+
+      transition :check_batch_status,
+        from: [
+          :building,
+          :uploading,
+          :uploaded,
+          :openai_processing,
+          :openai_completed,
+          :downloading,
+          :downloaded,
+          :ready_to_deliver,
+          :delivering
+        ],
+        to: :cancelled
     end
   end
 
@@ -63,6 +73,14 @@ defmodule Batcher.Batching.Batch do
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
+      end
+
+      trigger :check_batch_status do
+        action :check_batch_status
+        where expr(state  == :openai_processing)
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.CheckBatchStatus
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.CheckBatchStatus
       end
     end
   end
@@ -102,23 +120,14 @@ defmodule Batcher.Batching.Batch do
       description "Create batch on OpenAI platform for processing"
       require_atomic? false
       change Batcher.Batching.Changes.CreateOpenaiBatch
-      change transition_state(:openai_batch_created)
-    end
-
-    # Add all missing state transition actions
-    update :openai_validating do
-      change transition_state(:openai_validating)
-      require_atomic? false
-    end
-
-    update :openai_processing do
       change transition_state(:openai_processing)
-      require_atomic? false
+      change run_oban_trigger(:check_batch_status)
     end
 
-    update :openai_completed do
-      change transition_state(:openai_completed)
+    update :check_batch_status do
+      description "Check status of OpenAI batch processing"
       require_atomic? false
+      change Batcher.Batching.Changes.CheckOpenaiBatchStatus
     end
 
     update :downloading do
@@ -141,15 +150,14 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
     end
 
-    update :completed do
-      change transition_state(:completed)
+    update :done do
+      change transition_state(:done)
       require_atomic? false
     end
 
-    update :failed do
-      accept [:error_msg]
-      change transition_state(:failed)
+    update :cancel do
       require_atomic? false
+      change transition_state(:cancelled)
     end
   end
 
@@ -170,8 +178,12 @@ defmodule Batcher.Batching.Batch do
       default :building
     end
 
-    attribute :openai_file_id, :string do
-      description "File ID given by the OpenAI API"
+    attribute :openai_input_file_id, :string do
+      description "File ID given by the OpenAI API for the uploaded input file"
+    end
+
+    attribute :openai_output_file_id, :string do
+      description "File ID given by the OpenAI API for the processed results"
     end
 
     attribute :openai_batch_id, :string do
@@ -193,6 +205,11 @@ defmodule Batcher.Batching.Batch do
     attribute :error_msg, :string do
       description "Error message if batch failed"
     end
+
+    attribute :input_tokens, :integer
+    attribute :cached_tokens, :integer
+    attribute :reasoning_tokens, :integer
+    attribute :output_tokens, :integer
 
     create_timestamp :created_at
     update_timestamp :updated_at

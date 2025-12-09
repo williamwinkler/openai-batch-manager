@@ -8,14 +8,27 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
   def change(changeset, _opts, _context) do
     batch = changeset.data
 
+    changeset
+    |> Ash.Changeset.before_transaction(fn changeset ->
+
+    end)
+
     Logger.info("Creating OpenAI batch for batch #{batch.id} (#{batch.url} - #{batch.model})")
 
     try do
-      case OpenaiApiClient.create_batch(batch.openai_file_id, batch.url) do
+      case OpenaiApiClient.create_batch(batch.openai_input_file_id, batch.url) do
         {:ok, response} ->
           openai_batch_id = response["id"]
-          Logger.info("OpenAI batch created successfully (OpenAI Batch ID: #{openai_batch_id})")
-          Ash.Changeset.force_change_attribute(changeset, :openai_batch_id, openai_batch_id)
+
+          Logger.info(
+            "OpenAI batch created successfully (OpenAI Batch ID: #{openai_batch_id})"
+          )
+
+          Ash.Changeset.force_change_attribute(
+            changeset,
+            :openai_batch_id,
+            openai_batch_id
+          )
 
         {:error, reason} ->
           Logger.error("OpenAI batch creation failed: #{inspect(reason)}")
@@ -35,6 +48,8 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
         Ash.Changeset.add_error(changeset, "OpenAI batch creation crashed: #{inspect(error)}")
     end
   end
+
+
 
   defp cleanup_existing_batch(changeset) do
     case Ash.Changeset.get_attribute(changeset, :openai_batch_id) do

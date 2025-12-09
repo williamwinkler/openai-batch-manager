@@ -50,8 +50,8 @@
         "table": "requests",
         "multitenancy": {
           "global": null,
-          "strategy": null,
-          "attribute": null
+          "attribute": null,
+          "strategy": null
         },
         "destination_attribute": "id",
         "on_update": null,
@@ -67,17 +67,17 @@
     }
   ],
   "table": "request_transitions",
-  "hash": "E043D7562B7949FE4CFEBC4F1773A58D8A90E4C15D089D8491BCE9726B210AEB",
+  "hash": "6768BAB18F14E33446CEE85777DB7BBCEB41B797E9C3478B52ADCAF45FB7C7DF",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }

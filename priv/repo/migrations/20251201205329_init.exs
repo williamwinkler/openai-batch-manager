@@ -53,11 +53,16 @@ defmodule Batcher.Repo.Migrations.Init do
     create table(:batches, primary_key: false) do
       add :updated_at, :utc_datetime_usec, null: false
       add :created_at, :utc_datetime_usec, null: false
+      add :output_tokens, :bigint
+      add :reasoning_tokens, :bigint
+      add :cached_tokens, :bigint
+      add :input_tokens, :bigint
       add :error_msg, :text
       add :model, :text, null: false
       add :url, :text, null: false
       add :openai_batch_id, :text
-      add :openai_file_id, :text
+      add :openai_output_file_id, :text
+      add :openai_input_file_id, :text
       add :state, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end

@@ -150,8 +150,8 @@
         "table": "batches",
         "multitenancy": {
           "global": null,
-          "strategy": null,
-          "attribute": null
+          "attribute": null,
+          "strategy": null
         },
         "destination_attribute": "id",
         "on_update": null,
@@ -167,31 +167,31 @@
     }
   ],
   "table": "requests",
-  "hash": "0D6EC83F09C34D6B01BF5C0B26F94CA640D1DB309B238B91039B45EBB395836B",
+  "hash": "0BD17550DF15DEC712F80335652FCF3040EAE35A99FEB0C7AB2576DC01AC1639",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [
     {
       "message": null,
       "name": null,
       "table": null,
       "include": null,
+      "where": null,
       "fields": [
         "custom_id",
         "batch_id"
       ],
-      "where": null,
       "unique": true,
       "using": null
     }
   ],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }

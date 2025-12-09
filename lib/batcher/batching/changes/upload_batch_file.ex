@@ -15,10 +15,10 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
 
     try do
       with :ok <- build_batch_file(batch_file_path, batch),
-           {:ok, openai_file_id} <- upload_file(batch_file_path) do
+           {:ok, openai_input_file_id} <- upload_file(batch_file_path) do
         cleanup_file(batch_file_path)
-        Logger.info("Batch #{batch.id} uploaded successfully (OpenAI File ID: #{openai_file_id})")
-        Ash.Changeset.force_change_attribute(changeset, :openai_file_id, openai_file_id)
+        Logger.info("Batch #{batch.id} uploaded successfully (OpenAI File ID: #{openai_input_file_id})")
+        Ash.Changeset.force_change_attribute(changeset, :openai_input_file_id, openai_input_file_id)
       else
         {:error, reason} ->
           Logger.error("Batch #{batch.id} upload failed: #{inspect(reason)}")
@@ -55,7 +55,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
   end
 
   defp cleanup_existing_openai_file(changeset) do
-    case Ash.Changeset.get_attribute(changeset, :openai_file_id) do
+    case Ash.Changeset.get_attribute(changeset, :openai_input_file_id) do
       nil ->
         changeset
 
@@ -66,7 +66,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
           {:ok, _} ->
             Logger.info("Successfully deleted OpenAI file: #{file_id}")
             # Remove the file_id from changeset
-            Ash.Changeset.force_change_attribute(changeset, :openai_file_id, nil)
+            Ash.Changeset.force_change_attribute(changeset, :openai_input_file_id, nil)
 
           {:error, reason} ->
             Logger.error("Failed to delete OpenAI file #{file_id}: #{reason}")
@@ -84,6 +84,5 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
 
   defp cleanup_file(file_path) do
     File.rm(file_path)
-    :ok
   end
 end

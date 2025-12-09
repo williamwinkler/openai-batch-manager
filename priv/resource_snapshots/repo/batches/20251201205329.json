@@ -24,7 +24,17 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "openai_file_id",
+      "source": "openai_input_file_id",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "openai_output_file_id",
       "references": null,
       "allow_nil?": true,
       "primary_key?": false,
@@ -73,6 +83,46 @@
     {
       "default": "nil",
       "size": null,
+      "type": "bigint",
+      "source": "input_tokens",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "cached_tokens",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "reasoning_tokens",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "output_tokens",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
       "type": "utc_datetime_usec",
       "source": "created_at",
       "references": null,
@@ -92,17 +142,17 @@
     }
   ],
   "table": "batches",
-  "hash": "B0C3AB3A8553438DCCBEDA07E33D276A10235506E57CDBA7D9289D0094AD2942",
+  "hash": "7D51C1E14E7198B4C4A76D0CC068FDA7B955AC08BF4874CF4C236F64A656A0BE",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }

@@ -12,12 +12,6 @@ defmodule Batcher.Batching.Types.BatchStatus do
       # Batch file has been uploaded
       :uploaded,
 
-      # Batch has been created in OpenAI
-      :openai_batch_created,
-
-      # OpenAI is validating the batch
-      :openai_validating,
-
       # OpenAI is processing the batch
       :openai_processing,
 
@@ -37,8 +31,12 @@ defmodule Batcher.Batching.Types.BatchStatus do
       :delivering,
 
       # All prompt results have been delivered
-      :completed,
+      :done,
+
       # Batch failed for some reason
-      :failed
+      :failed,
+      
+      # Batch was cancelled
+      :cancelled
     ]
 end

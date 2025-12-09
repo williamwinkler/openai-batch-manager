@@ -50,8 +50,8 @@
         "table": "batches",
         "multitenancy": {
           "global": null,
-          "strategy": null,
-          "attribute": null
+          "attribute": null,
+          "strategy": null
         },
         "destination_attribute": "id",
         "on_update": null,
@@ -67,17 +67,17 @@
     }
   ],
   "table": "batch_transitions",
-  "hash": "11F95C7007949CF5D6B2C2869AAC927B0D413F8481E87D21CBFAD95D1321560D",
+  "hash": "1E6AE67232650BC84421B48789A92D4779C73479D6124F4A2829688BFD103EAA",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
-  "custom_statements": [],
   "custom_indexes": [],
   "base_filter": null,
+  "custom_statements": [],
   "has_create_action": true
 }
