@@ -7,6 +7,9 @@
 # General application configuration
 import Config
 
+config :batcher, Batcher.OpenaiApiClient,
+  base_url: "https://api.openai.com"
+
 config :mime,
   extensions: %{"json" => "application/vnd.api+json"},
   types: %{"application/vnd.api+json" => ["json"]}

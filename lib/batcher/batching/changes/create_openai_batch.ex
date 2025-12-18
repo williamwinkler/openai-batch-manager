@@ -10,68 +10,26 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
 
     changeset
     |> Ash.Changeset.before_transaction(fn changeset ->
-
-    end)
-
-    Logger.info("Creating OpenAI batch for batch #{batch.id} (#{batch.url} - #{batch.model})")
-
-    try do
+      # Create batch on OpenAI before transaction starts in case it fails
       case OpenaiApiClient.create_batch(batch.openai_input_file_id, batch.url) do
         {:ok, response} ->
-          openai_batch_id = response["id"]
-
-          Logger.info(
-            "OpenAI batch created successfully (OpenAI Batch ID: #{openai_batch_id})"
-          )
-
-          Ash.Changeset.force_change_attribute(
-            changeset,
-            :openai_batch_id,
-            openai_batch_id
-          )
+          changeset
+          |> Ash.Changeset.force_change_attribute(:openai_batch_id, response["id"])
 
         {:error, reason} ->
-          Logger.error("OpenAI batch creation failed: #{inspect(reason)}")
-
-          # Cleanup any existing batch and clear from changeset
-          cleanup_existing_batch(changeset)
-
           Ash.Changeset.add_error(changeset, "OpenAI batch creation failed: #{reason}")
       end
-    rescue
-      error ->
-        Logger.error("OpenAI batch creation crashed: #{inspect(error)}")
+    end)
+    |> Ash.Changeset.after_action(fn _changeset, batch ->
+      # Bulk update all pending requests to processing after transaction
+      Batcher.Batching.Request
+      |> Ash.Query.filter(batch_id == ^batch.id)
+      |> Ash.bulk_update!(:begin_processing, %{},
+        strategy: :stream,
+        return_errors?: true
+      )
 
-        # Cleanup any existing batch and clear from changeset
-        cleanup_existing_batch(changeset)
-
-        Ash.Changeset.add_error(changeset, "OpenAI batch creation crashed: #{inspect(error)}")
-    end
-  end
-
-
-
-  defp cleanup_existing_batch(changeset) do
-    case Ash.Changeset.get_attribute(changeset, :openai_batch_id) do
-      nil ->
-        changeset
-
-      "" ->
-        changeset
-
-      batch_id ->
-        Logger.info("Cleaning up existing OpenAI batch: #{batch_id}")
-
-        case OpenaiApiClient.cancel_batch(batch_id) do
-          {:ok, _} ->
-            Logger.info("Successfully canceled OpenAI batch: #{batch_id}")
-            # Remove the batch_id from changeset
-            Ash.Changeset.force_change_attribute(changeset, :openai_batch_id, nil)
-
-          {:error, reason} ->
-            Logger.error("Failed to cancel OpenAI batch #{batch_id}: #{reason}")
-            changeset
-        end
-    end
+      {:ok, batch}
+    end)
   end
 end

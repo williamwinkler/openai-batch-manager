@@ -10,7 +10,10 @@ import Config
 import Dotenvy
 source!([Path.absname(".env"), System.get_env()])
 
-config :batcher, :openai_api_key, env!("OPENAI_API_KEY", :string)
+openai_api_key = env!("OPENAI_API_KEY", :string)
+
+config :batcher, Batcher.OpenaiApiClient,
+  api_key: openai_api_key
 
 # Batch storage configuration
 # Production: /var/lib/batcher/batches (Docker volume mount point)

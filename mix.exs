@@ -41,7 +41,7 @@ defmodule Batcher.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:open_api_spex, "~> 3.0"},
+      {:open_api_spex, "~> 3.11"},
       {:sourceror, "~> 1.8", only: [:dev, :test]},
       {:oban, "~> 2.0"},
       {:usage_rules, "~> 0.1", only: [:dev]},
@@ -82,7 +82,9 @@ defmodule Batcher.MixProject do
       {:bandit, "~> 1.5"},
       {:ex_json_schema, "~> 0.11.1"},
       {:dotenvy, "~> 1.1.0"},
-      {:multipart, "~> 0.4.0"}
+      {:multipart, "~> 0.4.0"},
+      {:process_tree, "~> 0.2"},
+      {:test_server, "~> 0.1", only: :test}
     ]
   end
 

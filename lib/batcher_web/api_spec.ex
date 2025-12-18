@@ -13,7 +13,7 @@ defmodule BatcherWeb.ApiSpec do
   def spec do
     %OpenApi{
       info: %Info{
-        title: "OpenAPI Batch Manager API",
+        title: "OpenAI Batch Manager API",
         version: "1.0.0",
         description: """
         API for managing batch processing of OpenAI requests.

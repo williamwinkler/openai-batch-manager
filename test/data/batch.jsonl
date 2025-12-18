@@ -1,0 +1,5 @@
+{"body":{"input":"Is 4 even or odd. Answer only 'even' or 'odd'","model":"gpt-4o-mini"},"url":"/v1/responses","method":"POST","custom_id":"1"}
+{"body":{"input":"Is 3 even or odd. Answer only 'even' or 'odd'","model":"gpt-4o-mini"},"url":"/v1/responses","method":"POST","custom_id":"2"}
+{"body":{"input":"Is 7 even or odd. Answer only 'even' or 'odd'","model":"gpt-4o-mini"},"url":"/v1/responses","method":"POST","custom_id":"3"}
+{"body":{"input":"Is 11 even or odd. Answer only 'even' or 'odd'","model":"gpt-4o-mini"},"url":"/v1/responses","method":"POST","custom_id":"4"}
+{"body":{"input":"Is 333 even or odd. Answer only 'even' or 'odd'","model":"gpt-4o-mini"},"url":"/v1/responses","method":"POST","custom_id":"6"}
