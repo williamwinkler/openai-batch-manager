@@ -1,4 +1,5 @@
 import Config
+import Dotenvy
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
@@ -7,13 +8,13 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
-import Dotenvy
-source!([Path.absname(".env"), System.get_env()])
+if config_env() != :test do
+  source!([Path.absname(".env"), System.get_env()])
+  openai_api_key = env!("OPENAI_API_KEY", :string)
 
-openai_api_key = env!("OPENAI_API_KEY", :string)
-
-config :batcher, Batcher.OpenaiApiClient,
-  api_key: openai_api_key
+  config :batcher, Batcher.OpenaiApiClient,
+    openai_api_key: openai_api_key
+end
 
 # Batch storage configuration
 # Production: /var/lib/batcher/batches (Docker volume mount point)

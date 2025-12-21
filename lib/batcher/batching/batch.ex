@@ -89,12 +89,12 @@ defmodule Batcher.Batching.Batch do
     defaults [:read, :destroy]
 
     create :create do
-      description "Create a new batch for OpenAI"
+      description "Create a new batch"
       accept [:model, :url]
     end
 
     read :find_building_batch do
-      description "Find a draft batch for the given model and url"
+      description "Find a batch for the given model and url in the state of building"
       argument :model, :string, allow_nil?: false
       argument :url, :string, allow_nil?: false
       filter expr(state == :building and model == ^arg(:model) and url == ^arg(:url))
@@ -190,7 +190,7 @@ defmodule Batcher.Batching.Batch do
       description "Batch ID given by the OpenAI API"
     end
 
-    attribute :url, :string do
+    attribute :url, Batching.Types.OpenaiBatchEndpoints do
       description "OpenAI Batch API request url (e.g., '/v1/responses')"
       allow_nil? false
       public? true

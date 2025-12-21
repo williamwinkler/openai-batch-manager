@@ -47,3 +47,4 @@ npm-debug.log
 .elixir-tools
 .expert
 .lexical
+.vscode/.phoenix-pulse-cache.json

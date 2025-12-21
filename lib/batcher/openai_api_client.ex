@@ -5,8 +5,6 @@ defmodule Batcher.OpenaiApiClient do
   Uploads a file to OpenAI's file upload endpoint.
   """
   def upload_file(file_path) do
-    openai_api_key = Application.fetch_env!(:batcher, :openai_api_key)
-
     multipart =
       Multipart.new()
       |> Multipart.add_part(Multipart.Part.text_field("batch", "purpose"))
@@ -16,7 +14,7 @@ defmodule Batcher.OpenaiApiClient do
     content_type = Multipart.content_type(multipart, "multipart/form-data")
 
     headers = [
-      {"Authorization", "Bearer #{openai_api_key}"},
+      {"Authorization", "Bearer #{api_key()}"},
       {"Content-Type", content_type},
       {"Content-Length", to_string(content_length)}
     ]
@@ -113,7 +111,7 @@ defmodule Batcher.OpenaiApiClient do
       {:ok, %{status: 400, body: body}} ->
         Logger.info("Bad request: #{inspect(body)}")
         {:error, {:bad_request, body}}
-      
+
       {:ok, %{status: 401}} ->
         {:error, :unauthorized}
 
@@ -139,11 +137,13 @@ defmodule Batcher.OpenaiApiClient do
     ProcessTree.get(:openai_base_url, default: default)
   end
 
-  defp headers() do
-    api_key = Application.fetch_env!(:batcher, :openai_api_key)
+  defp api_key() do
+    Application.fetch_env!(:batcher, __MODULE__)[:openai_api_key]
+  end
 
+  defp headers() do
     [
-      {"Authorization", "Bearer #{api_key}"},
+      {"Authorization", "Bearer #{api_key()}"},
       {"Content-Type", "application/json"}
     ]
   end

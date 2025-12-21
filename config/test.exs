@@ -2,7 +2,8 @@ import Config
 config :batcher, Oban, testing: :manual
 config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
 
-config :batcher, :openai_api_key, "sk-test-dummy-key"
+config :batcher, Batcher.OpenaiApiClient,
+  openai_api_key: "sk-test-dummy-key"
 
 # Configure your database
 #

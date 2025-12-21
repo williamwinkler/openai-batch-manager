@@ -27,14 +27,17 @@ defmodule Batcher.Batching.Request do
 
     transitions do
       # Normal workflow
-      transition :begin_processing, from: :pending, to: :processing
-      transition :complete_processing, from: :processing, to: :processed
-      transition :begin_delivery, from: :processed, to: :delivering
+      transition :begin_processing, from: :pending, to: :openai_processing
+      transition :complete_processing, from: :openai_processing, to: :openai_processed
+      transition :begin_delivery, from: :openai_processed, to: :delivering
       transition :complete_delivery, from: :delivering, to: :delivered
 
       # Failure transitions
-      transition :mark_failed, from: [:pending, :processing, :processed, :delivering], to: :failed
-      transition :mark_expired, from: [:pending, :processing], to: :expired
+      transition :mark_failed,
+        from: [:pending, :openai_processing, :openai_processed, :delivering],
+        to: :failed
+
+      transition :mark_expired, from: [:pending, :openai_processing], to: :expired
       transition :cancel, from: :pending, to: :cancelled
     end
   end
@@ -67,7 +70,7 @@ defmodule Batcher.Batching.Request do
 
     update :begin_processing do
       require_atomic? false
-      change transition_state(:processing)
+      change transition_state(:openai_processing)
     end
 
     update :complete_processing do
@@ -120,7 +123,7 @@ defmodule Batcher.Batching.Request do
       public? true
     end
 
-    attribute :url, :string do
+    attribute :url, Batching.Types.OpenaiBatchEndpoints do
       description "OpenAI Batch API endpoint (e.g., /v1/responses)"
       allow_nil? false
       public? true

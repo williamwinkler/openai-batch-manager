@@ -6,7 +6,6 @@ defmodule Batcher.Batching.Changes.SetDeliveryConfig do
           Ash.Changeset.t()
   def change(changeset, _opts, _context) do
     delivery = Ash.Changeset.get_argument(changeset, :delivery)
-    dbg(delivery)
     type = delivery.type
 
     case type do

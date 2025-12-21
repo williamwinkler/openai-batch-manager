@@ -21,13 +21,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
         },
         url: %Schema{
           type: :string,
-          enum: [
-            "/v1/responses",
-            "/v1/embeddings",
-            "/v1/moderations",
-            "/v1/chat/completions",
-            "/v1/completions"
-          ],
+          enum: Batcher.Batching.Types.OpenaiBatchEndpoints,
           description:
             "The OpenAI API relative URL to be used for the request."
         },

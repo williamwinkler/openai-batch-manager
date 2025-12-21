@@ -5,8 +5,8 @@ defmodule Batcher.Batching.Types.RequestStatus do
   use Ash.Type.Enum,
     values: [
       :pending,
-      :processing,
-      :processed,
+      :openai_processing,
+      :openai_processed,
       :delivering,
       :delivered,
       :failed,

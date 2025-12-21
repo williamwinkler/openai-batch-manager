@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1763402042693,
+  "timestamp": 1766321789086,
   "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager",
   "registries": {
     "components": {
@@ -604,38 +604,13 @@
         [
           "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex",
           []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex",
-          []
         ]
       ],
       "fileHashes": {
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/core_components.ex": "e458838a259fb2cf0cffafeff0fc63ba4a6a0dfd",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/components/layouts.ex": "77b658533195af1e9536b58d5fa025619216046a",
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/error_html.ex": "04bab988e949d70d3082537959d710ed0e53f193",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex": "ed1c04c8d48841dfcffeabfa81ab2a70242cf16d",
-        "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex": "8a49e472b3f34b0019d88b4255fa07acf7c173b3",
-        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "859329f4322223fe64ffd833406671e2d3ae5f4f",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex": "6d8af71b06637b4ab383aa3db04d2dfdcb4fa587",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex": "6877b40530f7517341ce4a853e5988089ec1937e"
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html.ex": "ed1c04c8d48841dfcffeabfa81ab2a70242cf16d"
       },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
@@ -646,35 +621,8 @@
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
     "events": {
-      "events": [
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex",
-          []
-        ],
-        [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex",
-          []
-        ]
-      ],
-      "fileHashes": {
-        "/Users/williamwinkler/Documents/openai-batch-manager/config/runtime.exs": "5ab75a58df0b6e81b22d0f65d88a0d3935222520",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher/batching/batch.ex": "8a49e472b3f34b0019d88b4255fa07acf7c173b3",
-        "/Users/williamwinkler/Documents/openai-batch-manager/mix.exs": "859329f4322223fe64ffd833406671e2d3ae5f4f",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/responses_request_body_schema.ex": "6d8af71b06637b4ab383aa3db04d2dfdcb4fa587",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/schemas/BatchPromptUnionRequestSchema.ex": "6877b40530f7517341ce4a853e5988089ec1937e"
-      },
+      "events": [],
+      "fileHashes": {},
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
     "routes": {
@@ -715,12 +663,12 @@
         },
         {
           "verb": "POST",
-          "path": "/api/prompt",
+          "path": "/api/requests",
           "filePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex",
           "line": 38,
-          "controller": "BatcherWeb.PromptController",
+          "controller": "BatcherWeb.RequestController",
           "action": "create",
-          "helperBase": "prompt",
+          "helperBase": "request",
           "params": [],
           "isResource": false,
           "scopePath": "/api"
@@ -739,7 +687,7 @@
         }
       ],
       "fileHashes": {
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex": "78361297b0730681d2275d3a765123d2b38b4170"
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/router.ex": "d18884a316ae53337e0eb8691650a0ad914596ff"
       },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
@@ -755,13 +703,14 @@
               "templateName": "home",
               "assigns": [],
               "assignsWithTypes": [],
+              "actionBody": "  def home(conn, _params) do\n    render(conn, :home)\n  end",
               "line": 5,
               "templatePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html/home.html.heex"
             }
           ]
         ],
         [
-          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/prompt_controller.ex",
+          "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/request_controller.ex",
           []
         ]
       ],
@@ -779,6 +728,7 @@
                 "templateName": "home",
                 "assigns": [],
                 "assignsWithTypes": [],
+                "actionBody": "  def home(conn, _params) do\n    render(conn, :home)\n  end",
                 "line": 5,
                 "templatePath": "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_html/home.html.heex"
               }
@@ -788,7 +738,7 @@
       ],
       "fileHashes": {
         "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/page_controller.ex": "00916c1ace47bc36d0ef0cfa7b90fbe555ee3d82",
-        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/prompt_controller.ex": "e091e0aab94462fea58616a7dffa23745327e811"
+        "/Users/williamwinkler/Documents/openai-batch-manager/lib/batcher_web/controllers/request_controller.ex": "e2fc6ac78ede0782431e9cae11c10e9c0766978c"
       },
       "workspaceRoot": "/Users/williamwinkler/Documents/openai-batch-manager"
     },
