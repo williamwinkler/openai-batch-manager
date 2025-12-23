@@ -14,6 +14,7 @@ defmodule Batcher.Batching do
 
     resource Batcher.Batching.Request do
       define :create_request, action: :create
+      define :get_request_by_custom_id, action: :get_request_by_custom_id, args: [:batch_id, :custom_id]
     end
 
     # Transition resources (internal only)

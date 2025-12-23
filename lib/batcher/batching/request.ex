@@ -64,6 +64,14 @@ defmodule Batcher.Batching.Request do
       primary? true
     end
 
+    read :get_request_by_custom_id do
+      description "Get a request by batch ID and custom ID"
+      argument :batch_id, :integer, allow_nil?: false
+      argument :custom_id, :string, allow_nil?: false
+      filter expr(batch_id == ^arg(:batch_id) and custom_id == ^arg(:custom_id))
+      get? true
+    end
+
     # ============================================
     # Transition actions
     # ============================================
@@ -74,8 +82,9 @@ defmodule Batcher.Batching.Request do
     end
 
     update :complete_processing do
+      accept [:response_payload]
       require_atomic? false
-      change transition_state(:processed)
+      change transition_state(:openai_processed)
     end
 
     update :begin_delivery do
@@ -135,8 +144,9 @@ defmodule Batcher.Batching.Request do
       public? true
     end
 
+    # Stored as string to easily build the batch .jsonl file
     attribute :request_payload, :string do
-      description "Complete request payload as JSON object"
+      description "Complete request payload as JSON"
       allow_nil? false
       public? true
     end
@@ -144,6 +154,11 @@ defmodule Batcher.Batching.Request do
     attribute :request_payload_size, :integer do
       description "Size of the request payload in bytes"
       allow_nil? false
+      public? true
+    end
+
+    attribute :response_payload, :map do
+      description "The JSON body returned by OpenAI after processing the request"
       public? true
     end
 

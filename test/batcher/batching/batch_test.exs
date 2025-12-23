@@ -156,14 +156,15 @@ defmodule Batcher.Batching.BatchTest do
 
       response = %{
         # simplified response
-        "id" => "batch_69442513cdb08190bc6dbfdfcd2b9b46",
+        "id" => "batch_69442513cdb08190bc6dbfdfcd2b9b46"
       }
 
       expect_json_response(server, :post, "/v1/batches", response, 200)
 
-      batch = batch
-      |> Ash.Changeset.for_update(:create_openai_batch)
-      |> Ash.update!(load: [:transitions, :requests])
+      batch =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update!(load: [:transitions, :requests])
 
       assert batch.state == :openai_processing
       assert batch.openai_batch_id == response["id"]
@@ -177,6 +178,96 @@ defmodule Batcher.Batching.BatchTest do
       for request <- batch.requests do
         assert request.state == :openai_processing
       end
+    end
+  end
+
+  describe "Batcher.Batching.Batch.check_batch_status" do
+    @openai_processing_status [
+      "validating",
+      "in_progress",
+      "finalizing"
+    ]
+
+    for status <- @openai_processing_status do
+      test "OpenAI batch status '#{status}' => batch remains in processing", %{server: server} do
+        openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
+        openai_batch_id = "batch_69442513cdb08190bc6dbfdfcd2b9b46"
+
+        batch_before =
+          seeded_batch(
+            state: :openai_processing,
+            openai_input_file_id: openai_input_file_id,
+            openai_batch_id: openai_batch_id
+          )
+          |> generate()
+
+        response = %{"status" => unquote(status)}
+
+        # Not set yet
+        assert batch_before.openai_status_last_checked_at == nil
+
+        expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+        batch_after =
+          batch_before
+          |> Ash.Changeset.for_update(:check_batch_status)
+          |> Ash.update!(load: [:transitions])
+
+        assert batch_after.state == :openai_processing
+        assert batch_after.openai_status_last_checked_at
+        assert batch_after.updated_at >= batch_before.updated_at
+
+        # We expect no changes, since created with seed
+        assert length(batch_after.transitions) == 0
+      end
+    end
+
+    test "OpenAI batch status 'completed' => batch transitions to openai_completed", %{
+      server: server
+    } do
+      openai_batch_id = "batch_69442513cdb08190bc6dbfdfcd2b9b46"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_input_file_id: "file-1quwTNE3rPZezkuRuGuXaS",
+          openai_batch_id: openai_batch_id
+        )
+        |> generate()
+
+      response = %{
+        "status" => "completed",
+        "output_file_id" => "file-2AbcDNE3rPZezkuRuGuXbB",
+        "usage" => %{
+          "input_tokens" => 1000,
+          "input_tokens_details" => %{"cached_tokens" => 200},
+          "output_tokens_details" => %{"reasoning_tokens" => 300},
+          "output_tokens" => 800
+        }
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:check_batch_status)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :openai_completed
+      assert batch_after.openai_output_file_id == response["output_file_id"]
+      assert batch_after.openai_status_last_checked_at
+      assert batch_after.input_tokens == 1000
+      assert batch_after.cached_tokens == 200
+      assert batch_after.reasoning_tokens == 300
+      assert batch_after.output_tokens == 800
+      assert batch_after.updated_at >= batch_before.updated_at
+
+      # Verify transition record
+      assert length(batch_after.transitions) == 1
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :openai_processing
+      assert latest_transition.to == :openai_completed
+      assert latest_transition.transitioned_at
     end
   end
 end

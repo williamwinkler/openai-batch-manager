@@ -42,10 +42,12 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
         new_state = map_status_to_state(status)
 
         if new_state != batch.state do
-          update_batch_state(new_state, changeset, response)
+          changeset
+          |> update_batch_state(new_state, response)
+          |> update_checked_at()
         else
           Logger.debug("OpenAI batch #{batch.id} is still processing; no state change.")
-          changeset
+          changeset |> update_checked_at()
         end
 
       {:error, reason} ->
@@ -60,7 +62,7 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
     end
   end
 
-  defp update_batch_state(:openai_completed, changeset, response) do
+  defp update_batch_state(changeset, :openai_completed, response) do
     usage_tokens = OpenaiApiClient.extract_token_usage_from_batch_status(response)
 
     Logger.info(
@@ -76,7 +78,7 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
     |> Ash.Changeset.change_attribute(:output_tokens, usage_tokens.output_tokens)
   end
 
-  defp update_batch_state(:failed, changeset, response) do
+  defp update_batch_state(changeset, :failed, response) do
     error_msg = response["errors"] |> JSON.encode!()
 
     Logger.info("Batch #{changeset.data.id} failed with errors: #{inspect(error_msg)}")
@@ -86,7 +88,7 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
     |> Ash.Changeset.change_attribute(:error_msg, error_msg)
   end
 
-  defp update_batch_state(:cancelled, changeset, _response) do
+  defp update_batch_state(changeset, :cancelled, _response) do
     Logger.info("Batch #{changeset.data.id} was cancelled")
 
     changeset
@@ -101,4 +103,9 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
   defp map_status_to_state("expired"), do: :failed
   defp map_status_to_state("cancelling"), do: :cancelled
   defp map_status_to_state("cancelled"), do: :cancelled
+
+  defp update_checked_at(changeset) do
+    changeset
+    |> Ash.Changeset.change_attribute(:openai_status_last_checked_at, DateTime.utc_now())
+  end
 end

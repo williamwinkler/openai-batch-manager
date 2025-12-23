@@ -13,8 +13,8 @@ defmodule Batcher.OpenaiApiClientTest do
     test "successfully upload file", %{server: server} do
       response = %{
         "bytes" => 718,
-        "created_at" => 1766068446,
-        "expires_at" => 1768660446,
+        "created_at" => 1_766_068_446,
+        "expires_at" => 1_768_660_446,
         "filename" => "batch.jsonl",
         "id" => "file-1quwTNE3rPZezkuRuGuXaS",
         "object" => "file",
@@ -27,7 +27,10 @@ defmodule Batcher.OpenaiApiClientTest do
         via: :post,
         to: fn conn ->
           assert {"authorization", "Bearer sk-test-dummy-key"} in conn.req_headers
-          assert {"content-type", content_type} = List.keyfind(conn.req_headers, "content-type", 0)
+
+          assert {"content-type", content_type} =
+                   List.keyfind(conn.req_headers, "content-type", 0)
+
           assert content_type =~ "multipart/form-data"
 
           {:ok, body, conn} = Plug.Conn.read_body(conn)
@@ -56,14 +59,14 @@ defmodule Batcher.OpenaiApiClientTest do
     end
   end
 
-  describe "Batcher.OpenaiApiClient.retrieve_file/1" do
+  describe "Batcher.OpenaiApiClient.retrieve_file_metadata/1" do
     test "successfully retrieve file", %{server: server} do
       file_id = "file-1quwTNE3rPZezkuRuGuXaS"
 
       response = %{
         "bytes" => 718,
-        "created_at" => 1766068446,
-        "expires_at" => 1768660446,
+        "created_at" => 1_766_068_446,
+        "expires_at" => 1_768_660_446,
         "filename" => "batch.jsonl",
         "id" => file_id,
         "object" => "file",
@@ -74,7 +77,7 @@ defmodule Batcher.OpenaiApiClientTest do
 
       expect_json_response(server, :get, "/v1/files/#{file_id}", response, 200)
 
-      result = OpenaiApiClient.retrieve_file(file_id)
+      result = OpenaiApiClient.retrieve_file_metadata(file_id)
       assert {:ok, body} = result
       assert body["id"] == file_id
     end
@@ -93,40 +96,40 @@ defmodule Batcher.OpenaiApiClientTest do
 
       expect_json_response(server, :get, "/v1/files/#{file_id}", response, 404)
 
-      result = OpenaiApiClient.retrieve_file(file_id)
+      result = OpenaiApiClient.retrieve_file_metadata(file_id)
       assert {:error, :not_found} = result
     end
   end
 
   describe "Batcher.OpenaiApiClient.delete_file/1" do
     test "successfully delete file", %{server: server} do
-       file_id = "file-1quwTNE3rPZezkuRuGuXaS"
+      file_id = "file-1quwTNE3rPZezkuRuGuXaS"
 
-       response = %{
-         "error" => %{
-           "code" => nil,
-           "message" => "No such File object: file-1quwTNE3rPZezkuRuGuXaS",
-           "param" => "id",
-           "type" => "invalid_request_error"
-         }
-       }
+      response = %{
+        "error" => %{
+          "code" => nil,
+          "message" => "No such File object: file-1quwTNE3rPZezkuRuGuXaS",
+          "param" => "id",
+          "type" => "invalid_request_error"
+        }
+      }
 
-       expect_json_response(server, :delete, "/v1/files/#{file_id}", response, 404)
+      expect_json_response(server, :delete, "/v1/files/#{file_id}", response, 404)
 
-       result = OpenaiApiClient.delete_file(file_id)
-       assert {:error, :not_found} = result
+      result = OpenaiApiClient.delete_file(file_id)
+      assert {:error, :not_found} = result
     end
 
     test "deleting non-existing file returns :not_found", %{server: server} do
-       file_id = "file-1quwTNE3rPZezkuRuGuXaS"
+      file_id = "file-1quwTNE3rPZezkuRuGuXaS"
 
-       response = %{"deleted" => true, "id" => "file-1quwTNE3rPZezkuRuGuXaS", "object" => "file"}
+      response = %{"deleted" => true, "id" => "file-1quwTNE3rPZezkuRuGuXaS", "object" => "file"}
 
-       expect_json_response(server, :delete, "/v1/files/#{file_id}", response, 200)
+      expect_json_response(server, :delete, "/v1/files/#{file_id}", response, 200)
 
-       result = OpenaiApiClient.delete_file(file_id)
-       assert {:ok, body} = result
-       assert body["deleted"] == true
+      result = OpenaiApiClient.delete_file(file_id)
+      assert {:ok, body} = result
+      assert body["deleted"] == true
     end
   end
 
@@ -140,12 +143,12 @@ defmodule Batcher.OpenaiApiClientTest do
         "cancelling_at" => nil,
         "completed_at" => nil,
         "completion_window" => "24h",
-        "created_at" => 1766073619,
+        "created_at" => 1_766_073_619,
         "endpoint" => "/v1/responses",
         "error_file_id" => nil,
         "errors" => nil,
         "expired_at" => nil,
-        "expires_at" => 1766160019,
+        "expires_at" => 1_766_160_019,
         "failed_at" => nil,
         "finalizing_at" => nil,
         "id" => "batch_69442513cdb08190bc6dbfdfcd2b9b46",
@@ -184,12 +187,12 @@ defmodule Batcher.OpenaiApiClientTest do
         "cancelling_at" => nil,
         "completed_at" => nil,
         "completion_window" => "24h",
-        "created_at" => 1766074543,
+        "created_at" => 1_766_074_543,
         "endpoint" => "/v1/chat/completions",
         "error_file_id" => nil,
         "errors" => nil,
         "expired_at" => nil,
-        "expires_at" => 1766160943,
+        "expires_at" => 1_766_160_943,
         "failed_at" => nil,
         "finalizing_at" => nil,
         "id" => "batch_694428afe97881908c05f24bc9d2d6be",
@@ -228,12 +231,12 @@ defmodule Batcher.OpenaiApiClientTest do
         "cancelling_at" => nil,
         "completed_at" => nil,
         "completion_window" => "24h",
-        "created_at" => 1766074894,
+        "created_at" => 1_766_074_894,
         "endpoint" => "/v1/embeddings",
         "error_file_id" => nil,
         "errors" => nil,
         "expired_at" => nil,
-        "expires_at" => 1766161294,
+        "expires_at" => 1_766_161_294,
         "failed_at" => nil,
         "finalizing_at" => nil,
         "id" => "batch_69442a0e38ac8190becb33b799017d5d",
@@ -272,12 +275,12 @@ defmodule Batcher.OpenaiApiClientTest do
         "cancelling_at" => nil,
         "completed_at" => nil,
         "completion_window" => "24h",
-        "created_at" => 1766074998,
+        "created_at" => 1_766_074_998,
         "endpoint" => "/v1/completions",
         "error_file_id" => nil,
         "errors" => nil,
         "expired_at" => nil,
-        "expires_at" => 1766161398,
+        "expires_at" => 1_766_161_398,
         "failed_at" => nil,
         "finalizing_at" => nil,
         "id" => "batch_69442a76eb588190b6d0bd71b234657a",
@@ -314,7 +317,8 @@ defmodule Batcher.OpenaiApiClientTest do
       response = %{
         "error" => %{
           "code" => "invalid_value",
-          "message" => "Invalid value: '/v1/invalid'. Supported values are: '/v1/chat/completions', '/v1/completions', '/v1/embeddings', '/v1/responses', and '/v1/moderations'.",
+          "message" =>
+            "Invalid value: '/v1/invalid'. Supported values are: '/v1/chat/completions', '/v1/completions', '/v1/embeddings', '/v1/responses', and '/v1/moderations'.",
           "param" => "endpoint",
           "type" => "invalid_request_error"
         }
@@ -325,6 +329,7 @@ defmodule Batcher.OpenaiApiClientTest do
       result = OpenaiApiClient.create_batch(input_file_id, endpoint)
       assert {:error, {:bad_request, _}} = result
     end
+
     test "successfully create batch for endpoint: /v1/moderations", %{server: server} do
       input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
       endpoint = "/v1/moderations"
@@ -334,12 +339,12 @@ defmodule Batcher.OpenaiApiClientTest do
         "cancelling_at" => nil,
         "completed_at" => nil,
         "completion_window" => "24h",
-        "created_at" => 1766075050,
+        "created_at" => 1_766_075_050,
         "endpoint" => "/v1/moderations",
         "error_file_id" => nil,
         "errors" => nil,
         "expired_at" => nil,
-        "expires_at" => 1766161450,
+        "expires_at" => 1_766_161_450,
         "failed_at" => nil,
         "finalizing_at" => nil,
         "id" => "batch_69442aaa4e2c8190bd5a751702db5be6",
@@ -376,19 +381,19 @@ defmodule Batcher.OpenaiApiClientTest do
 
       response = %{
         "cancelled_at" => nil,
-        "cancelling_at" => 1766075379,
+        "cancelling_at" => 1_766_075_379,
         "completed_at" => nil,
         "completion_window" => "24h",
-        "created_at" => 1766073619,
+        "created_at" => 1_766_073_619,
         "endpoint" => "/v1/responses",
         "error_file_id" => nil,
         "errors" => nil,
         "expired_at" => nil,
-        "expires_at" => 1766160019,
+        "expires_at" => 1_766_160_019,
         "failed_at" => nil,
         "finalizing_at" => nil,
         "id" => batch_id,
-        "in_progress_at" => 1766073682,
+        "in_progress_at" => 1_766_073_682,
         "input_file_id" => "file-8VY1squavWFjVRZiLRwmHk",
         "metadata" => nil,
         "model" => "gpt-4o-mini-2024-07-18",
@@ -437,7 +442,8 @@ defmodule Batcher.OpenaiApiClientTest do
       response = %{
         "error" => %{
           "code" => "invalid_value",
-          "message" => "Invalid 'batch_id': '#{batch_id}'. Expected an ID that begins with 'batch'.",
+          "message" =>
+            "Invalid 'batch_id': '#{batch_id}'. Expected an ID that begins with 'batch'.",
           "param" => "batch_id",
           "type" => "invalid_request_error"
         }
@@ -542,12 +548,12 @@ defmodule Batcher.OpenaiApiClientTest do
         }
       }
 
-    usage = OpenaiApiClient.extract_token_usage_from_batch_status(batch_response)
+      usage = OpenaiApiClient.extract_token_usage_from_batch_status(batch_response)
 
-    assert usage.input_tokens == 115
-    assert usage.cached_tokens == 50
-    assert usage.reasoning_tokens == 600
-    assert usage.output_tokens == 1000
+      assert usage.input_tokens == 115
+      assert usage.cached_tokens == 50
+      assert usage.reasoning_tokens == 600
+      assert usage.output_tokens == 1000
     end
   end
 

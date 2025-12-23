@@ -32,11 +32,35 @@ defmodule Batcher.OpenaiApiClient do
   @doc """
   Retrieves file information for a given file ID from OpenAI's platform.
   """
-  def retrieve_file(file_id) do
+  def retrieve_file_metadata(file_id) do
     url = "#{base_url()}/v1/files/#{file_id}"
 
     Req.get(url, headers: headers())
     |> handle_response()
+  end
+
+  @doc """
+  Downloads a file by id
+
+  Returns:
+   {:ok, file_path}
+   {:error, reason}
+  """
+  def download_file(file_id, output_dir \\ "data/batches/outputs") do
+    url = "#{base_url()}/v1/files/#{file_id}/content"
+
+    dest_path = Path.join(output_dir, "#{file_id}.jsonl")
+
+    # Ensure output directory exists
+    File.mkdir_p!(output_dir)
+
+    case Req.get(url, headers: headers(), into: File.stream!(dest_path)) do
+      {:ok, _response} ->
+        {:ok, dest_path}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc """

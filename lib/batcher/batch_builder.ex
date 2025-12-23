@@ -100,15 +100,13 @@ defmodule Batcher.BatchBuilder do
        model: model,
        request_count: request_count,
        total_size_bytes: total_size_bytes,
-       started_at: DateTime.utc_now(),
+       started_at: batch.created_at,
        status: :building
      }}
   end
 
   @impl true
   def handle_call({:add_request, request_data}, _from, state) do
-    IO.inspect(request_data)
-
     cond do
       state.status != :building ->
         {:reply, {:error, :batch_full}, state}

@@ -5,6 +5,7 @@ defmodule Batcher.Batching.Batch do
     data_layer: AshSqlite.DataLayer,
     extensions: [AshStateMachine, AshOban]
 
+  require Ash.Resource.Change.Builtins
   alias Batcher.Batching
 
   sqlite do
@@ -21,10 +22,9 @@ defmodule Batcher.Batching.Batch do
       transition :upload, from: :uploading, to: :uploaded
       transition :create_openai_batch, from: :uploaded, to: :openai_processing
       transition :check_batch_status, from: :openai_processing, to: :openai_completed
-      transition :downloading, from: :openai_completed, to: :downloading
-      transition :downloaded, from: :downloading, to: :downloaded
-      transition :ready_to_deliver, from: :downloaded, to: :ready_to_deliver
-      transition :delivering, from: :ready_to_deliver, to: :delivering
+      transition :start_downloading, from: :openai_completed, to: :downloading
+      transition :download, from: :downloading, to: :ready_to_deliver
+      transition :start_delivering, from: :ready_to_deliver, to: :delivering
       transition :done, from: :delivering, to: :done
 
       transition :check_batch_status,
@@ -82,6 +82,22 @@ defmodule Batcher.Batching.Batch do
         worker_module_name Batching.Batch.AshOban.Worker.CheckBatchStatus
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CheckBatchStatus
       end
+
+      trigger :start_downloading do
+        action :start_downloading
+        where expr(state == :openai_completed)
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.StartDownloading
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.StartDownloading
+      end
+
+      trigger :download do
+        action :download
+        where expr(state == :downloading)
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.Download
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.Download
+      end
     end
   end
 
@@ -111,7 +127,7 @@ defmodule Batcher.Batching.Batch do
     update :upload do
       description "Upload batch file to OpenAI"
       require_atomic? false
-      change Batcher.Batching.Changes.UploadBatchFile
+      change Batching.Changes.UploadBatchFile
       change transition_state(:uploaded)
       change run_oban_trigger(:create_openai_batch)
     end
@@ -119,7 +135,7 @@ defmodule Batcher.Batching.Batch do
     update :create_openai_batch do
       description "Create batch on OpenAI platform for processing"
       require_atomic? false
-      change Batcher.Batching.Changes.CreateOpenaiBatch
+      change Batching.Changes.CreateOpenaiBatch
       change transition_state(:openai_processing)
       change run_oban_trigger(:check_batch_status)
     end
@@ -127,26 +143,25 @@ defmodule Batcher.Batching.Batch do
     update :check_batch_status do
       description "Check status of OpenAI batch processing"
       require_atomic? false
-      change Batcher.Batching.Changes.CheckOpenaiBatchStatus
+      change Batching.Changes.CheckOpenaiBatchStatus
     end
 
-    update :downloading do
+    update :start_downloading do
+      require_atomic? false
       change transition_state(:downloading)
-      require_atomic? false
+      change run_oban_trigger(:download)
     end
 
-    update :downloaded do
-      change transition_state(:downloaded)
-      require_atomic? false
-    end
-
-    update :ready_to_deliver do
+    update :download do
+      description "Download processed batch results from OpenAI"
+      change Batching.Changes.DownloadBatchFile
       change transition_state(:ready_to_deliver)
+      # change run_oban_trigger(:start_delivering)
       require_atomic? false
     end
 
-    update :delivering do
-      change transition_state(:delivering)
+    update :start_delivering do
+      description "Start delivering the results back"
       require_atomic? false
     end
 
@@ -188,6 +203,10 @@ defmodule Batcher.Batching.Batch do
 
     attribute :openai_batch_id, :string do
       description "Batch ID given by the OpenAI API"
+    end
+
+    attribute :openai_status_last_checked_at, :utc_datetime do
+      description "The datetime of when the status of the batch was last checked on OpenAIs platform"
     end
 
     attribute :url, Batching.Types.OpenaiBatchEndpoints do
