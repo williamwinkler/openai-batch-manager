@@ -26,6 +26,7 @@ defmodule Batcher.Repo.Migrations.Init do
       add :webhook_url, :text
       add :delivery_type, :text, null: false
       add :state, :text, null: false
+      add :response_payload, :map
       add :request_payload_size, :bigint, null: false
       add :request_payload, :text, null: false
       add :model, :text, null: false
@@ -34,19 +35,20 @@ defmodule Batcher.Repo.Migrations.Init do
       add :id, :bigserial, null: false, primary_key: true
     end
 
-    create table(:request_transitions, primary_key: false) do
+    create table(:request_delivery_attempts, primary_key: false) do
       add :request_id,
           references(:requests,
             column: :id,
-            name: "request_transitions_request_id_fkey",
+            name: "request_delivery_attempts_request_id_fkey",
             type: :bigint,
             on_delete: :delete_all
           ),
           null: false
 
-      add :transitioned_at, :utc_datetime_usec, null: false
-      add :to, :text, null: false
-      add :from, :text
+      add :attempted_at, :utc_datetime_usec, null: false
+      add :error_msg, :text
+      add :success, :boolean, null: false
+      add :type, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end
 
@@ -60,6 +62,7 @@ defmodule Batcher.Repo.Migrations.Init do
       add :error_msg, :text
       add :model, :text, null: false
       add :url, :text, null: false
+      add :openai_status_last_checked_at, :utc_datetime
       add :openai_batch_id, :text
       add :openai_output_file_id, :text
       add :openai_input_file_id, :text
@@ -97,9 +100,9 @@ defmodule Batcher.Repo.Migrations.Init do
 
     drop table(:batches)
 
-    drop constraint(:request_transitions, "request_transitions_request_id_fkey")
+    drop constraint(:request_delivery_attempts, "request_delivery_attempts_request_id_fkey")
 
-    drop table(:request_transitions)
+    drop table(:request_delivery_attempts)
 
     drop constraint(:requests, "requests_batch_id_fkey")
 

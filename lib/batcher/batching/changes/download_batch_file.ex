@@ -1,85 +1,111 @@
 defmodule Batcher.Batching.Changes.DownloadBatchFile do
   use Ash.Resource.Change
   require Logger
-
   alias Batcher.OpenaiApiClient
 
   @impl true
   def change(changeset, _opts, _context) do
-    # We use `around_action` (or `after_action`) to do the work
-    # effectively "inside" the action execution flow but allowing
-    # us to control the result.
+    IO.puts("Starting DownloadBatchFile change")
+    Ash.Changeset.around_action(changeset, fn changeset, _ ->
+      # The data before the update
+      batch = changeset.data
 
-    Ash.Changeset.after_action(changeset, fn _changeset, batch ->
       Logger.info("Starting download for batch #{batch.id}")
 
-      # 1. Download output file from OpenAI
+      IO.puts("test")
+
       with {:ok, file_path} <- OpenaiApiClient.download_file(batch.openai_output_file_id),
-           # 2. Process
-           :ok <- process_results(batch.id, file_path) do
-        # Cleanup
-        File.rm(file_path)
+           :ok <- process_results_in_chunks(batch.id, file_path) do
+        IO.inspect(file_path, label: "DEBUG: Downloaded file path")
+        # File.rm(file_path)
+        Logger.info("Batch #{batch.id} download and update of requests complete.")
 
-        Logger.info("Completed download and processing for batch #{batch.id}")
-
-        # Return success tuple. The batch state update happens
-        # because of the `transition_state` in the action definition
-        # (which technically runs 'before' this hook in terms of changeset setup,
-        # but the DB commit happens after).
-        {:ok, batch}
+        changeset
       else
         {:error, reason} ->
-          Logger.error("Download failed: #{inspect(reason)}")
-          {:error, reason}
+          IO.puts("error")
+          Logger.error("Download batch output and update requests failed: #{inspect(reason)}")
 
-        error ->
-          {:error, error}
+          Ash.Changeset.add_error(changeset,
+            field: :base,
+            message: "Download/processing failed: #{inspect(reason)}"
+          )
+
+        _ ->
+          IO.puts("unexpected error")
+          Logger.error("Unexpected error during batch file download and processing.")
+
+          Ash.Changeset.add_error(changeset,
+            field: :base,
+            message: "Download/processing failed: unexpected error"
+          )
+      end
+    end)
+    IO.puts("Finished DownloadBatchFile change")
+
+    changeset
+  end
+
+  defp process_results_in_chunks(batch_id, file_path) do
+    file_path
+    |> File.stream!()
+    |> Stream.map(&JSON.decode!/1)
+    # Process 100 at a time
+    |> Stream.chunk_every(100)
+    |> Enum.reduce_while(:ok, fn chunk, _acc ->
+      case process_chunk(batch_id, chunk) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
       end
     end)
   end
 
-  defp process_results(batch_id, file_path) do
-    try do
-      Batcher.Repo.transaction(
-        fn ->
-          file_path
-          |> File.stream!()
-          |> Stream.map(&JSON.decode!/1)
-          |> Stream.each(fn row -> update_request(batch_id, row) end)
-          |> Stream.run()
-        end,
-        timeout: :infinity
-      )
+  defp process_chunk(batch_id, chunk) do
+    # Extract custom_ids from the chunk
+    custom_ids = Enum.map(chunk, & &1["custom_id"])
 
-      :ok
-    rescue
-      e -> {:error, e}
+    IO.inspect(length(chunk), label: "DEBUG: Processing chunk of size")
+
+    # Fetch the corresponding requests at once
+    requests =
+      Batcher.Batching.Request
+      |> Ash.Query.filter(batch_id == ^batch_id)
+      |> Ash.Query.filter(custom_id in ^custom_ids)
+      |> Ash.read!()
+
+    # Build a map of requests by custom_id for quick lookup
+    requests_map = Map.new(requests, &{&1.custom_id, &1})
+
+    Batcher.Repo.transaction(fn ->
+      Enum.each(chunk, fn row ->
+        update_request(row, requests_map)
+      end)
+    end)
+  end
+
+  defp update_request(
+         %{"custom_id" => custom_id, "response" => response, "error" => err},
+         requests_map
+       ) do
+    case Map.get(requests_map, custom_id) do
+      nil ->
+        Logger.warning("Openai returned custom_id #{custom_id} which is not found in DB")
+        :ok
+
+      request ->
+        if err do
+          request
+          |> Ash.Changeset.for_update(:mark_failed, %{error_msg: err})
+          |> Ash.update!()
+        else
+          IO.puts("updating request #{custom_id} with response")
+          request
+          |> Ash.Changeset.for_update(:complete_processing, %{response_payload: response})
+          |> Ash.update!()
+        end
     end
   end
 
-  defp update_request(batch_id, %{"custom_id" => custom_id, "response" => response}) do
-    # Extract the actual body (response map)
-    # response structure is usually: {"status_code": 200, "body": {...}}
-    response_payload = response["body"]
-
-    # We use a bulk update (atomic) if possible, but since we are iterating
-    # line by line with specific payloads, we need individual updates.
-    # To make this fast, we look up by the compound index [batch_id, custom_id].
-
-    case Batcher.Batching.get_request_by_custom_id(batch_id, custom_id) do
-      {:ok, request} ->
-        # Perform the update
-        request
-        |> Ash.Changeset.for_update(:complete_processing, %{response_payload: response_payload})
-        |> Ash.update!()
-
-      _ ->
-        Logger.warning("Batch #{batch_id}: Found result for unknown custom_id: #{custom_id}")
-    end
-  end
-
-  # Helper to handle errors if the structure of the JSONL line is unexpected
-  defp update_request(batch_id, data) do
-    Logger.error("Batch #{batch_id}: Unexpected JSONL line format: #{inspect(data)}")
-  end
+  # Catch-all for malformed lines
+  defp update_request(_batch_id, _data), do: :ok
 end

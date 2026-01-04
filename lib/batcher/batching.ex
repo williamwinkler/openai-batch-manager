@@ -9,16 +9,21 @@ defmodule Batcher.Batching do
       define :find_building_batch, action: :find_building_batch, args: [:model, :url]
       define :start_batch_upload, action: :start_upload
       define :read_batch_by_id, action: :read, get_by: :id
-      define :read_batches, action: :read
+      define :list_batches, action: :read
     end
 
     resource Batcher.Batching.Request do
       define :create_request, action: :create
-      define :get_request_by_custom_id, action: :get_request_by_custom_id, args: [:batch_id, :custom_id]
+
+      define :get_request_by_custom_id,
+        action: :get_request_by_custom_id,
+        args: [:batch_id, :custom_id]
+
+      define :list_requests_in_batch, action: :list_requests_in_batch, args: [:batch_id]
     end
 
     # Transition resources (internal only)
     resource Batcher.Batching.BatchTransition
-    resource Batcher.Batching.RequestTransition
+    resource Batcher.Batching.RequestDeliveryAttempt
   end
 end

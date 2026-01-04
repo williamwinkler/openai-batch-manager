@@ -63,6 +63,16 @@
     {
       "default": "nil",
       "size": null,
+      "type": "map",
+      "source": "response_payload",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
       "type": "text",
       "source": "state",
       "references": null,
@@ -153,10 +163,10 @@
           "attribute": null,
           "strategy": null
         },
+        "on_delete": "delete",
+        "primary_key?": true,
         "destination_attribute": "id",
         "on_update": null,
-        "primary_key?": true,
-        "on_delete": "delete",
         "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
@@ -167,7 +177,7 @@
     }
   ],
   "table": "requests",
-  "hash": "0BD17550DF15DEC712F80335652FCF3040EAE35A99FEB0C7AB2576DC01AC1639",
+  "hash": "CFE8ABE54EFED422CF6203D93607E46DDB3E2C3EC69EDDDF45C2C7EFE97784C5",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
@@ -182,12 +192,24 @@
       "name": null,
       "table": null,
       "include": null,
-      "where": null,
       "fields": [
         "custom_id",
         "batch_id"
       ],
+      "where": null,
       "unique": true,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "batch_id"
+      ],
+      "where": null,
+      "unique": false,
       "using": null
     }
   ],

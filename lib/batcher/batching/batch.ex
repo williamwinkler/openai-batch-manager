@@ -77,7 +77,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :check_batch_status do
         action :check_batch_status
-        where expr(state  == :openai_processing)
+        where expr(state == :openai_processing)
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.CheckBatchStatus
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CheckBatchStatus
@@ -91,12 +91,12 @@ defmodule Batcher.Batching.Batch do
         scheduler_module_name Batching.Batch.AshOban.Scheduler.StartDownloading
       end
 
-      trigger :download do
-        action :download
+      trigger :download_and_process do
+        action :download_and_process
         where expr(state == :downloading)
         queue :default
-        worker_module_name Batching.Batch.AshOban.Worker.Download
-        scheduler_module_name Batching.Batch.AshOban.Scheduler.Download
+        worker_module_name Batching.Batch.AshOban.Worker.DownloadAndProcess
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.DownloadAndProcess
       end
     end
   end
@@ -149,15 +149,14 @@ defmodule Batcher.Batching.Batch do
     update :start_downloading do
       require_atomic? false
       change transition_state(:downloading)
-      change run_oban_trigger(:download)
+      change run_oban_trigger(:download_and_process)
     end
 
-    update :download do
-      description "Download processed batch results from OpenAI"
-      change Batching.Changes.DownloadBatchFile
-      change transition_state(:ready_to_deliver)
-      # change run_oban_trigger(:start_delivering)
-      require_atomic? false
+    action :download_and_process, :struct do
+      description "Download processed batch results from OpenAI and update requests"
+      # Downloads can be large; avoid long transactions
+      transaction? false
+      run Batching.Changes.DownloadBatchFile
     end
 
     update :start_delivering do

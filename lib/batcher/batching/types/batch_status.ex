@@ -7,6 +7,7 @@ defmodule Batcher.Batching.Types.BatchStatus do
       # Batch is being build
       :building,
 
+      # Batch file is being uploaded
       :uploading,
 
       # Batch file has been uploaded
@@ -35,7 +36,7 @@ defmodule Batcher.Batching.Types.BatchStatus do
 
       # Batch failed for some reason
       :failed,
-      
+
       # Batch was cancelled
       :cancelled
     ]

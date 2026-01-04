@@ -3,7 +3,7 @@ defmodule Batcher.Batching.Request do
     otp_app: :batcher,
     domain: Batcher.Batching,
     data_layer: AshSqlite.DataLayer,
-    extensions: [AshStateMachine]
+    extensions: [AshStateMachine, AshOban]
 
   alias Batcher.Batching
 
@@ -14,6 +14,7 @@ defmodule Batcher.Batching.Request do
     custom_indexes do
       # Ensure custom_id is unique within a batch
       index [:custom_id, :batch_id], unique: true
+      index [:batch_id]
     end
 
     references do
@@ -41,6 +42,17 @@ defmodule Batcher.Batching.Request do
       transition :cancel, from: :pending, to: :cancelled
     end
   end
+
+  # oban do
+  #   triggers do
+  #     # Starts the delivery process for processed requests
+  #     trigger :begin_delivery do
+  #       action :begin_delivery,
+  #       queue: :delivery
+  #       where expr(state == :openai_processed)
+  #     end
+  #   end
+  # end
 
   actions do
     defaults [:read, :destroy]
@@ -72,27 +84,36 @@ defmodule Batcher.Batching.Request do
       get? true
     end
 
-    # ============================================
-    # Transition actions
-    # ============================================
+    read :list_requests_in_batch do
+      description "List all requests in a given batch"
+      argument :batch_id, :integer, allow_nil?: false
+      filter expr(batch_id == ^arg(:batch_id))
+    end
 
     update :begin_processing do
-      require_atomic? false
+      description "Mark the request as being processed by OpenAI"
+      change transition_state(:openai_processing)
+    end
+
+    update :bulk_begin_processing do
       change transition_state(:openai_processing)
     end
 
     update :complete_processing do
+      description "Adds the OpenAI response and mark the request as processed"
       accept [:response_payload]
       require_atomic? false
       change transition_state(:openai_processed)
     end
 
     update :begin_delivery do
+      description "Start delivery of the processed request"
       require_atomic? false
       change transition_state(:delivering)
     end
 
     update :complete_delivery do
+      description "Mark the request as delivered"
       require_atomic? false
       change transition_state(:delivered)
     end
@@ -113,14 +134,6 @@ defmodule Batcher.Batching.Request do
       require_atomic? false
       change transition_state(:cancelled)
     end
-  end
-
-  changes do
-    change {Batching.Changes.CreateTransition,
-            transition_resource: Batching.RequestTransition,
-            parent_id_field: :request_id,
-            state_attribute: :state},
-           where: [changing(:state)]
   end
 
   attributes do
@@ -205,10 +218,11 @@ defmodule Batcher.Batching.Request do
       description "The batch this request belongs to"
       allow_nil? false
       public? true
+      attribute_public? true
     end
 
-    has_many :transitions, Batching.RequestTransition do
-      description "Audit trail of status transitions"
+    has_many :delivery_attempts, Batching.RequestDeliveryAttempt do
+      description "Audit trail of delivery attempts for this request"
     end
   end
 end

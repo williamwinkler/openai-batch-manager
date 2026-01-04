@@ -14,17 +14,7 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "from",
-      "references": null,
-      "allow_nil?": true,
-      "primary_key?": false,
-      "generated?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "to",
+      "source": "type",
       "references": null,
       "allow_nil?": false,
       "primary_key?": false,
@@ -33,8 +23,28 @@
     {
       "default": "nil",
       "size": null,
+      "type": "boolean",
+      "source": "success",
+      "references": null,
+      "allow_nil?": false,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "error_msg",
+      "references": null,
+      "allow_nil?": true,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
       "type": "utc_datetime_usec",
-      "source": "transitioned_at",
+      "source": "attempted_at",
       "references": null,
       "allow_nil?": false,
       "primary_key?": false,
@@ -46,17 +56,17 @@
       "type": "bigint",
       "source": "request_id",
       "references": {
-        "name": "request_transitions_request_id_fkey",
+        "name": "request_delivery_attempts_request_id_fkey",
         "table": "requests",
         "multitenancy": {
           "global": null,
           "attribute": null,
           "strategy": null
         },
+        "on_delete": "delete",
+        "primary_key?": true,
         "destination_attribute": "id",
         "on_update": null,
-        "primary_key?": true,
-        "on_delete": "delete",
         "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
@@ -66,8 +76,8 @@
       "generated?": false
     }
   ],
-  "table": "request_transitions",
-  "hash": "6768BAB18F14E33446CEE85777DB7BBCEB41B797E9C3478B52ADCAF45FB7C7DF",
+  "table": "request_delivery_attempts",
+  "hash": "F3DF11A5A92A36D92F7613357C7F143CE4F17453AE7E7D057C7D6F0C6C65F9DD",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
@@ -76,7 +86,20 @@
   },
   "identities": [],
   "strict?": false,
-  "custom_indexes": [],
+  "custom_indexes": [
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "request_id"
+      ],
+      "where": null,
+      "unique": false,
+      "using": null
+    }
+  ],
   "base_filter": null,
   "custom_statements": [],
   "has_create_action": true

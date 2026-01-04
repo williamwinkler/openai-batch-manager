@@ -13,6 +13,11 @@ defmodule Batcher.Batching.BatchTransition do
     references do
       reference :batch, on_delete: :delete
     end
+
+    custom_indexes do
+      index [:batch_id]
+    end
+
   end
 
   actions do

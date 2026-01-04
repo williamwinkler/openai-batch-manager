@@ -1,6 +1,6 @@
 defmodule Batcher.Batching.Types.RequestDeliveryType do
   @moduledoc """
-  Request delivery type enum (webhook or rabbitmq).
+  Request delivery type enum.
   """
   use Ash.Type.Enum, values: [:webhook, :rabbitmq]
 end

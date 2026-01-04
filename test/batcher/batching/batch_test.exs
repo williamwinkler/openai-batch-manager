@@ -270,4 +270,90 @@ defmodule Batcher.Batching.BatchTest do
       assert latest_transition.transitioned_at
     end
   end
+
+  describe "Batcher.Batching.Batch.start_downloading/0" do
+    test "sets the state to :downloading" do
+      output_file_id = "file-2AbcDNE3rPZezkuRuGuXbB"
+      batch_before =
+        seeded_batch(
+          state: :openai_completed,
+          openai_output_file_id: output_file_id
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:start_downloading)
+        |> Ash.update!(load: [:transitions])
+
+      # Verify that a transition record was created
+      transitions = batch_after.transitions
+      assert transitions
+      # openai_completed -> :downloading
+      assert Enum.at(transitions, 0).from == :openai_completed
+      assert Enum.at(transitions, 0).to == :downloading
+      assert Enum.at(transitions, 0).transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.download/0" do
+    test "sets the state to :ready_to_deliver", %{server: server} do
+      output_file_id = "file-2AbcDNE3rPZezkuRuGuXbB"
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: output_file_id
+        )
+        |> generate()
+
+      # Create requests associated with the batch
+      requests =
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processing
+          )
+          |> generate_many(2)
+
+      cid1 = Enum.at(requests, 0).custom_id
+      cid2 = Enum.at(requests, 1).custom_id
+
+      body = """
+      {"id": "batch_req_6938b10e2b788190b33b96fd5a082739", "custom_id": "#{cid1}", "response": {"status_code": 200, "request_id": "e6680ccd27fff067f1f8a49c2a5175db", "body": {"id": "resp_011c43705eef9ba0006938b0ab4b488191a657ce33a2fa15c8", "object": "response", "created_at": 1765322923, "status": "completed", "background": false, "billing": {"payer": "developer"}, "error": null, "incomplete_details": null, "instructions": null, "max_output_tokens": null, "max_tool_calls": null, "model": "gpt-4o-mini-2024-07-18", "output": [{"id": "msg_011c43705eef9ba0006938b0ab9bf48191b7fed29fe627a1fa", "type": "message", "status": "completed", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "Go itself does not inherently run inside a virtual machine (VM); it is a compiled language that produces standalone binaries. When you write a Go program, the Go compiler compiles your code into a machine-specific executable. This means that, in typical usage, the compiled Go program runs directly on the operating system without the need for a VM.\n\nHowever, you can run Go applications inside a VM if you choose to do so. For example, you might deploy a Go application inside a VM for various reasons, such as isolation, security, or to match a specific deployment environment. Additionally, when using containerization technologies like Docker, Go applications are often run in containers, which can be orchestrated within VMs. \n\nIn summary, while Go itself does not require a VM to run, it can be executed within a VM depending on your deployment strategy."}], "role": "assistant"}], "parallel_tool_calls": true, "previous_response_id": null, "prompt_cache_key": null, "prompt_cache_retention": null, "reasoning": {"effort": null, "summary": null}, "safety_identifier": null, "service_tier": "default", "store": true, "temperature": 1.0, "text": {"format": {"type": "text"}, "verbosity": "medium"}, "tool_choice": "auto", "tools": [], "top_logprobs": 0, "top_p": 1.0, "truncation": "disabled", "usage": {"input_tokens": 14, "input_tokens_details": {"cached_tokens": 0}, "output_tokens": 171, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 185}, "user": null, "metadata": {}}}, "error": null}
+      {"id": "batch_req_6938b10d14bc8190b765b1fc7a26fd72", "custom_id": "#{cid2}", "response": {"status_code": 200, "request_id": "bf6efccbef9a917044b9b663a0c1c4aa", "body": {"id": "resp_0ff259abffda64fb006938b0a83c0881a1a2b01c1e1c8adceb", "object": "response", "created_at": 1765322920, "status": "completed", "background": false, "billing": {"payer": "developer"}, "error": null, "incomplete_details": null, "instructions": null, "max_output_tokens": null, "max_tool_calls": null, "model": "gpt-4o-mini-2024-07-18", "output": [{"id": "msg_0ff259abffda64fb006938b0a87a9c81a1801fc0aef3a740db", "type": "message", "status": "completed", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "A red Porsche is, as expected, red! The specific shade can vary, ranging from bright, vibrant red to deeper, darker hues like burgundy. Porsche offers various red shades in their color options, such as Guards Red or Racing Red, each with its own unique character."}], "role": "assistant"}], "parallel_tool_calls": true, "previous_response_id": null, "prompt_cache_key": null, "prompt_cache_retention": null, "reasoning": {"effort": null, "summary": null}, "safety_identifier": null, "service_tier": "default", "store": true, "temperature": 1.0, "text": {"format": {"type": "text"}, "verbosity": "medium"}, "tool_choice": "auto", "tools": [], "top_logprobs": 0, "top_p": 1.0, "truncation": "disabled", "usage": {"input_tokens": 14, "input_tokens_details": {"cached_tokens": 0}, "output_tokens": 57, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 71}, "user": null, "metadata": {}}}, "error": null}
+      """
+
+
+      # Mock the download file response
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.put_resp_header("content-disposition", "attachment; filename=\"batch_69386862e3b8819099eaa58934cae79d_output.jsonl\"")
+          |> Plug.Conn.send_resp(200, body)
+        end
+      )
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:download)
+        |> Ash.update!(load: [:transitions, :requests])
+
+      assert batch_after.state == :ready_to_deliver
+
+      # downloading -> downloaded
+      assert Enum.at(batch_after.transitions, 0).from == :downloading
+      assert Enum.at(batch_after.transitions, 0).to == :ready_to_deliver
+      assert Enum.at(batch_after.transitions, 0).transitioned_at
+
+      assert length(batch_after.requests) == 2
+      for request <- batch_after.requests do
+        # IO.inspect(request)
+        assert request.response_payload != nil
+        assert request.state == :openai_processed
+      end
+    end
+  end
 end

@@ -7,8 +7,8 @@
       "source": "id",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": true,
-      "generated?": true
+      "generated?": true,
+      "primary_key?": true
     },
     {
       "default": "nil",
@@ -17,8 +17,8 @@
       "source": "from",
       "references": null,
       "allow_nil?": true,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     },
     {
       "default": "nil",
@@ -27,8 +27,8 @@
       "source": "to",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     },
     {
       "default": "nil",
@@ -37,8 +37,8 @@
       "source": "transitioned_at",
       "references": null,
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     },
     {
       "default": "nil",
@@ -50,34 +50,34 @@
         "table": "batches",
         "multitenancy": {
           "global": null,
-          "attribute": null,
-          "strategy": null
+          "strategy": null,
+          "attribute": null
         },
         "destination_attribute": "id",
-        "on_update": null,
         "primary_key?": true,
+        "on_update": null,
         "on_delete": "delete",
         "deferrable": false,
         "destination_attribute_default": null,
         "destination_attribute_generated": null
       },
       "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
+      "generated?": false,
+      "primary_key?": false
     }
   ],
   "table": "batch_transitions",
-  "hash": "1E6AE67232650BC84421B48789A92D4779C73479D6124F4A2829688BFD103EAA",
+  "hash": "36114ED0D86D65D096CC21FBCBABD2F177FCC596F55C746DA13D4C8804898D75",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "attribute": null,
-    "strategy": null
+    "strategy": null,
+    "attribute": null
   },
   "identities": [],
   "strict?": false,
-  "custom_indexes": [],
   "base_filter": null,
+  "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true
 }
