@@ -1,6 +1,6 @@
 # priv/scripts/http_requests.exs
 
-for _i <- 1..100 do
+for _i <- 1..10 do
   req = %{
     "body" => %{
       "input" => "Say 'hi' back",

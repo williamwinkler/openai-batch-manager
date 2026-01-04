@@ -23,7 +23,7 @@ defmodule Batcher.Batching.Batch do
       transition :create_openai_batch, from: :uploaded, to: :openai_processing
       transition :check_batch_status, from: :openai_processing, to: :openai_completed
       transition :start_downloading, from: :openai_completed, to: :downloading
-      transition :download, from: :downloading, to: :ready_to_deliver
+      transition :finalize_processing, from: :downloading, to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
       transition :done, from: :delivering, to: :done
 
@@ -91,12 +91,12 @@ defmodule Batcher.Batching.Batch do
         scheduler_module_name Batching.Batch.AshOban.Scheduler.StartDownloading
       end
 
-      trigger :download_and_process do
-        action :download_and_process
+      trigger :process_downloaded_file do
+        action :process_downloaded_file
         where expr(state == :downloading)
         queue :default
-        worker_module_name Batching.Batch.AshOban.Worker.DownloadAndProcess
-        scheduler_module_name Batching.Batch.AshOban.Scheduler.DownloadAndProcess
+        worker_module_name Batching.Batch.AshOban.Worker.ProcessDownloadedFile
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessDownloadedFile
       end
     end
   end
@@ -149,14 +149,21 @@ defmodule Batcher.Batching.Batch do
     update :start_downloading do
       require_atomic? false
       change transition_state(:downloading)
-      change run_oban_trigger(:download_and_process)
+      change run_oban_trigger(:process_downloaded_file)
     end
 
-    action :download_and_process, :struct do
-      description "Download processed batch results from OpenAI and update requests"
+    action :process_downloaded_file, :struct do
+      description "Downloads the file, updates all requests, and marks batch as ready for delivery."
+      constraints instance_of: __MODULE__
       # Downloads can be large; avoid long transactions
       transaction? false
-      run Batching.Changes.DownloadBatchFile
+      run Batching.Actions.ProcessDownloadedFile
+    end
+
+    update :finalize_processing do
+      description "Mark batch as ready to deliver after processing downloaded results"
+      require_atomic? false
+      change transition_state(:ready_to_deliver)
     end
 
     update :start_delivering do

@@ -42,7 +42,7 @@ defmodule BatcherWeb.RequestController do
 
     case Handlers.RequestHandler.handle(request_body) do
       {:ok, request} ->
-        Logger.info("Request add succesfully to batch #{request.batch_id}")
+        Logger.info("Request #{request.custom_id} added succesfully to batch #{request.batch_id}")
 
         conn
         |> put_status(:accepted)

@@ -48,7 +48,7 @@ defmodule Batcher.MixProject do
       {:live_debugger, "~> 0.4", only: [:dev]},
       {:ash_state_machine, "~> 0.2"},
       {:oban_web, "~> 2.0"},
-      {:ash_oban, "~> 0.4"},
+      {:ash_oban, "~> 0.7"},
       {:ash_admin, "~> 0.13"},
       {:ash_json_api, "~> 1.0"},
       {:ash_sqlite, "~> 0.2"},
