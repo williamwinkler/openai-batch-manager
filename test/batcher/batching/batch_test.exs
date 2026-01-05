@@ -151,8 +151,10 @@ defmodule Batcher.Batching.BatchTest do
   describe "Batcher.Batching.Batch.create_openai_batch/0" do
     test "transitions batch from uploaded to openai_processing", %{server: server} do
       openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
+
       batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: openai_input_file_id))
-      generate_many(request(batch_id: batch.id, url: batch.url), 5)
+
+      generate_many(seeded_request(batch_id: batch.id, url: batch.url), 5)
 
       response = %{
         # simplified response
@@ -274,6 +276,7 @@ defmodule Batcher.Batching.BatchTest do
   describe "Batcher.Batching.Batch.start_downloading/0" do
     test "sets the state to :downloading" do
       output_file_id = "file-2AbcDNE3rPZezkuRuGuXbB"
+
       batch_before =
         seeded_batch(
           state: :openai_completed,
@@ -297,26 +300,29 @@ defmodule Batcher.Batching.BatchTest do
   end
 
   describe "Batcher.Batching.Batch.process_downloaded_file/0" do
-    test "downloads file, updates requests, and sets state to :ready_to_deliver", %{server: server} do
+    test "downloads file, updates requests, and sets state to :ready_to_deliver", %{
+      server: server
+    } do
       output_file_id = "file-2AbcDNE3rPZezkuRuGuXbB"
 
       # 1. Setup Batch in the correct state
       batch_before =
         seeded_batch(
-          state: :downloading, # The state expected by the process
+          # The state expected by the process
+          state: :downloading,
           openai_output_file_id: output_file_id
         )
         |> generate()
 
       # 2. Setup Requests in the correct state (:openai_processing)
       requests =
-          seeded_request(
-            batch_id: batch_before.id,
-            url: batch_before.url,
-            model: batch_before.model,
-            state: :openai_processing
-          )
-          |> generate_many(2)
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :openai_processing
+        )
+        |> generate_many(2)
 
       cid1 = Enum.at(requests, 0).custom_id
       cid2 = Enum.at(requests, 1).custom_id
@@ -361,6 +367,7 @@ defmodule Batcher.Batching.BatchTest do
 
       # Check Requests
       assert length(batch_after.requests) == 2
+
       for request <- batch_after.requests do
         assert request.response_payload != nil
         assert request.state == :openai_processed

@@ -6,8 +6,11 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
   alias Batcher.Batching
 
   def run(input, _opts, _context) do
-    IO.inspect(input)
-    batch_id = input.params["primary_key"]["id"]
+    batch_id =
+      case input.subject do
+        %{id: id} -> id
+        _ -> get_in(input.params, ["primary_key", "id"])
+      end
 
     batch = Batching.get_batch_by_id!(batch_id)
 
@@ -62,11 +65,12 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
     # Build a map of requests by custom_id for quick lookup
     requests_map = Map.new(requests, &{&1.custom_id, &1})
 
-    result = Batcher.Repo.transaction(fn ->
-      Enum.each(chunk, fn row ->
-        update_request(row, requests_map)
+    result =
+      Batcher.Repo.transaction(fn ->
+        Enum.each(chunk, fn row ->
+          update_request(row, requests_map)
+        end)
       end)
-    end)
 
     case result do
       {:ok, _} -> :ok

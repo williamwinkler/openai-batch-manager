@@ -3,9 +3,12 @@ defmodule Batcher.Batching.Batch do
     otp_app: :batcher,
     domain: Batcher.Batching,
     data_layer: AshSqlite.DataLayer,
-    extensions: [AshStateMachine, AshOban]
+    extensions: [AshStateMachine, AshOban],
+    notifiers: [Ash.Notifier.PubSub]
 
   require Ash.Resource.Change.Builtins
+  require Ash.Query
+
   alias Batcher.Batching
 
   sqlite do
@@ -59,6 +62,14 @@ defmodule Batcher.Batching.Batch do
 
   oban do
     triggers do
+      trigger :expire_stale_building_batch do
+        action :start_upload
+        where expr(state == :building and created_at < datetime_add(now(), -1, "hour"))
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.ExpireStaleBuildingBatch
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.ExpireStaleBuildingBatch
+      end
+
       trigger :upload do
         action :upload
         queue :batch_uploads
@@ -114,6 +125,19 @@ defmodule Batcher.Batching.Batch do
       argument :model, :string, allow_nil?: false
       argument :url, :string, allow_nil?: false
       filter expr(state == :building and model == ^arg(:model) and url == ^arg(:url))
+
+      prepare fn query, _ ->
+        Ash.Query.after_action(query, fn _query, records ->
+          filtered =
+            Enum.filter(records, fn batch ->
+              batch = Ash.load!(batch, :request_count)
+              batch.request_count < 50_000
+            end)
+
+          {:ok, filtered}
+        end)
+      end
+
       get? true
     end
 
@@ -140,10 +164,37 @@ defmodule Batcher.Batching.Batch do
       change run_oban_trigger(:check_batch_status)
     end
 
-    update :check_batch_status do
+    action :check_batch_status, :struct do
       description "Check status of OpenAI batch processing"
-      require_atomic? false
-      change Batching.Changes.CheckOpenaiBatchStatus
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Changes.CheckOpenaiBatchStatus
+    end
+
+    update :set_openai_status_last_checked do
+      change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+    end
+
+    update :failed do
+      accept [:error_msg]
+      change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+      change transition_state(:failed)
+    end
+
+    update :openai_processing_completed do
+      description "Mark batch as completed processing on OpenAI"
+
+      accept [
+        :openai_output_file_id,
+        :input_tokens,
+        :cached_tokens,
+        :reasoning_tokens,
+        :output_tokens
+      ]
+
+      change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+      change transition_state(:openai_completed)
+      change run_oban_trigger(:start_downloading)
     end
 
     update :start_downloading do
@@ -180,6 +231,13 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       change transition_state(:cancelled)
     end
+  end
+
+  pub_sub do
+    module BatcherWeb.Endpoint
+
+    prefix "batches"
+    publish :start_upload, ["started_uploading", :id]
   end
 
   changes do
@@ -249,5 +307,10 @@ defmodule Batcher.Batching.Batch do
     has_many :transitions, Batching.BatchTransition do
       description "Audit trail of status transitions"
     end
+  end
+
+  calculations do
+    calculate :request_count, :integer, Batcher.Batching.Calculations.BatchRequestCount
+    calculate :batch_size_bytes, :integer, Batcher.Batching.Calculations.BatchSizeBytes
   end
 end

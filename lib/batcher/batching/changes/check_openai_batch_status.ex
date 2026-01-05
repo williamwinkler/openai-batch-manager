@@ -6,22 +6,23 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
 
   Expected shape (successful "completed"):
 
-      %{
-        "id" => "batch_...",
-        "status" => "completed",
-        "endpoint" => "/v1/responses",
-        "created_at" => 1764435445,
-        "completed_at" => 1764436320,
-        "request_counts" => %{"total" => 5, "completed" => 5, "failed" => 0},
-        "output_file_id" => "file-...",
-        "error_file_id" => nil,
-        "usage" => %{
-          "input_tokens" => 115,
-          "output_tokens" => 10,
-          "total_tokens" => 125
-        }
-      }
-
+  ```
+  %{
+    "id" => "batch_...",
+    "status" => "completed",
+    "endpoint" => "/v1/responses",
+    "created_at" => 1764435445,
+    "completed_at" => 1764436320,
+    "request_counts" => %{"total" => 5, "completed" => 5, "failed" => 0},
+    "output_file_id" => "file-...",
+    "error_file_id" => nil,
+    "usage" => %{
+      "input_tokens" => 115,
+      "output_tokens" => 10,
+      "total_tokens" => 125
+    }
+  }
+  ```
   Notes:
   - Only `"status"` is required for state transitions; other fields are logged/audited.
   - See function docs for details on how responses are mapped to states.
@@ -95,6 +96,11 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
     |> Ash.Changeset.change_attribute(:state, :cancelled)
   end
 
+  defp update_checked_at(changeset) do
+    changeset
+    |> Ash.Changeset.change_attribute(:openai_status_last_checked_at, DateTime.utc_now())
+  end
+
   defp map_status_to_state("validating"), do: :openai_processing
   defp map_status_to_state("in_progress"), do: :openai_processing
   defp map_status_to_state("finalizing"), do: :openai_processing
@@ -104,8 +110,8 @@ defmodule Batcher.Batching.Changes.CheckOpenaiBatchStatus do
   defp map_status_to_state("cancelling"), do: :cancelled
   defp map_status_to_state("cancelled"), do: :cancelled
 
-  defp update_checked_at(changeset) do
-    changeset
-    |> Ash.Changeset.change_attribute(:openai_status_last_checked_at, DateTime.utc_now())
+  defp map_status_to_state(other) do
+    Logger.error("Received unknown OpenAI batch status: #{inspect(other)}")
+    :failed
   end
 end

@@ -61,18 +61,14 @@ defmodule Batcher.Batching.Request do
       description "Create a new request in a batch"
       accept [:batch_id, :custom_id, :url, :model]
 
-      argument :request_payload, :map do
-        description "The request payload as a map"
-        allow_nil? false
-      end
+      argument :request_payload, :map, allow_nil?: false
+      argument :delivery, :map, allow_nil?: false
 
-      argument :delivery, :map do
-        description "How to deliver the processed result"
-        allow_nil? false
-      end
+      validate Batching.Validations.BatchCanAcceptRequest
 
       change Batching.Changes.SetDeliveryConfig
       change Batching.Changes.SetPayload
+
       primary? true
     end
 

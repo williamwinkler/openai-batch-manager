@@ -21,11 +21,7 @@ defmodule Batcher.BatchBuilder do
   require Logger
 
   require Ash.Query
-  alias Batcher.Batching.{BatchLimits, BatchQueries}
   alias Batcher.Utils.Format
-
-  @max_requests BatchLimits.max_requests_per_batch()
-  @max_age_hours 1
 
   ## Client API
 
@@ -34,10 +30,6 @@ defmodule Batcher.BatchBuilder do
   """
   def start_link({url, model}) do
     GenServer.start_link(__MODULE__, {url, model}, name: via_tuple(url, model))
-  end
-
-  def start_link({url, model, opts}) when is_list(opts) do
-    GenServer.start_link(__MODULE__, {url, model, opts}, name: via_tuple(url, model))
   end
 
   @doc """
@@ -51,17 +43,25 @@ defmodule Batcher.BatchBuilder do
   def add_request(url, model, request_data) do
     case Registry.lookup(Batcher.BatchRegistry, {url, model}) do
       [{pid, _}] ->
-        GenServer.call(pid, {:add_request, request_data}, 30_000)
+        try do
+          GenServer.call(pid, {:add_request, request_data}, 30_000)
+        catch
+          # If the BatchBuilder exited between the lookup and the call, retry
+          :exit, _ -> add_request(url, model, request_data)
+        end
 
       [] ->
         # Start new BatchBuilder
-        {:ok, pid} =
-          DynamicSupervisor.start_child(
-            Batcher.BatchSupervisor,
-            {__MODULE__, {url, model}}
-          )
+        result =
+          DynamicSupervisor.start_child(Batcher.BatchSupervisor, {__MODULE__, {url, model, []}})
 
-        GenServer.call(pid, {:add_request, request_data}, 30_000)
+        case result do
+          {:ok, pid} ->
+            GenServer.call(pid, {:add_request, request_data}, 30_000)
+
+          {:error, {:already_started, pid}} ->
+            GenServer.call(pid, {:add_request, request_data}, 30_000)
+        end
     end
   end
 
@@ -75,160 +75,105 @@ defmodule Batcher.BatchBuilder do
   ## Server Callbacks
 
   @impl true
-  def init({url, model}) do
-    init({url, model, []})
-  end
-
   def init({url, model, _opts}) do
-    batch = get_batch(url, model)
+    batch = get_building_batch(url, model)
 
-    # Count existing requests and sum their sizes to maintain accurate state
-    request_count = BatchQueries.count_requests_in_batch(batch.id)
-    total_size_bytes = BatchQueries.sum_request_sizes_in_batch(batch.id)
+    if batch.request_count >= 50_000 do
+      raise "BatchBuilder initialized but batch is already full"
+    end
 
     Logger.info(
-      "BatchBuilder initialized: batch_id=#{batch.id} existing_requests=#{request_count} total_size=#{Format.bytes(total_size_bytes)}"
+      "BatchBuilder initialized for batch #{batch.id}: #{url} - #{model} - requests=#{batch.request_count} size=#{Format.bytes(batch.batch_size_bytes)}"
     )
 
-    # Schedule periodic check
-    schedule_expiry()
+    BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
 
     {:ok,
      %{
        batch_id: batch.id,
        url: url,
-       model: model,
-       request_count: request_count,
-       total_size_bytes: total_size_bytes,
-       started_at: batch.created_at,
-       status: :building
+       model: model
      }}
   end
 
   @impl true
   def handle_call({:add_request, request_data}, _from, state) do
-    cond do
-      state.status != :building ->
-        {:reply, {:error, :batch_full}, state}
+    # Create Prompt record via internal action
+    request_data = Map.put(request_data, :batch_id, state.batch_id)
 
-      state.request_count >= @max_requests ->
-        finish_building(state)
-        {:reply, {:error, :batch_full}, state}
+    case Batcher.Batching.create_request(%{
+           batch_id: state.batch_id,
+           custom_id: request_data.custom_id,
+           url: request_data.url,
+           model: request_data.body.model,
+           delivery: request_data.delivery,
+           request_payload: request_data
+         }) do
+      {:ok, request} ->
+        Logger.debug(
+          "[Batch #{state.batch_id}] Request added successfully with custom_id=#{request.custom_id}"
+        )
 
-      true ->
-        # Compute the size of this request to check if it fits
-        # (The Ash change will compute it again, but we need it now for the check)
-        # TODO: rely on ash?
-        request_size = BatchQueries.compute_payload_size(request_data)
-        new_total_size = state.total_size_bytes + request_size
+        {:reply, {:ok, request}, state}
 
-        # Check if adding this request would exceed 200 MB limit
-        if new_total_size > BatchLimits.max_batch_size_bytes() do
-          Logger.info(
-            "Batch #{state.batch_id} size limit reached. Current: #{Format.bytes(state.total_size_bytes)}, request: #{Format.bytes(request_size)}, would be: #{Format.bytes(new_total_size)}"
+      {:error, %Ash.Error.Invalid{} = error} ->
+        # Check if this is a unique constraint violation on custom_id
+        is_duplicate =
+          Enum.any?(error.errors, fn err ->
+            err.field == :custom_id and String.contains?(err.message, "already been taken")
+          end)
+
+        if is_duplicate do
+          Logger.warning("Duplicate custom_id attempted",
+            custom_id: request_data.custom_id,
+            batch_id: state.batch_id
           )
 
-          finish_building(state)
-          {:reply, {:error, :batch_full}, state}
+          {:reply, {:error, :custom_id_already_taken}, state}
         else
-          # Create Prompt record via internal action
-          request_data = Map.put(request_data, :batch_id, state.batch_id)
+          Logger.error(
+            "Failed to create request in database: #{inspect(error, pretty: true, limit: :infinity)}"
+          )
 
-          Logger.debug("Creating new request")
-
-          case Batcher.Batching.create_request(%{
-                 batch_id: state.batch_id,
-                 custom_id: request_data.custom_id,
-                 url: request_data.url,
-                 model: request_data.body.model,
-                 delivery: request_data.delivery,
-                 request_payload: request_data
-               }) do
-            {:ok, request} ->
-              new_state = %{
-                state
-                | request_count: state.request_count + 1,
-                  total_size_bytes: state.total_size_bytes + request.request_payload_size
-              }
-
-              Logger.debug(
-                "[Batch #{state.batch_id}] Prompt created successfully. Total requests: #{new_state.request_count}, total size: #{Format.bytes(new_state.total_size_bytes)}"
-              )
-
-              # Check if should mark ready (don't block the caller)
-              if should_mark_ready?(new_state) do
-                spawn(fn -> finish_building(new_state) end)
-              end
-
-              {:reply, {:ok, request}, new_state}
-
-            {:error, %Ash.Error.Invalid{} = error} ->
-              # Check if this is a unique constraint violation on custom_id
-              is_duplicate =
-                Enum.any?(error.errors, fn err ->
-                  err.field == :custom_id and String.contains?(err.message, "already been taken")
-                end)
-
-              if is_duplicate do
-                Logger.warning("Duplicate custom_id attempted",
-                  custom_id: request_data.custom_id,
-                  batch_id: state.batch_id
-                )
-
-                {:reply, {:error, :custom_id_already_taken}, state}
-              else
-                Logger.error(
-                  "Failed to create request in database: #{inspect(error, pretty: true, limit: :infinity)}"
-                )
-
-                {:reply, {:error, error}, state}
-              end
-
-            {:error, error} ->
-              Logger.error(
-                "Failed to create request in database: #{inspect(error, pretty: true, limit: :infinity)}"
-              )
-
-              {:reply, {:error, error}, state}
-          end
+          {:reply, {:error, error}, state}
         end
+
+      {:error, error} ->
+        Logger.error(
+          "Failed to create request in database: #{inspect(error, pretty: true, limit: :infinity)}"
+        )
+
+        {:reply, {:error, error}, state}
     end
   end
 
+  @doc """
+  Handles notifications about batch state changes.
+  If the batch is no longer in 'building' state, the BatchBuilder shuts down.
+  """
   @impl true
-  def handle_cast(:finish_building, state) do
-    new_state = finish_building(state)
-    {:noreply, new_state}
+  def handle_info(
+        %Phoenix.Socket.Broadcast{
+          topic: "batches:state_changed:" <> _batch_id,
+          payload: notification
+        },
+        state
+      ) do
+    batch = notification.data
+
+    if batch.state != :building do
+      Logger.info("BatchBuilder [#{state.batch_id}] stopping. Batch state is now #{batch.state}")
+      terminate(state)
+    else
+      {:noreply, state}
+    end
   end
 
   ## Private Functions
-
-  defp should_mark_ready?(state) do
-    state.request_count >= @max_requests or
-      DateTime.diff(DateTime.utc_now(), state.started_at, :hour) >= @max_age_hours
-  end
-
-  defp finish_building(state) do
-    Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
-
-    batch = Batcher.Batching.get_batch_by_id!(state.batch_id)
-
-    Batcher.Batching.start_batch_upload!(batch)
-
-    Logger.info(
-      "Batch #{state.batch_id} marked ready for upload: total_requests=#{state.request_count} total_size=#{Format.bytes(state.total_size_bytes)}"
-    )
-
-    %{state | status: :ready_for_upload}
-  end
-
-  defp schedule_expiry do
-    time_in_millis = @max_age_hours * 60 * 60 * 1000
-    Process.send_after(self(), :finish_building, time_in_millis)
-  end
-
-  defp get_batch(url, model) do
-    case Batcher.Batching.find_building_batch(model, url) do
+  defp get_building_batch(url, model) do
+    case Batcher.Batching.find_building_batch(model, url,
+           load: [:request_count, :batch_size_bytes]
+         ) do
       {:ok, existing_batch} ->
         Logger.info(
           "BatchBuilder reusing existing building batch: url=#{url} model=#{model} batch_id=#{existing_batch.id}"
@@ -250,5 +195,10 @@ defmodule Batcher.BatchBuilder do
 
   defp via_tuple(url, model) do
     {:via, Registry, {Batcher.BatchRegistry, {url, model}}}
+  end
+
+  defp terminate(state) do
+    Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+    {:stop, :normal, state}
   end
 end
