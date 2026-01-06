@@ -55,6 +55,69 @@ A Phoenix 1.8.1 web application built with the Ash Framework for managing batchi
 - Elixir 1.18+ and Erlang/OTP 27+
 - SQLite 3.x
 
+### Installing Erlang and Elixir with asdf
+
+This project uses [asdf](https://asdf-vm.com/) for version management. The required versions are specified in `.tool-versions`.
+
+**If you have Erlang/Elixir installed via Homebrew or other methods, uninstall them first:**
+
+```bash
+# Uninstall Homebrew versions (if installed)
+brew uninstall erlang elixir
+```
+
+**Set up asdf:**
+
+1. **Install asdf** (if not already installed):
+   ```bash
+   brew install asdf
+   ```
+
+2. **Add asdf to your shell** (add to `~/.zshrc` or `~/.bashrc`):
+   ```bash
+   echo -e "\n# asdf version manager\n. $(brew --prefix asdf)/libexec/asdf.sh" >> ~/.zshrc
+   ```
+
+3. **Reload your shell configuration:**
+   ```bash
+   source ~/.zshrc
+   ```
+
+4. **Install asdf plugins:**
+   ```bash
+   asdf plugin add erlang
+   asdf plugin add elixir
+   ```
+
+5. **Install the versions specified in `.tool-versions`:**
+   ```bash
+   asdf install
+   ```
+
+6. **Verify installation:**
+   ```bash
+   asdf current
+   erl -version
+   elixir --version
+   ```
+
+**If you encounter build errors:**
+
+If `asdf install` fails with C++ compilation errors (e.g., `'initializer_list' file not found`), you may need to:
+
+- **Add Erlang build configuration** to disable JIT (add to `~/.zshrc`):
+  ```bash
+  echo -e "\n# Erlang build configuration (disable JIT for compatibility)\nexport KERL_CONFIGURE_OPTIONS=\"--disable-jit\"" >> ~/.zshrc
+  source ~/.zshrc
+  ```
+
+- **Install build dependencies** (if missing):
+  ```bash
+  brew install unixodbc openssl@3
+  ```
+
+Then retry `asdf install`. These steps are typically only needed on certain macOS/Xcode versions.
+
 ### Setup on a New Machine
 
 1. **Clone the repository**
