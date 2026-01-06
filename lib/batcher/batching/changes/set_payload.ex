@@ -53,8 +53,8 @@ defmodule Batcher.Batching.Changes.SetPayload do
         |> JSON.encode!()
 
       changeset
-      |> Ash.Changeset.change_attribute(:request_payload, request_payload_json)
-      |> Ash.Changeset.change_attribute(:request_payload_size, byte_size(request_payload_json))
+      |> Ash.Changeset.force_change_attribute(:request_payload, request_payload_json)
+      |> Ash.Changeset.force_change_attribute(:request_payload_size, byte_size(request_payload_json))
     else
       changeset
     end

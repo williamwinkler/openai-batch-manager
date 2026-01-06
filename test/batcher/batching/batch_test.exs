@@ -12,6 +12,105 @@ defmodule Batcher.Batching.BatchTest do
     {:ok, server: server}
   end
 
+  describe "relationship loading" do
+    test "loads batch.prompts relationship" do
+      batch = generate(batch())
+
+      # Create multiple requests
+      {:ok, req1} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_1",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_1",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      {:ok, req2} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_2",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_2",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      # Load batch with requests (relationship is called :requests, not :prompts)
+      batch = Ash.load!(batch, [:requests])
+
+      assert length(batch.requests) == 2
+      assert Enum.any?(batch.requests, &(&1.custom_id == req1.custom_id))
+      assert Enum.any?(batch.requests, &(&1.custom_id == req2.custom_id))
+    end
+
+    test "loads batch.transitions relationship" do
+      batch = generate(batch())
+
+      # Load transitions
+      batch = Ash.load!(batch, [:transitions])
+
+      # Should have initial transition (nil → :building)
+      assert length(batch.transitions) == 1
+      transition = List.first(batch.transitions)
+      assert transition.from == nil
+      assert transition.to == :building
+      assert transition.batch_id == batch.id
+
+      # Transition to uploading
+      {:ok, batch} = Batching.start_batch_upload(batch)
+      batch = Ash.load!(batch, [:transitions])
+
+      # Should have 2 transitions now
+      assert length(batch.transitions) == 2
+    end
+
+    test "loads nested relationships" do
+      batch = generate(batch())
+
+      {:ok, _request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_1",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_1",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      # Load batch with requests and transitions
+      batch = Ash.load!(batch, [:requests, :transitions])
+
+      assert length(batch.requests) == 1
+      assert length(batch.transitions) == 1
+    end
+  end
+
   describe "Batcher.Batching.create_batch/2" do
     @test_cases Batching.Types.OpenaiBatchEndpoints.values()
                 |> Enum.map(fn url ->
@@ -210,14 +309,18 @@ defmodule Batcher.Batching.BatchTest do
 
         expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
 
-        batch_after =
-          batch_before
-          |> Ash.Changeset.for_update(:check_batch_status)
-          |> Ash.update!(load: [:transitions])
+        {:ok, batch_after} =
+          Batching.Batch
+          |> Ash.ActionInput.for_action(:check_batch_status, %{})
+          |> Map.put(:subject, batch_before)
+          |> Ash.run_action()
+
+        batch_after = Ash.load!(batch_after, [:transitions])
 
         assert batch_after.state == :openai_processing
         assert batch_after.openai_status_last_checked_at
-        assert batch_after.updated_at >= batch_before.updated_at
+        # updated_at should be same or later (allowing for timing precision)
+        assert DateTime.compare(batch_after.updated_at, batch_before.updated_at) != :lt
 
         # We expect no changes, since created with seed
         assert length(batch_after.transitions) == 0
@@ -250,10 +353,13 @@ defmodule Batcher.Batching.BatchTest do
 
       expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
 
-      batch_after =
-        batch_before
-        |> Ash.Changeset.for_update(:check_batch_status)
-        |> Ash.update!(load: [:transitions])
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      batch_after = Ash.load!(batch_after, [:transitions])
 
       assert batch_after.state == :openai_completed
       assert batch_after.openai_output_file_id == response["output_file_id"]
@@ -371,6 +477,185 @@ defmodule Batcher.Batching.BatchTest do
       for request <- batch_after.requests do
         assert request.response_payload != nil
         assert request.state == :openai_processed
+      end
+    end
+  end
+
+  describe "Batcher.Batching.Batch.failed" do
+    test "transitions batch to failed state with error message" do
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: "batch_123"
+        )
+        |> generate()
+
+      error_msg = "Batch processing failed"
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:failed, %{error_msg: error_msg})
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :failed
+      assert batch_after.error_msg == error_msg
+      assert batch_after.openai_status_last_checked_at
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :openai_processing
+      assert latest_transition.to == :failed
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.openai_processing_completed" do
+    test "transitions batch to openai_completed with token usage" do
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: "batch_123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:openai_processing_completed, %{
+          openai_output_file_id: "file-output-123",
+          input_tokens: 1000,
+          cached_tokens: 200,
+          reasoning_tokens: 300,
+          output_tokens: 800
+        })
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :openai_completed
+      assert batch_after.openai_output_file_id == "file-output-123"
+      assert batch_after.input_tokens == 1000
+      assert batch_after.cached_tokens == 200
+      assert batch_after.reasoning_tokens == 300
+      assert batch_after.output_tokens == 800
+      assert batch_after.openai_status_last_checked_at
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :openai_processing
+      assert latest_transition.to == :openai_completed
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.finalize_processing" do
+    test "transitions batch from downloading to ready_to_deliver" do
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:finalize_processing)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :ready_to_deliver
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :downloading
+      assert latest_transition.to == :ready_to_deliver
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.start_delivering" do
+    test "transitions batch from ready_to_deliver to delivering" do
+      batch_before =
+        seeded_batch(
+          state: :ready_to_deliver,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:start_delivering)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :delivering
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :ready_to_deliver
+      assert latest_transition.to == :delivering
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.done" do
+    test "transitions batch from delivering to done" do
+      batch_before =
+        seeded_batch(
+          state: :delivering,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:done)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :done
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :delivering
+      assert latest_transition.to == :done
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.cancel" do
+    test "transitions batch to cancelled state" do
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: "batch_123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:cancel)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :cancelled
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :openai_processing
+      assert latest_transition.to == :cancelled
+      assert latest_transition.transitioned_at
+    end
+
+    test "can cancel batch from different states" do
+      states = [:building, :uploading, :uploaded, :openai_processing]
+
+      for state <- states do
+        batch_before = generate(seeded_batch(state: state))
+
+        batch_after =
+          batch_before
+          |> Ash.Changeset.for_update(:cancel)
+          |> Ash.update!(load: [:transitions])
+
+        assert batch_after.state == :cancelled
+
+        latest_transition = List.last(batch_after.transitions)
+        assert latest_transition.from == state
+        assert latest_transition.to == :cancelled
       end
     end
   end

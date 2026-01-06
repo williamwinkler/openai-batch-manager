@@ -24,13 +24,13 @@ defmodule Batcher.Batching.Batch do
       transition :start_upload, from: :building, to: :uploading
       transition :upload, from: :uploading, to: :uploaded
       transition :create_openai_batch, from: :uploaded, to: :openai_processing
-      transition :check_batch_status, from: :openai_processing, to: :openai_completed
+      transition :openai_processing_completed, from: :openai_processing, to: :openai_completed
       transition :start_downloading, from: :openai_completed, to: :downloading
       transition :finalize_processing, from: :downloading, to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
       transition :done, from: :delivering, to: :done
 
-      transition :check_batch_status,
+      transition :failed,
         from: [
           :building,
           :uploading,
@@ -44,7 +44,7 @@ defmodule Batcher.Batching.Batch do
         ],
         to: :failed
 
-      transition :check_batch_status,
+      transition :cancel,
         from: [
           :building,
           :uploading,
@@ -168,14 +168,16 @@ defmodule Batcher.Batching.Batch do
       description "Check status of OpenAI batch processing"
       constraints instance_of: __MODULE__
       transaction? false
-      run Batching.Changes.CheckOpenaiBatchStatus
+      run Batching.Actions.CheckBatchStatus
     end
 
     update :set_openai_status_last_checked do
+      require_atomic? false
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
     end
 
     update :failed do
+      require_atomic? false
       accept [:error_msg]
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
       change transition_state(:failed)
@@ -183,6 +185,7 @@ defmodule Batcher.Batching.Batch do
 
     update :openai_processing_completed do
       description "Mark batch as completed processing on OpenAI"
+      require_atomic? false
 
       accept [
         :openai_output_file_id,
@@ -220,6 +223,7 @@ defmodule Batcher.Batching.Batch do
     update :start_delivering do
       description "Start delivering the results back"
       require_atomic? false
+      change transition_state(:delivering)
     end
 
     update :done do

@@ -10,7 +10,7 @@ defmodule Batcher.Batching.Changes.SetDeliveryConfig do
 
     case type do
       "webhook" ->
-        url = delivery.webhook_url
+        url = Map.get(delivery, :webhook_url)
 
         case is_valid_url?(url) do
           true ->
@@ -23,8 +23,8 @@ defmodule Batcher.Batching.Changes.SetDeliveryConfig do
         end
 
       "rabbitmq" ->
-        queue = Map.get(delivery, "rabbitmq_queue")
-        exchange = Map.get(delivery, "rabbitmq_exchange")
+        queue = Map.get(delivery, :rabbitmq_queue)
+        exchange = Map.get(delivery, :rabbitmq_exchange)
 
         if is_binary(queue) and queue != "" do
           changeset
@@ -54,6 +54,8 @@ defmodule Batcher.Batching.Changes.SetDeliveryConfig do
         false
     end
   end
+
+  defp is_valid_url?(_), do: false
 
   defp maybe_set_exchange(changeset, exchange) when is_binary(exchange) do
     Ash.Changeset.change_attribute(changeset, :rabbitmq_exchange, exchange)

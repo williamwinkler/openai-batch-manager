@@ -1,0 +1,218 @@
+defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
+  use Batcher.DataCase, async: false
+
+  alias Batcher.Batching
+
+  import Batcher.Generator
+  import Batcher.TestServer
+
+  setup do
+    {:ok, server} = TestServer.start()
+    Process.put(:openai_base_url, TestServer.url(server))
+    {:ok, server: server}
+  end
+
+  describe "create_openai_batch action (uses CreateOpenaiBatch change)" do
+    test "creates OpenAI batch and assigns openai_batch_id", %{server: server} do
+      # Start with uploaded state (after file upload)
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      openai_response = %{
+        "id" => "batch_abc123",
+        "status" => "validating",
+        "input_file_id" => "file-123"
+      }
+
+      expect_json_response(server, :post, "/v1/batches", openai_response, 200)
+
+      {:ok, updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert updated_batch.openai_batch_id == "batch_abc123"
+      assert updated_batch.state == :openai_processing
+    end
+
+    test "bulk updates requests to processing state after batch creation", %{server: server} do
+      # Create batch in building state first to add requests
+      batch = generate(batch())
+
+      # Create 3 pending requests while batch is in building state
+      {:ok, req1} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_1",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_1",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      {:ok, req2} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_2",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_2",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      {:ok, req3} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_3",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_3",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      # Verify initial state
+      assert req1.state == :pending
+      assert req2.state == :pending
+      assert req3.state == :pending
+
+      # Transition batch through states to uploaded (simulating workflow)
+      {:ok, batch} = Batching.start_batch_upload(batch)
+
+      # Mock file upload endpoint
+      expect_json_response(server, :post, "/v1/files", %{"id" => "file-123"}, 200)
+
+      # Upload batch file using the action directly
+      {:ok, batch} =
+        batch
+        |> Ash.Changeset.for_update(:upload)
+        |> Ash.update()
+
+      openai_response = %{
+        "id" => "batch_abc123",
+        "status" => "validating",
+        "input_file_id" => "file-123"
+      }
+
+      expect_json_response(server, :post, "/v1/batches", openai_response, 200)
+
+      {:ok, _updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      # Reload requests to check their state
+      {:ok, updated_req1} = Batching.get_request_by_custom_id(batch.id, req1.custom_id)
+      {:ok, updated_req2} = Batching.get_request_by_custom_id(batch.id, req2.custom_id)
+      {:ok, updated_req3} = Batching.get_request_by_custom_id(batch.id, req3.custom_id)
+
+      assert updated_req1.state == :openai_processing
+      assert updated_req2.state == :openai_processing
+      assert updated_req3.state == :openai_processing
+    end
+
+    test "handles OpenAI API failure", %{server: server} do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      error_response = %{
+        "error" => %{
+          "message" => "Invalid file ID",
+          "type" => "invalid_request_error"
+        }
+      }
+
+      expect_json_response(server, :post, "/v1/batches", error_response, 400)
+
+      # The change module will add an error, which will make the update fail
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      # Should fail with an error
+      assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "only updates pending requests to processing", %{server: server} do
+      # Create batch in building state, add requests
+      batch = generate(batch())
+
+      # Create pending request while batch is in building state
+      {:ok, pending_req} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "pending_req",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "pending_req",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery: %{
+            type: "webhook",
+            webhook_url: "https://example.com/webhook"
+          }
+        })
+
+      # Create request already in processing state
+      processing_req = generate(seeded_request(batch_id: batch.id, state: :openai_processing, custom_id: "processing_req"))
+
+      # Transition batch through states to uploaded (simulating workflow)
+      {:ok, batch} = Batching.start_batch_upload(batch)
+
+      # Mock file upload endpoint
+      expect_json_response(server, :post, "/v1/files", %{"id" => "file-123"}, 200)
+
+      # Upload batch file using the action directly
+      {:ok, batch} =
+        batch
+        |> Ash.Changeset.for_update(:upload)
+        |> Ash.update()
+
+      openai_response = %{
+        "id" => "batch_abc123",
+        "status" => "validating",
+        "input_file_id" => "file-123"
+      }
+
+      expect_json_response(server, :post, "/v1/batches", openai_response, 200)
+
+      {:ok, _updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      # Pending request should be updated
+      {:ok, updated_pending} = Batching.get_request_by_custom_id(batch.id, pending_req.custom_id)
+      assert updated_pending.state == :openai_processing
+
+      # Processing request should remain unchanged
+      {:ok, updated_processing} = Batching.get_request_by_custom_id(batch.id, processing_req.custom_id)
+      assert updated_processing.state == :openai_processing
+    end
+  end
+end

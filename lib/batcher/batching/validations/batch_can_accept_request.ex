@@ -2,6 +2,18 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   use Ash.Resource.Validation
   alias Batcher.Batching
 
+  @max_requests_per_batch Application.compile_env(
+                             :batcher,
+                             [:batch_limits, :max_requests_per_batch],
+                             50_000
+                           )
+
+  @max_batch_size_bytes Application.compile_env(
+                          :batcher,
+                          [:batch_limits, :max_batch_size_bytes],
+                          100 * 1024 * 1024
+                        )
+
   @impl true
   def validate(changeset, _opts, _context) do
     batch_id = Ash.Changeset.get_attribute(changeset, :batch_id)
@@ -27,16 +39,30 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   end
 
   defp batch_not_full(batch) do
-    if batch.request_count < 50_000,
+    if batch.request_count < @max_requests_per_batch,
       do: :ok,
-      else: {:error, field: :batch_id, message: "Batch is full (max 50_000 requests)"}
+      else:
+        {:error,
+         field: :batch_id,
+         message: "Batch is full (max #{@max_requests_per_batch} requests)"}
   end
 
   defp batch_not_too_large(batch) do
-    limit = 100 * 1024 * 1024 # 100 MB (but 200MB is the hard limit)
-
-    if (batch.batch_size_bytes || 0) < limit,
+    if (batch.batch_size_bytes || 0) < @max_batch_size_bytes,
       do: :ok,
-      else: {:error, field: :batch_id, message: "Batch size exceeds 100MB limit"}
+      else:
+        {:error,
+         field: :batch_id,
+         message: "Batch size exceeds #{format_bytes(@max_batch_size_bytes)} limit"}
   end
+
+  defp format_bytes(bytes) when bytes >= 1024 * 1024 do
+    "#{div(bytes, 1024 * 1024)}MB"
+  end
+
+  defp format_bytes(bytes) when bytes >= 1024 do
+    "#{div(bytes, 1024)}KB"
+  end
+
+  defp format_bytes(bytes), do: "#{bytes}B"
 end

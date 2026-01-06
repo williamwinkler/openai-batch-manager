@@ -29,6 +29,7 @@ defmodule Batcher.Batching.Request do
     transitions do
       # Normal workflow
       transition :begin_processing, from: :pending, to: :openai_processing
+      transition :bulk_begin_processing, from: :pending, to: :openai_processing
       transition :complete_processing, from: :openai_processing, to: :openai_processed
       transition :begin_delivery, from: :openai_processed, to: :delivering
       transition :complete_delivery, from: :delivering, to: :delivered
@@ -92,6 +93,7 @@ defmodule Batcher.Batching.Request do
     end
 
     update :bulk_begin_processing do
+      require_atomic? false
       change transition_state(:openai_processing)
     end
 
