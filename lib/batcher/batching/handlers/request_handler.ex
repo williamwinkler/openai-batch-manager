@@ -23,7 +23,7 @@ defmodule Batcher.Batching.Handlers.RequestHandler do
         BatchBuilder.add_request(url, model, request_data)
 
       {:error, :custom_id_already_taken} ->
-        Logger.info("Duplicate custom_id rejected: #{request_data["custom_id"]}")
+        Logger.info("Duplicate custom_id rejected: #{request_data.custom_id}")
         {:error, :custom_id_already_taken}
 
       error ->

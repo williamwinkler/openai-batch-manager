@@ -57,12 +57,20 @@ defmodule BatcherWeb.RequestController do
 
         conn
         |> put_status(:conflict)
-        |> json(Error)
+        |> json(%{
+          errors: [
+            %{
+              code: "duplicate_custom_id",
+              title: "Custom ID Already Exists",
+              detail: "A request with this custom_id already exists in the batch"
+            }
+          ]
+        })
 
       {:error, error} ->
         # Log the internal error details at error level
         Logger.error("Failed to create request",
-          custom_id: request_body["custom_id"],
+          custom_id: request_body.custom_id,
           error: inspect(error, pretty: true)
         )
 

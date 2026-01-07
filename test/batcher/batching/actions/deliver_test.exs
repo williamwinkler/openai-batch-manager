@@ -85,7 +85,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert request_after.state == :delivered
     end
 
-    test "saves response body in error_msg on 4xx error", %{server: server} do
+    test "saves response body in error_msg on delivery_attempt (not request) on 4xx error", %{server: server} do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response"}
 
@@ -114,22 +114,21 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
 
-      assert request_after.state == :failed
+      assert request_after.state == :delivery_failed
       assert request_after.delivery_attempt_count == 1
-      assert request_after.error_msg
-      # Verify error_msg contains the response body as JSON
-      assert request_after.error_msg =~ "error"
-      assert request_after.error_msg =~ "INVALID"
+      # error_msg should NOT be set on request - delivery failures are not request errors
+      assert request_after.error_msg == nil
 
-      # Verify delivery attempt was recorded with failure
+      # Verify delivery attempt was recorded with failure and contains error details
       assert length(request_after.delivery_attempts) == 1
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.success == false
       assert attempt.error_msg
       assert attempt.error_msg =~ "error"
+      assert attempt.error_msg =~ "INVALID"
     end
 
-    test "saves response body in error_msg on 5xx error", %{server: server} do
+    test "saves response body in error_msg on delivery_attempt (not request) on 5xx error", %{server: server} do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response"}
 
@@ -158,14 +157,15 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       request_after = Ash.load!(request_after, [:delivery_attempts])
 
-      assert request_after.state == :failed
-      assert request_after.error_msg
-      assert request_after.error_msg =~ "error"
+      assert request_after.state == :delivery_failed
+      # error_msg should NOT be set on request - delivery failures are not request errors
+      assert request_after.error_msg == nil
 
-      # Verify delivery attempt was recorded with failure
+      # Verify delivery attempt was recorded with failure and contains error details
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.success == false
       assert attempt.error_msg
+      assert attempt.error_msg =~ "error"
     end
 
     test "handles connection refused error", %{server: _server} do
@@ -198,8 +198,14 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert {:ok, request_after} = result
       request_after = Ash.load!(request_after, [:delivery_attempts])
 
-      assert request_after.state == :failed
-      assert request_after.error_msg
+      assert request_after.state == :delivery_failed
+      # error_msg should NOT be set on request - delivery failures are not request errors
+      assert request_after.error_msg == nil
+
+      # Error details are stored on delivery_attempt
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.success == false
+      assert attempt.error_msg != nil
     end
 
     test "raises error for RabbitMQ delivery type", %{server: _server} do
@@ -361,7 +367,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert batch_after.state == :done
     end
 
-    test "transitions batch to done when all requests are delivered or failed", %{server: server} do
+    test "transitions batch to done when all requests are delivered or delivery_failed", %{server: server} do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response"}
 
@@ -474,6 +480,19 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert length(request_after.delivery_attempts) == 1
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.type == :webhook
+    end
+  end
+
+  describe "oban configuration" do
+    test "deliver trigger is configured with max_attempts of 1 (no retries)" do
+      # Verify the Oban trigger configuration for the deliver action
+      # This ensures webhook delivery only attempts once and doesn't retry on failure
+      triggers = Batching.Request |> AshOban.Info.oban_triggers()
+
+      deliver_trigger = Enum.find(triggers, fn trigger -> trigger.action == :deliver end)
+
+      assert deliver_trigger != nil, "Expected :deliver trigger to exist"
+      assert deliver_trigger.max_attempts == 1, "Expected max_attempts to be 1 (no retries)"
     end
   end
 end

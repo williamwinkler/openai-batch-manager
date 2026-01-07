@@ -202,7 +202,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
 
       request ->
         # Skip requests that are already in terminal states (can't be updated)
-        terminal_states = [:delivered, :failed, :expired, :cancelled]
+        terminal_states = [:delivered, :failed, :delivery_failed, :expired, :cancelled]
 
         if request.state in terminal_states do
           Logger.debug(

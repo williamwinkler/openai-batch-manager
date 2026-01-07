@@ -6,8 +6,8 @@ defmodule Batcher.Batching.Actions.Deliver do
   - POSTs response_payload to webhook_url
   - Records delivery attempt (success or failure)
   - On success: transitions request to :delivered
-  - On failure: marks as :failed (no retries)
-  - Saves webhook response body in error_msg for debugging
+  - On failure: transitions request to :delivery_failed (not :failed, which is for OpenAI errors)
+  - Error details are stored on delivery_attempt only (not on request.error_msg)
 
   For RabbitMQ delivery:
   - Currently raises error (not yet supported)
@@ -169,17 +169,18 @@ defmodule Batcher.Batching.Actions.Deliver do
   end
 
   defp handle_delivery_failure(request, batch, error_msg) do
-    # Mark request as failed
+    # Mark request as delivery_failed (not :failed) because this is a delivery error,
+    # not an OpenAI processing error. The error is recorded on the delivery_attempt.
     request_after =
       request
-      |> Ash.Changeset.for_update(:mark_failed, %{error_msg: error_msg})
+      |> Ash.Changeset.for_update(:mark_delivery_failed, %{})
       |> Ash.Changeset.put_context(:delivery_attempt, %{
         success: false,
         error_msg: error_msg
       })
       |> Ash.update!()
 
-    # Check if all requests in batch are delivered/failed
+    # Check if all requests in batch are delivered/delivery_failed
     check_batch_completion(batch)
     {:ok, request_after}
   end

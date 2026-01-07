@@ -830,7 +830,8 @@ defmodule Batcher.Batching.RequestTest do
     end
 
     test "can mark failed from multiple states" do
-      states = [:pending, :openai_processing, :openai_processed, :delivering]
+      # Note: :delivering uses mark_delivery_failed, not mark_failed
+      states = [:pending, :openai_processing, :openai_processed]
 
       for state <- states do
         request = generate(seeded_request(state: state))
@@ -844,8 +845,19 @@ defmodule Batcher.Batching.RequestTest do
       end
     end
 
+    test "mark_delivery_failed transitions from delivering to delivery_failed" do
+      request = generate(seeded_request(state: :delivering))
+
+      updated_request =
+        request
+        |> Ash.Changeset.for_update(:mark_delivery_failed, %{})
+        |> Ash.update!()
+
+      assert updated_request.state == :delivery_failed
+    end
+
     test "can't mark failed from terminal states" do
-      terminal_states = [:delivered, :failed, :expired, :cancelled]
+      terminal_states = [:delivered, :failed, :delivery_failed, :expired, :cancelled]
 
       for state <- terminal_states do
         request = generate(seeded_request(state: state))

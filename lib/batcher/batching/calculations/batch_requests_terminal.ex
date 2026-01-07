@@ -2,14 +2,14 @@ defmodule Batcher.Batching.Calculations.BatchRequestsTerminal do
   @moduledoc """
   Calculation to check if all requests in a batch are in terminal states.
 
-  Terminal states are: :delivered, :failed, :expired, :cancelled
+  Terminal states are: :delivered, :failed, :delivery_failed, :expired, :cancelled
   """
   use Ash.Resource.Calculation
 
   require Ash.Query
   alias Batcher.Batching.Request
 
-  @terminal_states [:delivered, :failed, :expired, :cancelled]
+  @terminal_states [:delivered, :failed, :delivery_failed, :expired, :cancelled]
 
   @impl true
   def calculate(records, _opts, _context) do

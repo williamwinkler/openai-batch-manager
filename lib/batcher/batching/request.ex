@@ -35,9 +35,13 @@ defmodule Batcher.Batching.Request do
       transition :complete_delivery, from: :delivering, to: :delivered
 
       # Failure transitions
+      # :mark_failed = OpenAI processing failed (request error)
       transition :mark_failed,
-        from: [:pending, :openai_processing, :openai_processed, :delivering],
+        from: [:pending, :openai_processing, :openai_processed],
         to: :failed
+
+      # :mark_delivery_failed = Webhook delivery failed (delivery error, not a request error)
+      transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
 
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
       transition :cancel, from: :pending, to: :cancelled
@@ -120,9 +124,16 @@ defmodule Batcher.Batching.Request do
     end
 
     update :mark_failed do
+      description "Mark request as failed due to OpenAI processing error"
       accept [:error_msg]
       require_atomic? false
       change transition_state(:failed)
+    end
+
+    update :mark_delivery_failed do
+      description "Mark request as failed due to webhook delivery error"
+      require_atomic? false
+      change transition_state(:delivery_failed)
       change Batching.Changes.CreateDeliveryAttempt
     end
 
@@ -143,7 +154,7 @@ defmodule Batcher.Batching.Request do
       transaction? false
       run Batching.Actions.Deliver
       # Note: Delivery attempt creation is handled via Batching.Changes.CreateDeliveryAttempt
-      # which is attached to :complete_delivery and :mark_failed actions
+      # which is attached to :complete_delivery and :mark_delivery_failed actions
     end
   end
 

@@ -1137,5 +1137,151 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       # even though it's empty - the presence of output_file_id means we had some successful processing
       assert batch_after.state == :ready_to_deliver
     end
+
+    test "skips requests already in openai_processed state (idempotency for retries)", %{
+      server: server
+    } do
+      output_file_id = "file-idempotent123"
+
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: output_file_id
+        )
+        |> generate()
+
+      # Create a request that's already been processed (e.g., from a previous retry)
+      already_processed_request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processed,
+            custom_id: "already_processed_req",
+            response_payload: %{"previous" => "response"}
+          )
+        )
+
+      # Create a request that still needs processing
+      pending_request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processing,
+            custom_id: "pending_req"
+          )
+        )
+
+      # Mock output file that includes both requests
+      # The already_processed one should be skipped, not cause a state machine error
+      body = """
+      {"id": "req_1", "custom_id": "#{already_processed_request.custom_id}", "response": {"status_code": 200, "body": {"output": "new_result"}}, "error": null}
+      {"id": "req_2", "custom_id": "#{pending_request.custom_id}", "response": {"status_code": 200, "body": {"output": "result"}}, "error": null}
+      """
+
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, body)
+        end
+      )
+
+      # Should NOT raise a state machine error - should handle gracefully
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      batch_after = Ash.load!(batch_after, [:requests])
+
+      assert batch_after.state == :ready_to_deliver
+
+      # Already processed request should retain its original response_payload (not overwritten)
+      already_processed =
+        Enum.find(batch_after.requests, &(&1.custom_id == already_processed_request.custom_id))
+
+      assert already_processed.state == :openai_processed
+      assert already_processed.response_payload["previous"] == "response"
+
+      # Pending request should now be processed
+      processed = Enum.find(batch_after.requests, &(&1.custom_id == pending_request.custom_id))
+      assert processed.state == :openai_processed
+      assert processed.response_payload["response"]["body"]["output"] == "result"
+    end
+
+    test "allows mark_failed on openai_processed requests (error still applies)", %{
+      server: server
+    } do
+      output_file_id = "file-error-on-processed123"
+      error_file_id = "file-error-on-processed-err123"
+
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: output_file_id,
+          openai_error_file_id: error_file_id
+        )
+        |> generate()
+
+      # Create a request that's already been processed
+      already_processed_request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processed,
+            custom_id: "processed_but_error_req",
+            response_payload: %{"previous" => "response"}
+          )
+        )
+
+      # Empty output file
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, "")
+        end
+      )
+
+      # Error file that marks the already processed request as failed
+      # This simulates a scenario where an error file arrives after partial processing
+      error_body = """
+      {"id": "req_error", "custom_id": "#{already_processed_request.custom_id}", "response": null, "error": "Late error detected"}
+      """
+
+      TestServer.add(server, "/v1/files/#{error_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, error_body)
+        end
+      )
+
+      # Should succeed - mark_failed can be called from openai_processed state
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      batch_after = Ash.load!(batch_after, [:requests])
+
+      # Request should now be failed (mark_failed works from openai_processed)
+      updated_request = List.first(batch_after.requests)
+      assert updated_request.state == :failed
+      assert updated_request.error_msg != nil
+      error_data = JSON.decode!(updated_request.error_msg)
+      assert error_data["error"] == "Late error detected"
+    end
   end
 end
