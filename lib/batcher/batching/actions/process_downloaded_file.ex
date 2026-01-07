@@ -4,13 +4,10 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
 
   alias Batcher.OpenaiApiClient
   alias Batcher.Batching
+  alias Batcher.Batching.Utils
 
   def run(input, _opts, _context) do
-    batch_id =
-      case Map.fetch(input, :subject) do
-        {:ok, %{id: id}} -> id
-        _ -> get_in(input.params, ["primary_key", "id"])
-      end
+    batch_id = Utils.extract_subject_id(input)
 
     batch = Batching.get_batch_by_id!(batch_id)
 

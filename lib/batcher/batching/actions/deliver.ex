@@ -16,13 +16,10 @@ defmodule Batcher.Batching.Actions.Deliver do
   require Ash.Query
 
   alias Batcher.Batching
+  alias Batcher.Batching.Utils
 
   def run(input, _opts, _context) do
-    request_id =
-      case Map.fetch(input, :subject) do
-        {:ok, %{id: id}} -> id
-        _ -> get_in(input.params, ["primary_key", "id"])
-      end
+    request_id = Utils.extract_subject_id(input)
 
     request =
       Batching.Request

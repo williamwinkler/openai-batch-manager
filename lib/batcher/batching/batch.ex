@@ -109,6 +109,16 @@ defmodule Batcher.Batching.Batch do
         worker_module_name Batching.Batch.AshOban.Worker.ProcessDownloadedFile
         scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessDownloadedFile
       end
+
+      trigger :delete_expired_batch do
+        action :delete_expired_batch
+        where expr(expires_at < now())
+        # Every hour at minute 0
+        scheduler_cron "0 * * * *"
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.DeleteExpiredBatch
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.DeleteExpiredBatch
+      end
     end
   end
 
@@ -178,12 +188,13 @@ defmodule Batcher.Batching.Batch do
 
     update :set_openai_status_last_checked do
       require_atomic? false
+      accept [:expires_at]
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
     end
 
     update :failed do
       require_atomic? false
-      accept [:error_msg]
+      accept [:error_msg, :expires_at]
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
       change transition_state(:failed)
     end
@@ -198,7 +209,8 @@ defmodule Batcher.Batching.Batch do
         :input_tokens,
         :cached_tokens,
         :reasoning_tokens,
-        :output_tokens
+        :output_tokens,
+        :expires_at
       ]
 
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
@@ -247,6 +259,13 @@ defmodule Batcher.Batching.Batch do
       constraints instance_of: __MODULE__
       transaction? false
       run Batching.Actions.ExpireStaleBuildingBatch
+    end
+
+    action :delete_expired_batch, :struct do
+      description "Delete batches that have passed their expiration date"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.DeleteExpiredBatch
     end
   end
 
@@ -317,6 +336,10 @@ defmodule Batcher.Batching.Batch do
     attribute :cached_tokens, :integer
     attribute :reasoning_tokens, :integer
     attribute :output_tokens, :integer
+
+    attribute :expires_at, :utc_datetime do
+      description "The datetime of when the batch will expire and be deleted"
+    end
 
     create_timestamp :created_at
     update_timestamp :updated_at
