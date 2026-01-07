@@ -1,0 +1,42 @@
+{
+  "custom_id": "79b70f3f-aeef-4d07-8d88-7e70eb86ed98",
+  "error": null,
+  "id": "batch_req_695e83f5023481909865d71dd11a9cd6",
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "logprobs": null,
+          "message": {
+            "annotations": [],
+            "content": "The Pythagorean theorem is a fundamental principle in geometry that relates the sides of a right triangle. It states that in a right triangle, the square of the length of the hypotenuse (the side opposite the right angle) is equal to the sum of the squares of the lengths of the other two sides. \n\nMathematically, it can be expressed as:\n\n\\[ a^2 + b^2 = c^2 \\]\n\nWhere:\n- \\( c \\) is the length of the hypotenuse,\n- \\( a \\) and \\( b \\) are the lengths of the other two sides.\n\nThis theorem is often used to calculate the length of one side of a right triangle when the lengths of the other two sides are known, and it has numerous applications in various fields, including mathematics, physics, engineering, and architecture.",
+            "refusal": null,
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1767801703,
+      "id": "chatcmpl-CvQGd9CeGlw0MFbe63k79j3jIdbz3",
+      "model": "gpt-4o-mini-2024-07-18",
+      "object": "chat.completion",
+      "service_tier": "default",
+      "system_fingerprint": "fp_d0990559b0",
+      "usage": {
+        "completion_tokens": 170,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "prompt_tokens": 26,
+        "prompt_tokens_details": { "audio_tokens": 0, "cached_tokens": 0 },
+        "total_tokens": 196
+      }
+    },
+    "request_id": "36674a2b9f4bba62f79632e5b905d69d",
+    "status_code": 200
+  }
+}

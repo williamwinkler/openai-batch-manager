@@ -1,0 +1,123 @@
+{
+  "custom_id": "a5c40dc0-bf53-42e6-bc76-ca8628791e69",
+  "error": null,
+  "id": "batch_req_695e8bdaab8081909cc328d2d66f9606",
+  "response": {
+    "body": {
+      "background": false,
+      "billing": { "payer": "developer" },
+      "completed_at": 1767803827,
+      "created_at": 1767803824,
+      "error": null,
+      "id": "resp_0d27146e53ea8c9600695e8bb0a54c819493954a2f2591f4af",
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "metadata": {},
+      "model": "gpt-4o-mini-2024-07-18",
+      "object": "response",
+      "output": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "logprobs": [],
+              "text": "{\"features\":[{\"details\":[\"Battery life of 10 hours\"],\"name\":\"Battery Life\",\"sentiment\":\"positive\"},{\"details\":[\"Screen clarity is crystal clear\"],\"name\":\"Screen Quality\",\"sentiment\":\"positive\"},{\"details\":[\"Smooth performance for all apps\"],\"name\":\"Performance\",\"sentiment\":\"positive\"},{\"details\":[\"Weight of 2.5kg is a downside\"],\"name\":\"Weight\",\"sentiment\":\"negative\"}],\"rating\":4.5,\"sentiment\":\"positive\",\"specifications\":{\"battery_life\":\"10 hours\",\"weight\":\"2.5kg\"}}",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_0d27146e53ea8c9600695e8bb1004c8194a4753e59efb98f62",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "prompt_cache_retention": null,
+      "reasoning": { "effort": null, "summary": null },
+      "safety_identifier": null,
+      "service_tier": "default",
+      "status": "completed",
+      "store": true,
+      "temperature": 1.0,
+      "text": {
+        "format": {
+          "description": null,
+          "name": "product_review_analysis",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "features": {
+                "description": "List of features mentioned in the review",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {
+                      "items": { "type": "string" },
+                      "type": "array"
+                    },
+                    "name": { "description": "Feature name", "type": "string" },
+                    "sentiment": {
+                      "enum": ["positive", "negative", "neutral"],
+                      "type": "string"
+                    }
+                  },
+                  "required": ["name", "sentiment", "details"],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "rating": {
+                "description": "Overall rating out of 5",
+                "type": "number"
+              },
+              "sentiment": {
+                "description": "Overall sentiment of the review",
+                "enum": ["positive", "negative", "neutral"],
+                "type": "string"
+              },
+              "specifications": {
+                "additionalProperties": false,
+                "properties": {
+                  "battery_life": {
+                    "description": "Battery life if mentioned",
+                    "type": "string"
+                  },
+                  "weight": {
+                    "description": "Product weight if mentioned",
+                    "type": "string"
+                  }
+                },
+                "required": ["weight", "battery_life"],
+                "type": "object"
+              }
+            },
+            "required": ["rating", "sentiment", "features", "specifications"],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "medium"
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": 1.0,
+      "truncation": "disabled",
+      "usage": {
+        "input_tokens": 243,
+        "input_tokens_details": { "cached_tokens": 0 },
+        "output_tokens": 114,
+        "output_tokens_details": { "reasoning_tokens": 0 },
+        "total_tokens": 357
+      },
+      "user": null
+    },
+    "request_id": "0ae6f0e432ca9079daa0b44be5ac2369",
+    "status_code": 200
+  }
+}
