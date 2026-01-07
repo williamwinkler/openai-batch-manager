@@ -129,7 +129,7 @@ defmodule Batcher.OpenaiApiClient do
 
   defp handle_response(response) do
     case response do
-      {:ok, %{status: status, body: body}} when 200 >= status and status < 300 ->
+      {:ok, %{status: status, body: body}} when status >= 200 and status < 300 ->
         {:ok, body}
 
       {:ok, %{status: 400, body: body}} ->

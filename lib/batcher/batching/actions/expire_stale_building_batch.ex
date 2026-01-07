@@ -11,10 +11,16 @@ defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatch do
   """
   @impl true
   def run(input, _opts, _context) do
+    # Handle both direct calls (via :subject) and AshOban triggers (via params)
     batch =
-      case Map.fetch(input, :instance) do
-        {:ok, instance} -> instance
-        :error -> Map.fetch!(input, :subject)
+      case Map.get(input, :subject) do
+        nil ->
+          # AshOban passes the primary key via params for generic actions
+          batch_id = get_in(input.params, ["primary_key", "id"])
+          Batching.get_batch_by_id!(batch_id)
+
+        batch ->
+          batch
       end
 
     batch_with_count = Ash.load!(batch, :request_count)

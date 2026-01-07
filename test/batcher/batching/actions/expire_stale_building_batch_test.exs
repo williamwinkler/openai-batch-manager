@@ -97,5 +97,54 @@ defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatchTest do
       # Should transition to uploading, not delete
       assert updated_batch.state == :uploading
     end
+
+    test "works when invoked via AshOban (primary_key in params)" do
+      # This test simulates how AshOban invokes the action - via params, not :subject
+      # This was a bug that caused batches to not be uploaded automatically
+      batch = generate(batch())
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+
+      # Manually set created_at to be over 1 hour ago
+      one_hour_ago = DateTime.add(DateTime.utc_now(), -3601, :second)
+
+      batch =
+        batch
+        |> Ecto.Changeset.change(created_at: one_hour_ago)
+        |> Batcher.Repo.update!()
+
+      # Invoke the action the way AshOban does - by setting params directly on the struct
+      # AshOban bypasses for_action's input validation and sets params directly
+      {:ok, updated_batch} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:expire_stale_building_batch, %{})
+        |> Map.put(:params, %{"primary_key" => %{"id" => batch.id}})
+        |> Ash.run_action()
+
+      # Should transition to uploading state
+      assert updated_batch.state == :uploading
+    end
+
+    test "works via AshOban path for empty batch deletion" do
+      # Test the AshOban path for empty batch deletion
+      batch = generate(batch())
+
+      # Manually set created_at to be over 1 hour ago
+      one_hour_ago = DateTime.add(DateTime.utc_now(), -3601, :second)
+
+      batch =
+        batch
+        |> Ecto.Changeset.change(created_at: one_hour_ago)
+        |> Batcher.Repo.update!()
+
+      # Invoke via AshOban path (primary_key in params, no :subject)
+      {:ok, nil} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:expire_stale_building_batch, %{})
+        |> Map.put(:params, %{"primary_key" => %{"id" => batch.id}})
+        |> Ash.run_action()
+
+      # Verify batch was deleted
+      assert {:error, %Ash.Error.Invalid{}} = Batching.get_batch_by_id(batch.id)
+    end
   end
 end
