@@ -98,7 +98,8 @@ defmodule Batcher.Batching.Batch do
       trigger :start_downloading do
         action :start_downloading
         where expr(state == :openai_completed)
-        queue :default
+        # Use dedicated queue with concurrency 1 to prevent parallel downloads
+        queue :batch_processing
         worker_module_name Batching.Batch.AshOban.Worker.StartDownloading
         scheduler_module_name Batching.Batch.AshOban.Scheduler.StartDownloading
       end
@@ -106,7 +107,8 @@ defmodule Batcher.Batching.Batch do
       trigger :process_downloaded_file do
         action :process_downloaded_file
         where expr(state == :downloading)
-        queue :default
+        # Use dedicated queue with concurrency 1 to prevent parallel processing
+        queue :batch_processing
         worker_module_name Batching.Batch.AshOban.Worker.ProcessDownloadedFile
         scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessDownloadedFile
       end
@@ -119,6 +121,14 @@ defmodule Batcher.Batching.Batch do
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.DeleteExpiredBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.DeleteExpiredBatch
+      end
+
+      trigger :check_delivery_completion do
+        action :check_delivery_completion
+        where expr(state == :delivering)
+        queue :default
+        worker_module_name Batching.Batch.AshOban.Worker.CheckDeliveryCompletion
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.CheckDeliveryCompletion
       end
     end
   end
@@ -189,13 +199,12 @@ defmodule Batcher.Batching.Batch do
 
     update :set_openai_status_last_checked do
       require_atomic? false
-      accept [:expires_at]
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
     end
 
     update :failed do
       require_atomic? false
-      accept [:error_msg, :expires_at]
+      accept [:error_msg]
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
       change transition_state(:failed)
     end
@@ -210,8 +219,7 @@ defmodule Batcher.Batching.Batch do
         :input_tokens,
         :cached_tokens,
         :reasoning_tokens,
-        :output_tokens,
-        :expires_at
+        :output_tokens
       ]
 
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
@@ -270,6 +278,13 @@ defmodule Batcher.Batching.Batch do
       change set_attribute(:openai_batch_id, nil)
       change transition_state(:expired)
       change run_oban_trigger(:create_openai_batch)
+    end
+
+    action :check_delivery_completion, :struct do
+      description "Check if all requests are delivered and transition to done"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.CheckDeliveryCompletion
     end
 
     action :delete_expired_batch, :struct do

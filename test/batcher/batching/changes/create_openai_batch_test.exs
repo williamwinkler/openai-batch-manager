@@ -101,8 +101,16 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
       # Transition batch through states to uploaded (simulating workflow)
       {:ok, batch} = Batching.start_batch_upload(batch)
 
-      # Mock file upload endpoint
-      expect_json_response(server, :post, "/v1/files", %{"id" => "file-123"}, 200)
+      # Mock file upload endpoint (expires_at is 30 days from now)
+      expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/files",
+        %{"id" => "file-123", "expires_at" => expires_at},
+        200
+      )
 
       # Upload batch file using the action directly
       {:ok, batch} =
@@ -191,8 +199,16 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
       # Transition batch through states to uploaded (simulating workflow)
       {:ok, batch} = Batching.start_batch_upload(batch)
 
-      # Mock file upload endpoint
-      expect_json_response(server, :post, "/v1/files", %{"id" => "file-123"}, 200)
+      # Mock file upload endpoint (expires_at is 30 days from now)
+      expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/files",
+        %{"id" => "file-123", "expires_at" => expires_at},
+        200
+      )
 
       # Upload batch file using the action directly
       {:ok, batch} =

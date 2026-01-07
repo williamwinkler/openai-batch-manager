@@ -22,7 +22,7 @@ config :ash_oban, pro?: false
 config :batcher, Oban,
   engine: Oban.Engines.Lite,
   notifier: Oban.Notifiers.PG,
-  queues: [default: 10, batch_uploads: 1, delivery: 50],
+  queues: [default: 10, batch_uploads: 1, batch_processing: 1, delivery: 50],
   repo: Batcher.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
 

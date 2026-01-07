@@ -13,22 +13,18 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
       {:ok, %{"status" => "completed"} = response} ->
         Logger.info("Batch #{batch.id} processing completed on OpenAI")
         usage = OpenaiApiClient.extract_token_usage_from_batch_status(response)
-        expires_at_data = parse_expires_at(response, batch)
 
         batch
         |> Ash.Changeset.for_update(
           :openai_processing_completed,
-          Map.merge(
-            %{
-              openai_output_file_id: response["output_file_id"],
-              openai_error_file_id: response["error_file_id"],
-              input_tokens: usage.input_tokens,
-              cached_tokens: usage.cached_tokens,
-              reasoning_tokens: usage.reasoning_tokens,
-              output_tokens: usage.output_tokens
-            },
-            expires_at_data
-          )
+          %{
+            openai_output_file_id: response["output_file_id"],
+            openai_error_file_id: response["error_file_id"],
+            input_tokens: usage.input_tokens,
+            cached_tokens: usage.cached_tokens,
+            reasoning_tokens: usage.reasoning_tokens,
+            output_tokens: usage.output_tokens
+          }
         )
         |> Ash.update()
 
@@ -42,19 +38,17 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
       {:ok, %{"status" => "failed"} = resp} ->
         error_msg = JSON.encode!(resp)
         Logger.error("Batch #{batch.id} processing failed on OpenAI: #{error_msg}")
-        expires_at_data = parse_expires_at(resp, batch)
 
         batch
-        |> Ash.Changeset.for_update(:failed, Map.merge(%{error_msg: error_msg}, expires_at_data))
+        |> Ash.Changeset.for_update(:failed, %{error_msg: error_msg})
         |> Ash.update()
 
       {:ok, pending_resp} ->
         status = Map.get(pending_resp, "status", "unknown")
         Logger.debug("Batch #{batch.id} still processing on OpenAI (status: #{status})")
-        expires_at_data = parse_expires_at(pending_resp, batch)
 
         batch
-        |> Ash.Changeset.for_update(:set_openai_status_last_checked, expires_at_data)
+        |> Ash.Changeset.for_update(:set_openai_status_last_checked, %{})
         |> Ash.update()
 
       {:error, reason} ->
@@ -63,14 +57,6 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
         )
 
         {:error, reason}
-    end
-  end
-
-  defp parse_expires_at(response, batch) do
-    if is_nil(batch.expires_at) and response["expires_at"] do
-      %{expires_at: DateTime.from_unix!(response["expires_at"])}
-    else
-      %{}
     end
   end
 end

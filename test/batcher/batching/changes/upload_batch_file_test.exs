@@ -38,8 +38,16 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
       # Transition to uploading state
       {:ok, batch} = Batching.start_batch_upload(batch)
 
-      # Mock file upload endpoint
-      expect_json_response(server, :post, "/v1/files", %{"id" => "file-123"}, 200)
+      # Mock file upload endpoint (expires_at is 30 days from now)
+      expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/files",
+        %{"id" => "file-123", "expires_at" => expires_at},
+        200
+      )
 
       # Upload batch file
       {:ok, updated_batch} =
@@ -116,7 +124,16 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
       batches_dir = Application.get_env(:batcher, :batches_dir, "./data/batches")
       batch_file_path = Path.join(batches_dir, "batch_#{batch.id}.jsonl")
 
-      expect_json_response(server, :post, "/v1/files", %{"id" => "file-123"}, 200)
+      # Mock file upload endpoint (expires_at is 30 days from now)
+      expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/files",
+        %{"id" => "file-123", "expires_at" => expires_at},
+        200
+      )
 
       {:ok, _updated_batch} =
         batch

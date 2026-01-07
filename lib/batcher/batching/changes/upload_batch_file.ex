@@ -15,17 +15,18 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
 
     try do
       with :ok <- build_batch_file(batch_file_path, batch),
-           {:ok, openai_input_file_id} <- upload_file(batch_file_path) do
+           {:ok, upload_result} <- upload_file(batch_file_path) do
         cleanup_file(batch_file_path)
 
         Logger.info(
-          "Batch #{batch.id} uploaded successfully (OpenAI File ID: #{openai_input_file_id})"
+          "Batch #{batch.id} uploaded successfully (OpenAI File ID: #{upload_result.file_id})"
         )
 
-        Ash.Changeset.force_change_attribute(
-          changeset,
-          :openai_input_file_id,
-          openai_input_file_id
+        changeset
+        |> Ash.Changeset.force_change_attribute(:openai_input_file_id, upload_result.file_id)
+        |> Ash.Changeset.force_change_attribute(
+          :expires_at,
+          DateTime.from_unix!(upload_result.expires_at)
         )
       else
         {:error, reason} ->
@@ -97,8 +98,11 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
 
   defp upload_file(file_path) do
     case OpenaiApiClient.upload_file(file_path) do
-      {:ok, response} -> {:ok, response["id"]}
-      {:error, reason} -> {:error, "File upload failed: #{inspect(reason)}"}
+      {:ok, response} ->
+        {:ok, %{file_id: response["id"], expires_at: response["expires_at"]}}
+
+      {:error, reason} ->
+        {:error, "File upload failed: #{inspect(reason)}"}
     end
   end
 
