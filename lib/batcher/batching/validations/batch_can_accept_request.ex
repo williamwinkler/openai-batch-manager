@@ -19,7 +19,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
     batch_id = Ash.Changeset.get_attribute(changeset, :batch_id)
 
     # Use the non-bang version to handle missing batches gracefully
-    case Batching.get_batch_by_id(batch_id, load: [:request_count, :batch_size_bytes]) do
+    case Batching.get_batch_by_id(batch_id, load: [:request_count, :size_bytes]) do
       {:ok, batch} ->
         with :ok <- batch_is_building(batch),
              :ok <- batch_not_full(batch),
@@ -48,7 +48,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   end
 
   defp batch_not_too_large(batch) do
-    if (batch.batch_size_bytes || 0) < @max_batch_size_bytes,
+    if (batch.size_bytes || 0) < @max_batch_size_bytes,
       do: :ok,
       else:
         {:error,

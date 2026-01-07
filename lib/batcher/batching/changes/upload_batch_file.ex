@@ -17,11 +17,20 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
       with :ok <- build_batch_file(batch_file_path, batch),
            {:ok, openai_input_file_id} <- upload_file(batch_file_path) do
         cleanup_file(batch_file_path)
-        Logger.info("Batch #{batch.id} uploaded successfully (OpenAI File ID: #{openai_input_file_id})")
-        Ash.Changeset.force_change_attribute(changeset, :openai_input_file_id, openai_input_file_id)
+
+        Logger.info(
+          "Batch #{batch.id} uploaded successfully (OpenAI File ID: #{openai_input_file_id})"
+        )
+
+        Ash.Changeset.force_change_attribute(
+          changeset,
+          :openai_input_file_id,
+          openai_input_file_id
+        )
       else
         {:error, reason} ->
           Logger.error("Batch #{batch.id} upload failed: #{inspect(reason)}")
+          cleanup_file(batch_file_path)
           Ash.Changeset.add_error(changeset, "Batch upload failed: #{reason}")
       end
     rescue
@@ -51,7 +60,18 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
     end
 
     Logger.debug("Finished building batch_#{batch.id}.jsonl")
-    :ok
+
+    # Verify the file has content before uploading
+    case File.stat(batch_file_path) do
+      {:ok, %{size: 0}} ->
+        {:error, "Batch file is empty - no requests to upload"}
+
+      {:ok, _} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, "Failed to verify file: #{inspect(reason)}"}
+    end
   end
 
   defp cleanup_existing_openai_file(changeset) do

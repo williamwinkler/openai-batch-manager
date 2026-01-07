@@ -20,6 +20,8 @@ defmodule Batcher.Batching do
         args: [:batch_id, :custom_id]
 
       define :list_requests_in_batch, action: :list_requests_in_batch, args: [:batch_id]
+
+      define :deliver_request, action: :deliver
     end
 
     # Transition resources (internal only)

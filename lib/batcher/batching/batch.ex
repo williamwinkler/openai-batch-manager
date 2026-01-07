@@ -129,8 +129,12 @@ defmodule Batcher.Batching.Batch do
       prepare fn query, _ ->
         Ash.Query.after_action(query, fn _query, records ->
           filtered =
-            Enum.filter(records, fn batch ->
-              batch = Ash.load!(batch, :request_count)
+            Enum.map(records, fn batch ->
+              batch
+              |> Ash.load!(:request_count)
+              |> Ash.load!(:size_bytes)
+            end)
+            |> Enum.filter(fn batch ->
               batch.request_count < 50_000
             end)
 
@@ -250,6 +254,9 @@ defmodule Batcher.Batching.Batch do
             parent_id_field: :batch_id,
             state_attribute: :state},
            where: [changing(:state)]
+
+    change Batching.Changes.PublishStateChange,
+      where: [changing(:state)]
   end
 
   attributes do
@@ -315,6 +322,10 @@ defmodule Batcher.Batching.Batch do
 
   calculations do
     calculate :request_count, :integer, Batcher.Batching.Calculations.BatchRequestCount
-    calculate :batch_size_bytes, :integer, Batcher.Batching.Calculations.BatchSizeBytes
+    calculate :size_bytes, :integer, Batcher.Batching.Calculations.BatchSizeBytes
+
+    calculate :requests_terminal_count,
+              :integer,
+              Batcher.Batching.Calculations.BatchRequestsTerminal
   end
 end

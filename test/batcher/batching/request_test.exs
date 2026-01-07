@@ -934,9 +934,9 @@ defmodule Batcher.Batching.RequestTest do
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
           success: false,
-          error_msg: "First attempt failed"
+          error_msg: "First attempt failed",
+          type: :webhook
         })
-        |> Ash.Changeset.force_change_attribute(:type, :webhook)
 
       {:ok, _attempt1} = Ash.create(changeset1)
 
@@ -944,9 +944,9 @@ defmodule Batcher.Batching.RequestTest do
         Batcher.Batching.RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true
+          success: true,
+          type: :webhook
         })
-        |> Ash.Changeset.force_change_attribute(:type, :webhook)
 
       {:ok, _attempt2} = Ash.create(changeset2)
 

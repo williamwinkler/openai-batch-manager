@@ -4,6 +4,10 @@ defmodule Batcher.Utils.FormatTest do
   alias Batcher.Utils.Format
 
   describe "bytes/1" do
+    test "handles nil values" do
+      assert Format.bytes(nil) == "0 bytes"
+    end
+
     test "formats bytes (< 1024)" do
       assert Format.bytes(0) == "0 bytes"
       assert Format.bytes(500) == "500 bytes"

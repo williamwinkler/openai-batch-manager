@@ -24,7 +24,7 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
     defaults [:read]
 
     create :create do
-      accept [:request_id, :success, :error_msg]
+      accept [:request_id, :type, :success, :error_msg]
       primary? true
     end
   end

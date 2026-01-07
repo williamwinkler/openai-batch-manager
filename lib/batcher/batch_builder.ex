@@ -53,7 +53,7 @@ defmodule Batcher.BatchBuilder do
       [] ->
         # Start new BatchBuilder
         result =
-          DynamicSupervisor.start_child(Batcher.BatchSupervisor, {__MODULE__, {url, model, []}})
+          DynamicSupervisor.start_child(Batcher.BatchSupervisor, {__MODULE__, {url, model}})
 
         case result do
           {:ok, pid} ->
@@ -75,7 +75,7 @@ defmodule Batcher.BatchBuilder do
   ## Server Callbacks
 
   @impl true
-  def init({url, model, _opts}) do
+  def init({url, model}) do
     batch = get_building_batch(url, model)
 
     if batch.request_count >= 50_000 do
@@ -83,7 +83,7 @@ defmodule Batcher.BatchBuilder do
     end
 
     Logger.info(
-      "BatchBuilder initialized for batch #{batch.id}: #{url} - #{model} - requests=#{batch.request_count} size=#{Format.bytes(batch.batch_size_bytes)}"
+      "BatchBuilder initialized for batch #{batch.id}: #{url} - #{model} - requests=#{batch.request_count} size=#{Format.bytes(batch.size_bytes)}"
     )
 
     BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
@@ -97,7 +97,55 @@ defmodule Batcher.BatchBuilder do
   end
 
   @impl true
+  def handle_cast(:finish_building, state) do
+    Logger.info(
+      "BatchBuilder [#{state.batch_id}] received finish_building - marking batch ready for upload"
+    )
+
+    case Batcher.Batching.get_batch_by_id(state.batch_id) do
+      {:ok, batch} ->
+        case Batcher.Batching.start_batch_upload(batch) do
+          {:ok, _updated_batch} ->
+            Logger.info("BatchBuilder [#{state.batch_id}] successfully marked batch for upload")
+            terminate(state)
+
+          {:error, error} ->
+            Logger.error(
+              "BatchBuilder [#{state.batch_id}] failed to mark batch for upload: #{inspect(error)}"
+            )
+
+            {:noreply, state}
+        end
+
+      {:error, error} ->
+        Logger.error("BatchBuilder [#{state.batch_id}] failed to get batch: #{inspect(error)}")
+        {:noreply, state}
+    end
+  end
+
+  @impl true
   def handle_call({:add_request, request_data}, _from, state) do
+    # Verify batch is still in building state before adding requests
+    case Batcher.Batching.get_batch_by_id(state.batch_id) do
+      {:ok, batch} ->
+        if batch.state != :building do
+          Logger.warning(
+            "BatchBuilder [#{state.batch_id}] received request but batch is in #{batch.state} state, shutting down"
+          )
+
+          terminate(state)
+          {:reply, {:error, :batch_not_building}, state}
+        else
+          add_request_to_batch(request_data, state)
+        end
+
+      {:error, error} ->
+        Logger.error("BatchBuilder [#{state.batch_id}] failed to get batch: #{inspect(error)}")
+        {:reply, {:error, error}, state}
+    end
+  end
+
+  defp add_request_to_batch(request_data, state) do
     # Create Prompt record via internal action
     request_data = Map.put(request_data, :batch_id, state.batch_id)
 
@@ -171,9 +219,7 @@ defmodule Batcher.BatchBuilder do
 
   ## Private Functions
   defp get_building_batch(url, model) do
-    case Batcher.Batching.find_building_batch(model, url,
-           load: [:request_count, :batch_size_bytes]
-         ) do
+    case Batcher.Batching.find_building_batch(model, url, load: [:request_count, :size_bytes]) do
       {:ok, existing_batch} ->
         Logger.info(
           "BatchBuilder reusing existing building batch: url=#{url} model=#{model} batch_id=#{existing_batch.id}"
@@ -184,6 +230,9 @@ defmodule Batcher.BatchBuilder do
       {:error, _} ->
         # No draft batch found, create a new one
         {:ok, new_batch} = Batcher.Batching.create_batch(model, url)
+
+        # Load calculations for logging
+        new_batch = Ash.load!(new_batch, [:request_count, :size_bytes])
 
         Logger.info(
           "BatchBuilder created new batch: url=#{url} model=#{model} batch_id=#{new_batch.id}"

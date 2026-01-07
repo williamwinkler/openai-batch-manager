@@ -42,7 +42,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       generate_many(request(batch_id: batch.id), 5)
 
       # Reload batch to get updated request_count
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :batch_size_bytes])
+      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
 
       changeset =
         Batching.Request
@@ -87,8 +87,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
           })
       end
 
-      # Reload batch to get updated batch_size_bytes
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :batch_size_bytes])
+      # Reload batch to get updated size_bytes
+      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
 
       changeset =
         Batching.Request

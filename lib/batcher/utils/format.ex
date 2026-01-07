@@ -25,6 +25,8 @@ defmodule Batcher.Utils.Format do
       iex> Format.bytes(500)
       "500 bytes"
   """
+  def bytes(byte_count) when is_nil(byte_count), do: "0 bytes"
+
   def bytes(byte_count) do
     cond do
       byte_count >= 1024 * 1024 * 1024 ->

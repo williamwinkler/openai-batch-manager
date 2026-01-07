@@ -44,16 +44,17 @@ defmodule Batcher.Batching.Request do
     end
   end
 
-  # oban do
-  #   triggers do
-  #     # Starts the delivery process for processed requests
-  #     trigger :begin_delivery do
-  #       action :begin_delivery,
-  #       queue: :delivery
-  #       where expr(state == :openai_processed)
-  #     end
-  #   end
-  # end
+  oban do
+    triggers do
+      trigger :deliver do
+        action :deliver
+        where expr(state == :openai_processed)
+        queue :delivery
+        worker_module_name Batching.Request.AshOban.Worker.Deliver
+        scheduler_module_name Batching.Request.AshOban.Scheduler.Deliver
+      end
+    end
+  end
 
   actions do
     defaults [:read, :destroy]
@@ -114,12 +115,14 @@ defmodule Batcher.Batching.Request do
       description "Mark the request as delivered"
       require_atomic? false
       change transition_state(:delivered)
+      change Batching.Changes.CreateDeliveryAttempt
     end
 
     update :mark_failed do
       accept [:error_msg]
       require_atomic? false
       change transition_state(:failed)
+      change Batching.Changes.CreateDeliveryAttempt
     end
 
     update :mark_expired do
@@ -131,6 +134,15 @@ defmodule Batcher.Batching.Request do
     update :cancel do
       require_atomic? false
       change transition_state(:cancelled)
+    end
+
+    action :deliver, :struct do
+      description "Deliver the processed request to webhook or RabbitMQ"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.Deliver
+      # Note: Delivery attempt creation is handled via Batching.Changes.CreateDeliveryAttempt
+      # which is attached to :complete_delivery and :mark_failed actions
     end
   end
 
@@ -222,5 +234,10 @@ defmodule Batcher.Batching.Request do
     has_many :delivery_attempts, Batching.RequestDeliveryAttempt do
       description "Audit trail of delivery attempts for this request"
     end
+  end
+
+  calculations do
+    calculate :delivery_attempt_count, :integer,
+              Batcher.Batching.Calculations.RequestDeliveryAttemptCount
   end
 end
