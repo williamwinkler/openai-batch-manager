@@ -12,8 +12,7 @@ if config_env() != :test do
   source!([Path.absname(".env"), System.get_env()])
   openai_api_key = env!("OPENAI_API_KEY", :string)
 
-  config :batcher, Batcher.OpenaiApiClient,
-    openai_api_key: openai_api_key
+  config :batcher, Batcher.OpenaiApiClient, openai_api_key: openai_api_key
 end
 
 # Batch storage configuration

@@ -52,6 +52,8 @@ defmodule Batcher.Repo.Migrations.Init do
       add :id, :bigserial, null: false, primary_key: true
     end
 
+    create index(:request_delivery_attempts, ["request_id"])
+
     create table(:batches, primary_key: false) do
       add :updated_at, :utc_datetime_usec, null: false
       add :created_at, :utc_datetime_usec, null: false
@@ -64,11 +66,14 @@ defmodule Batcher.Repo.Migrations.Init do
       add :url, :text, null: false
       add :openai_status_last_checked_at, :utc_datetime
       add :openai_batch_id, :text
+      add :openai_error_file_id, :text
       add :openai_output_file_id, :text
       add :openai_input_file_id, :text
       add :state, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end
+
+    create index(:requests, ["batch_id"])
 
     create index(:requests, ["custom_id", "batch_id"], unique: true)
 
@@ -87,9 +92,15 @@ defmodule Batcher.Repo.Migrations.Init do
       add :from, :text
       add :id, :bigserial, null: false, primary_key: true
     end
+
+    create index(:batch_transitions, ["batch_id"])
   end
 
   def down do
+    drop_if_exists index(:batch_transitions, ["batch_id"],
+                     name: "batch_transitions_batch_id_index"
+                   )
+
     drop constraint(:batch_transitions, "batch_transitions_batch_id_fkey")
 
     drop table(:batch_transitions)
@@ -98,7 +109,13 @@ defmodule Batcher.Repo.Migrations.Init do
                      name: "requests_custom_id_batch_id_index"
                    )
 
+    drop_if_exists index(:requests, ["batch_id"], name: "requests_batch_id_index")
+
     drop table(:batches)
+
+    drop_if_exists index(:request_delivery_attempts, ["request_id"],
+                     name: "request_delivery_attempts_request_id_index"
+                   )
 
     drop constraint(:request_delivery_attempts, "request_delivery_attempts_request_id_fkey")
 

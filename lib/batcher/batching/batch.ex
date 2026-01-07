@@ -63,7 +63,7 @@ defmodule Batcher.Batching.Batch do
   oban do
     triggers do
       trigger :expire_stale_building_batch do
-        action :start_upload
+        action :expire_stale_building_batch
         where expr(state == :building and created_at < datetime_add(now(), -1, "hour"))
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.ExpireStaleBuildingBatch
@@ -148,6 +148,7 @@ defmodule Batcher.Batching.Batch do
     update :start_upload do
       description "Start upload process for the batch"
       require_atomic? false
+      change Batching.Changes.EnsureBatchHasRequests
       change transition_state(:uploading)
       change run_oban_trigger(:upload)
     end
@@ -193,6 +194,7 @@ defmodule Batcher.Batching.Batch do
 
       accept [
         :openai_output_file_id,
+        :openai_error_file_id,
         :input_tokens,
         :cached_tokens,
         :reasoning_tokens,
@@ -239,6 +241,13 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       change transition_state(:cancelled)
     end
+
+    action :expire_stale_building_batch, :struct do
+      description "Expire stale building batches, deleting empty ones"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.ExpireStaleBuildingBatch
+    end
   end
 
   pub_sub do
@@ -274,6 +283,10 @@ defmodule Batcher.Batching.Batch do
 
     attribute :openai_output_file_id, :string do
       description "File ID given by the OpenAI API for the processed results"
+    end
+
+    attribute :openai_error_file_id, :string do
+      description "File ID given by the OpenAI API for failed requests (if any)"
     end
 
     attribute :openai_batch_id, :string do

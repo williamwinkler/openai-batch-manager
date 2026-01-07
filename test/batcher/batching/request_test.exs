@@ -721,7 +721,15 @@ defmodule Batcher.Batching.RequestTest do
     end
 
     test "can't transition from invalid state" do
-      invalid_states = [:pending, :openai_processed, :delivering, :delivered, :failed, :expired, :cancelled]
+      invalid_states = [
+        :pending,
+        :openai_processed,
+        :delivering,
+        :delivered,
+        :failed,
+        :expired,
+        :cancelled
+      ]
 
       for state <- invalid_states do
         request = generate(seeded_request(state: state))
@@ -750,7 +758,15 @@ defmodule Batcher.Batching.RequestTest do
     end
 
     test "can't transition from invalid state" do
-      invalid_states = [:pending, :openai_processing, :delivering, :delivered, :failed, :expired, :cancelled]
+      invalid_states = [
+        :pending,
+        :openai_processing,
+        :delivering,
+        :delivered,
+        :failed,
+        :expired,
+        :cancelled
+      ]
 
       for state <- invalid_states do
         request = generate(seeded_request(state: state))
@@ -777,7 +793,15 @@ defmodule Batcher.Batching.RequestTest do
     end
 
     test "can't transition from invalid state" do
-      invalid_states = [:pending, :openai_processing, :openai_processed, :delivered, :failed, :expired, :cancelled]
+      invalid_states = [
+        :pending,
+        :openai_processing,
+        :openai_processed,
+        :delivered,
+        :failed,
+        :expired,
+        :cancelled
+      ]
 
       for state <- invalid_states do
         request = generate(seeded_request(state: state))
@@ -892,7 +916,15 @@ defmodule Batcher.Batching.RequestTest do
     end
 
     test "can't cancel from invalid state" do
-      invalid_states = [:openai_processing, :openai_processed, :delivering, :delivered, :failed, :expired, :cancelled]
+      invalid_states = [
+        :openai_processing,
+        :openai_processed,
+        :delivering,
+        :delivered,
+        :failed,
+        :expired,
+        :cancelled
+      ]
 
       for state <- invalid_states do
         request = generate(seeded_request(state: state))
@@ -958,7 +990,7 @@ defmodule Batcher.Batching.RequestTest do
       failed_attempt = Enum.find(request.delivery_attempts, &(!&1.success))
       assert failed_attempt.error_msg == "First attempt failed"
 
-      successful_attempt = Enum.find(request.delivery_attempts, &(&1.success))
+      successful_attempt = Enum.find(request.delivery_attempts, & &1.success)
       assert successful_attempt.success == true
     end
 

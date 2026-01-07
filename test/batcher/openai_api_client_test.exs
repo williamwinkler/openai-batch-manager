@@ -539,6 +539,7 @@ defmodule Batcher.OpenaiApiClientTest do
   describe "Batcher.OpenaiApiClient.download_file/2" do
     test "successfully downloads file", %{server: server} do
       file_id = "file-2AbcDNE3rPZezkuRuXbB"
+
       file_content = """
       {"id": "req_1", "custom_id": "custom_1", "response": {"status_code": 200, "body": {"output": "result1"}, "error": null}, "error": null}
       {"id": "req_2", "custom_id": "custom_2", "response": {"status_code": 200, "body": {"output": "result2"}, "error": null}, "error": null}
@@ -619,6 +620,7 @@ defmodule Batcher.OpenaiApiClientTest do
           if File.exists?(file_path) do
             File.rm(file_path)
           end
+
         {:error, _reason} ->
           # Error occurred, no file to clean up
           :ok

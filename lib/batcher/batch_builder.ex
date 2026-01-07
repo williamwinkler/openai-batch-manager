@@ -17,7 +17,7 @@ defmodule Batcher.BatchBuilder do
 
   BatchBuilders are registered in `Batcher.BatchRegistry` with key `{url, model}`.
   """
-  use GenServer
+  use GenServer, restart: :temporary
   require Logger
 
   require Ash.Query
@@ -51,7 +51,7 @@ defmodule Batcher.BatchBuilder do
         end
 
       [] ->
-        # Start new BatchBuilder
+        # Start new BatchBuilder (uses restart: :temporary so it won't auto-restart)
         result =
           DynamicSupervisor.start_child(Batcher.BatchSupervisor, {__MODULE__, {url, model}})
 
@@ -69,7 +69,7 @@ defmodule Batcher.BatchBuilder do
   Force upload of the current batch (marks ready for upload).
   """
   def upload_batch(url, model) do
-    GenServer.cast(via_tuple(url, model), :finish_building)
+    GenServer.call(via_tuple(url, model), :finish_building, 30_000)
   end
 
   ## Server Callbacks
@@ -92,34 +92,38 @@ defmodule Batcher.BatchBuilder do
      %{
        batch_id: batch.id,
        url: url,
-       model: model
+       model: model,
+       terminating: false
      }}
   end
 
   @impl true
-  def handle_cast(:finish_building, state) do
-    Logger.info(
-      "BatchBuilder [#{state.batch_id}] received finish_building - marking batch ready for upload"
-    )
+  def handle_call(:finish_building, _from, state) do
+    Logger.info("BatchBuilder [#{state.batch_id}] marking batch ready for upload")
 
     case Batcher.Batching.get_batch_by_id(state.batch_id) do
       {:ok, batch} ->
+        # Set terminating flag to prevent double termination from PubSub
+        state = Map.put(state, :terminating, true)
+
         case Batcher.Batching.start_batch_upload(batch) do
           {:ok, _updated_batch} ->
-            Logger.info("BatchBuilder [#{state.batch_id}] successfully marked batch for upload")
-            terminate(state)
+            Logger.info("BatchBuilder [#{state.batch_id}] batch marked for upload, shutting down")
+            Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+            {:stop, :normal, :ok, state}
 
           {:error, error} ->
             Logger.error(
-              "BatchBuilder [#{state.batch_id}] failed to mark batch for upload: #{inspect(error)}"
+              "BatchBuilder [#{state.batch_id}] failed to start upload: #{inspect(error)}"
             )
 
-            {:noreply, state}
+            Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+            {:stop, :normal, {:error, error}, state}
         end
 
       {:error, error} ->
         Logger.error("BatchBuilder [#{state.batch_id}] failed to get batch: #{inspect(error)}")
-        {:noreply, state}
+        {:reply, {:error, error}, state}
     end
   end
 
@@ -133,8 +137,10 @@ defmodule Batcher.BatchBuilder do
             "BatchBuilder [#{state.batch_id}] received request but batch is in #{batch.state} state, shutting down"
           )
 
-          terminate(state)
-          {:reply, {:error, :batch_not_building}, state}
+          # Unregister before terminating
+          Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+          state = Map.put(state, :terminating, true)
+          {:stop, :normal, {:error, :batch_not_building}, state}
         else
           add_request_to_batch(request_data, state)
         end
@@ -207,13 +213,28 @@ defmodule Batcher.BatchBuilder do
         },
         state
       ) do
-    batch = notification.data
+    # Skip termination if we're already terminating (prevents double termination)
+    if state.terminating do
+      Logger.debug(
+        "BatchBuilder [#{state.batch_id}] received state change notification but already terminating, skipping"
+      )
 
-    if batch.state != :building do
-      Logger.info("BatchBuilder [#{state.batch_id}] stopping. Batch state is now #{batch.state}")
-      terminate(state)
-    else
       {:noreply, state}
+    else
+      batch = notification.data
+
+      if batch.state != :building do
+        Logger.info(
+          "BatchBuilder [#{state.batch_id}] stopping. Batch state is now #{batch.state}"
+        )
+
+        # Unregister before terminating
+        Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+        state = Map.put(state, :terminating, true)
+        {:stop, :normal, state}
+      else
+        {:noreply, state}
+      end
     end
   end
 
@@ -244,10 +265,5 @@ defmodule Batcher.BatchBuilder do
 
   defp via_tuple(url, model) do
     {:via, Registry, {Batcher.BatchRegistry, {url, model}}}
-  end
-
-  defp terminate(state) do
-    Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
-    {:stop, :normal, state}
   end
 end

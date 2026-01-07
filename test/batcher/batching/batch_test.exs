@@ -74,6 +74,10 @@ defmodule Batcher.Batching.BatchTest do
       assert transition.to == :building
       assert transition.batch_id == batch.id
 
+      # Add a request before transitioning (empty batches cannot be uploaded)
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+      batch = Batching.get_batch_by_id!(batch.id)
+
       # Transition to uploading
       {:ok, batch} = Batching.start_batch_upload(batch)
       batch = Ash.load!(batch, [:transitions])
@@ -181,6 +185,8 @@ defmodule Batcher.Batching.BatchTest do
   describe "Batcher.Batching.Batch.start_upload/0" do
     test "sets the state to :uploading" do
       batch = generate(batch())
+      # Add a request to the batch (empty batches cannot be uploaded)
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
 
       assert batch.state == :building
 

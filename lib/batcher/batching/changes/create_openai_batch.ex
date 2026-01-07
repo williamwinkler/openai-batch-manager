@@ -20,11 +20,14 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
               {:bad_request, body} ->
                 message = Map.get(body, "error", %{}) |> Map.get("message", "Bad request")
                 "OpenAI batch creation failed: #{message}"
+
               atom when is_atom(atom) ->
                 "OpenAI batch creation failed: #{atom}"
+
               other ->
                 "OpenAI batch creation failed: #{inspect(other)}"
             end
+
           Ash.Changeset.add_error(changeset, error_msg)
       end
     end)

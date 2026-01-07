@@ -14,9 +14,59 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "custom_id",
+      "source": "state",
       "references": null,
       "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "openai_input_file_id",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "openai_output_file_id",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "openai_error_file_id",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "openai_batch_id",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime",
+      "source": "openai_status_last_checked_at",
+      "references": null,
+      "allow_nil?": true,
       "generated?": false,
       "primary_key?": false
     },
@@ -44,9 +94,9 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "request_payload",
+      "source": "error_msg",
       "references": null,
-      "allow_nil?": false,
+      "allow_nil?": true,
       "generated?": false,
       "primary_key?": false
     },
@@ -54,17 +104,7 @@
       "default": "nil",
       "size": null,
       "type": "bigint",
-      "source": "request_payload_size",
-      "references": null,
-      "allow_nil?": false,
-      "generated?": false,
-      "primary_key?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "map",
-      "source": "response_payload",
+      "source": "input_tokens",
       "references": null,
       "allow_nil?": true,
       "generated?": false,
@@ -73,28 +113,8 @@
     {
       "default": "nil",
       "size": null,
-      "type": "text",
-      "source": "state",
-      "references": null,
-      "allow_nil?": false,
-      "generated?": false,
-      "primary_key?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "delivery_type",
-      "references": null,
-      "allow_nil?": false,
-      "generated?": false,
-      "primary_key?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "webhook_url",
+      "type": "bigint",
+      "source": "cached_tokens",
       "references": null,
       "allow_nil?": true,
       "generated?": false,
@@ -103,8 +123,8 @@
     {
       "default": "nil",
       "size": null,
-      "type": "text",
-      "source": "rabbitmq_exchange",
+      "type": "bigint",
+      "source": "reasoning_tokens",
       "references": null,
       "allow_nil?": true,
       "generated?": false,
@@ -113,18 +133,8 @@
     {
       "default": "nil",
       "size": null,
-      "type": "text",
-      "source": "rabbitmq_queue",
-      "references": null,
-      "allow_nil?": true,
-      "generated?": false,
-      "primary_key?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "error_msg",
+      "type": "bigint",
+      "source": "output_tokens",
       "references": null,
       "allow_nil?": true,
       "generated?": false,
@@ -149,59 +159,20 @@
       "allow_nil?": false,
       "generated?": false,
       "primary_key?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "bigint",
-      "source": "batch_id",
-      "references": {
-        "name": "requests_batch_id_fkey",
-        "table": "batches",
-        "multitenancy": {
-          "global": null,
-          "strategy": null,
-          "attribute": null
-        },
-        "destination_attribute": "id",
-        "primary_key?": true,
-        "on_update": null,
-        "on_delete": "delete",
-        "deferrable": false,
-        "destination_attribute_default": null,
-        "destination_attribute_generated": null
-      },
-      "allow_nil?": false,
-      "generated?": false,
-      "primary_key?": false
     }
   ],
-  "table": "requests",
-  "hash": "0F6705430D12E2326EB48DB352A5ED5ED916974F8797A7823E22AA724626A3B0",
+  "table": "batches",
+  "hash": "BD77F64966601CAB4C2B3FEC212F1FBA09FC0BFC80B09A49E9B2D3D98E21FC60",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
-  "base_filter": null,
-  "custom_indexes": [
-    {
-      "message": null,
-      "name": null,
-      "table": null,
-      "include": null,
-      "fields": [
-        "custom_id",
-        "batch_id"
-      ],
-      "where": null,
-      "unique": true,
-      "using": null
-    }
-  ],
+  "custom_indexes": [],
   "custom_statements": [],
+  "base_filter": null,
   "has_create_action": true
 }

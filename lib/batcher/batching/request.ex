@@ -50,6 +50,7 @@ defmodule Batcher.Batching.Request do
         action :deliver
         where expr(state == :openai_processed)
         queue :delivery
+        max_attempts 1
         worker_module_name Batching.Request.AshOban.Worker.Deliver
         scheduler_module_name Batching.Request.AshOban.Scheduler.Deliver
       end
@@ -237,7 +238,8 @@ defmodule Batcher.Batching.Request do
   end
 
   calculations do
-    calculate :delivery_attempt_count, :integer,
+    calculate :delivery_attempt_count,
+              :integer,
               Batcher.Batching.Calculations.RequestDeliveryAttemptCount
   end
 end

@@ -19,7 +19,10 @@ defmodule Batcher.Batching.Changes.SetDeliveryConfig do
             |> Ash.Changeset.change_attribute(:webhook_url, url)
 
           false ->
-            Ash.Changeset.add_error(changeset, field: :webhook_url, message: "is required and must be a valid url")
+            Ash.Changeset.add_error(changeset,
+              field: :webhook_url,
+              message: "is required and must be a valid url"
+            )
         end
 
       "rabbitmq" ->

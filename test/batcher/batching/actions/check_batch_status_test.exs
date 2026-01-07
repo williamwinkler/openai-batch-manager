@@ -169,7 +169,13 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
         |> generate()
 
       # Mock API failure
-      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", %{"error" => "Not found"}, 404)
+      expect_json_response(
+        server,
+        :get,
+        "/v1/batches/#{openai_batch_id}",
+        %{"error" => "Not found"},
+        404
+      )
 
       result =
         Batching.Batch

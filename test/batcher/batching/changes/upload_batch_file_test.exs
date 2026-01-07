@@ -166,8 +166,12 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
       # Create a batch with no requests
       batch = generate(batch())
 
-      # Transition to uploading state
-      {:ok, batch} = Batching.start_batch_upload(batch)
+      # Note: We can't transition an empty batch to uploading anymore (it's prevented by EnsureBatchHasRequests)
+      # This test should verify that the upload action itself rejects empty batches
+      # But since we can't get to uploading state with an empty batch, we need to test differently
+      # Let's test that start_upload fails for empty batches instead
+      result = Batching.start_batch_upload(batch)
+      assert {:error, %Ash.Error.Invalid{}} = result
 
       # Attempt to upload - should fail because file is empty
       result =
@@ -179,7 +183,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
 
       # Verify the error message mentions empty file
       error_message = Exception.message(error)
-      assert String.contains?(error_message, "empty") or String.contains?(error_message, "no requests")
+
+      assert String.contains?(error_message, "empty") or
+               String.contains?(error_message, "no requests")
 
       # Verify file was cleaned up
       batches_dir = Application.get_env(:batcher, :batches_dir, "./data/batches")

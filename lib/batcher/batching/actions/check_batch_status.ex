@@ -20,6 +20,7 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
         batch
         |> Ash.Changeset.for_update(:openai_processing_completed, %{
           openai_output_file_id: response["output_file_id"],
+          openai_error_file_id: response["error_file_id"],
           input_tokens: usage.input_tokens,
           cached_tokens: usage.cached_tokens,
           reasoning_tokens: usage.reasoning_tokens,

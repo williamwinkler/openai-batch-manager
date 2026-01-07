@@ -105,7 +105,7 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
       failed_attempt = Enum.find(request.delivery_attempts, &(!&1.success))
       assert failed_attempt.error_msg == "First attempt failed"
 
-      successful_attempt = Enum.find(request.delivery_attempts, &(&1.success))
+      successful_attempt = Enum.find(request.delivery_attempts, & &1.success)
       assert successful_attempt.success == true
     end
 
@@ -124,7 +124,8 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
 
       {:ok, _attempt1} = Ash.create(changeset1)
 
-      Process.sleep(10)  # Small delay to ensure different timestamps
+      # Small delay to ensure different timestamps
+      Process.sleep(10)
 
       changeset2 =
         RequestDeliveryAttempt
@@ -205,7 +206,7 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
 
       assert length(request.delivery_attempts) == 3
 
-      successful_attempts = Enum.filter(request.delivery_attempts, &(&1.success))
+      successful_attempts = Enum.filter(request.delivery_attempts, & &1.success)
       assert length(successful_attempts) == 1
     end
   end

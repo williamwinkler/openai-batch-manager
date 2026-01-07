@@ -20,7 +20,6 @@ defmodule Batcher.Generator do
     )
   end
 
-
   @doc """
   Generates raw batch structs, bypassing the action logic.
   Useful for setting specific states.
@@ -100,6 +99,7 @@ defmodule Batcher.Generator do
       method: "POST",
       url: url
     }
+
     default_payload_json = JSON.encode!(default_payload_map)
 
     StreamData.bind(sequence(:seeded_req_id, &"custom_id_#{&1}"), fn cid ->
@@ -111,7 +111,8 @@ defmodule Batcher.Generator do
           custom_id: cid,
           url: url,
           model: model,
-          state: :pending, # Can be overridden by opts
+          # Can be overridden by opts
+          state: :pending,
           delivery_type: :webhook,
           webhook_url: "https://example.com/webhook",
 

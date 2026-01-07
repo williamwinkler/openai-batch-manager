@@ -179,7 +179,14 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
         })
 
       # Create request already in processing state
-      processing_req = generate(seeded_request(batch_id: batch.id, state: :openai_processing, custom_id: "processing_req"))
+      processing_req =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :openai_processing,
+            custom_id: "processing_req"
+          )
+        )
 
       # Transition batch through states to uploaded (simulating workflow)
       {:ok, batch} = Batching.start_batch_upload(batch)
@@ -211,7 +218,9 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
       assert updated_pending.state == :openai_processing
 
       # Processing request should remain unchanged
-      {:ok, updated_processing} = Batching.get_request_by_custom_id(batch.id, processing_req.custom_id)
+      {:ok, updated_processing} =
+        Batching.get_request_by_custom_id(batch.id, processing_req.custom_id)
+
       assert updated_processing.state == :openai_processing
     end
   end

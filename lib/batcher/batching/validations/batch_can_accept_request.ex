@@ -3,10 +3,10 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   alias Batcher.Batching
 
   @max_requests_per_batch Application.compile_env(
-                             :batcher,
-                             [:batch_limits, :max_requests_per_batch],
-                             50_000
-                           )
+                            :batcher,
+                            [:batch_limits, :max_requests_per_batch],
+                            50_000
+                          )
 
   @max_batch_size_bytes Application.compile_env(
                           :batcher,
@@ -28,7 +28,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
         end
 
       {:error, _} ->
-        {:error, field: :batch_id, message: "batch not found for given batch_id: #{inspect(batch_id)}"}
+        {:error,
+         field: :batch_id, message: "batch not found for given batch_id: #{inspect(batch_id)}"}
     end
   end
 
@@ -43,8 +44,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
       do: :ok,
       else:
         {:error,
-         field: :batch_id,
-         message: "Batch is full (max #{@max_requests_per_batch} requests)"}
+         field: :batch_id, message: "Batch is full (max #{@max_requests_per_batch} requests)"}
   end
 
   defp batch_not_too_large(batch) do

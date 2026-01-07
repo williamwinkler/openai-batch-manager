@@ -4,10 +4,10 @@ defmodule Batcher.Batching.Types.OpenaiBatchEndpoints do
   """
   use Ash.Type.Enum,
     values: [
-    "/v1/responses",
-    "/v1/chat/completions",
-    "/v1/completions",
-    "/v1/embeddings",
-    "/v1/moderations",
-  ]
+      "/v1/responses",
+      "/v1/chat/completions",
+      "/v1/completions",
+      "/v1/embeddings",
+      "/v1/moderations"
+    ]
 end

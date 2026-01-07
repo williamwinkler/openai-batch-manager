@@ -6,7 +6,7 @@ defmodule Batcher.Batching.Actions.Deliver do
   - POSTs response_payload to webhook_url
   - Records delivery attempt (success or failure)
   - On success: transitions request to :delivered
-  - On failure: retries up to 3 times, then marks as :failed
+  - On failure: marks as :failed (no retries)
   - Saves webhook response body in error_msg for debugging
 
   For RabbitMQ delivery:

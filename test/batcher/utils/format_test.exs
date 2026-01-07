@@ -64,7 +64,7 @@ defmodule Batcher.Utils.FormatTest do
       assert Format.bytes(1264) == "1.23 KB"
 
       # 1.999 MB should round to 2.0 MB
-      assert Format.bytes(2097151) == "2.0 MB"
+      assert Format.bytes(2_097_151) == "2.0 MB"
     end
   end
 end

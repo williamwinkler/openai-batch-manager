@@ -153,6 +153,7 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
       changeset = SetPayload.change(changeset, [], %{})
 
       refute changeset.valid?
+
       assert Enum.any?(changeset.errors, fn err ->
                err.field == :custom_id and String.contains?(err.message, "does not match")
              end)
@@ -186,6 +187,7 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
       changeset = SetPayload.change(changeset, [], %{})
 
       refute changeset.valid?
+
       assert Enum.any?(changeset.errors, fn err ->
                err.field == :model and String.contains?(err.message, "does not match")
              end)
@@ -219,6 +221,7 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
       changeset = SetPayload.change(changeset, [], %{})
 
       refute changeset.valid?
+
       assert Enum.any?(changeset.errors, fn err ->
                err.field == :url and String.contains?(err.message, "does not match")
              end)

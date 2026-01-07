@@ -22,6 +22,8 @@ defmodule Batcher.Batching.Changes.CreateTransitionTest do
 
     test "records state transition on update (:building → :uploading)" do
       batch = generate(batch())
+      # Add a request before transitioning (empty batches cannot be uploaded)
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
 
       # Initial transition should exist
       {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:transitions])
@@ -60,6 +62,10 @@ defmodule Batcher.Batching.Changes.CreateTransitionTest do
       # But Ash state machine won't allow this, so let's test a different scenario:
       # Update batch with an action that doesn't change state
 
+      # Add a request before transitioning (empty batches cannot be uploaded)
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+      batch = Batching.get_batch_by_id!(batch.id)
+
       # For now, let's verify that multiple state changes create multiple transitions
       {:ok, batch} = Batching.start_batch_upload(batch)
       {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:transitions])
@@ -73,6 +79,9 @@ defmodule Batcher.Batching.Changes.CreateTransitionTest do
 
     test "handles multiple sequential transitions" do
       batch = generate(batch())
+      # Add a request before transitioning (empty batches cannot be uploaded)
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+      batch = Batching.get_batch_by_id!(batch.id)
 
       # building → uploading
       {:ok, batch} = Batching.start_batch_upload(batch)
@@ -88,6 +97,9 @@ defmodule Batcher.Batching.Changes.CreateTransitionTest do
 
     test "transition records are ordered by transitioned_at" do
       batch = generate(batch())
+      # Add a request before transitioning (empty batches cannot be uploaded)
+      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+      batch = Batching.get_batch_by_id!(batch.id)
 
       {:ok, batch} = Batching.start_batch_upload(batch)
       {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:transitions])

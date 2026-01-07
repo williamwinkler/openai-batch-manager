@@ -39,7 +39,8 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request)
         |> Ash.run_action()
 
-      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts, :batch])
+      request_after =
+        Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts, :batch])
 
       assert request_after.state == :delivered
       assert request_after.delivery_attempt_count == 1

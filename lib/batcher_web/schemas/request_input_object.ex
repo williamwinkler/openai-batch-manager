@@ -22,8 +22,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
         url: %Schema{
           type: :string,
           enum: Batcher.Batching.Types.OpenaiBatchEndpoints,
-          description:
-            "The OpenAI API relative URL to be used for the request."
+          description: "The OpenAI API relative URL to be used for the request."
         },
         method: %Schema{
           type: :string,
@@ -33,7 +32,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
         },
         delivery: DeliverySchema.schema(),
         body: body_schema()
-      },
+      }
       # example: %{
       #   "method" => "POST",
       #   "url" => "/v1/responses",
@@ -59,24 +58,25 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
   defp body_schema do
     %Schema{
       type: :object,
-      required: [:model, :input],
+      required: [:model],
       properties: %{
         model: %Schema{
           type: :string,
-          description: "OpenAI model (e.g., gpt-4o-mini, text-embedding-3-large).",
+          description: "OpenAI model (e.g., gpt-4o-mini, text-embedding-3-large, gpt-4o).",
           example: "gpt-4o-mini"
         },
         input: %Schema{
           oneOf: [
             %Schema{
               type: :string,
-              description: "Plain text input.",
+              description:
+                "Plain text input (for /v1/responses, /v1/embeddings, /v1/moderations).",
               example: "Explain quantum computing in simple terms."
             },
             %Schema{
               type: :array,
               description:
-                "Array input. For responses: array of message objects; for embeddings/moderations: provider-accepted array.",
+                "Array input (for /v1/responses, /v1/embeddings, /v1/moderations). For responses: array of message objects; for embeddings/moderations: provider-accepted array.",
               items: %Schema{
                 type: :object,
                 description: "Message or item object.",
@@ -94,12 +94,60 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
               }
             }
           ],
-          description: "String or array input"
+          description:
+            "Input field for /v1/responses, /v1/embeddings, and /v1/moderations endpoints."
+        },
+        messages: %Schema{
+          type: :array,
+          description: "Messages array for /v1/chat/completions endpoint.",
+          items: %Schema{
+            type: :object,
+            properties: %{
+              role: %Schema{
+                type: :string,
+                enum: ["system", "user", "assistant", "developer"],
+                description: "Message role."
+              },
+              content: %Schema{
+                type: :string,
+                description: "Message content."
+              }
+            }
+          },
+          example: [
+            %{"role" => "system", "content" => "You are a helpful assistant."},
+            %{"role" => "user", "content" => "Tell me a joke."}
+          ]
+        },
+        prompt: %Schema{
+          oneOf: [
+            %Schema{
+              type: :string,
+              description: "Prompt string for /v1/completions endpoint.",
+              example: "The capital of France is"
+            },
+            %Schema{
+              type: :array,
+              items: %Schema{
+                type: :string
+              },
+              description: "Array of prompt strings for /v1/completions endpoint."
+            }
+          ],
+          description: "Prompt field for /v1/completions endpoint (string or array of strings)."
         }
       },
       additionalProperties: true,
-      description:
-        "Common body for responses/embeddings/moderations. Includes required model and input; other fields are pass-through."
+      description: """
+      Request body structure varies by endpoint:
+      - /v1/responses: requires 'model' and 'input' (string or array of messages)
+      - /v1/chat/completions: requires 'model' and 'messages' (array of message objects)
+      - /v1/completions: requires 'model' and 'prompt' (string or array of strings)
+      - /v1/embeddings: requires 'model' and 'input' (string or array of strings)
+      - /v1/moderations: requires 'model' and 'input' (string or array of strings)
+
+      All other fields are pass-through to OpenAI's API.
+      """
     }
   end
 end
