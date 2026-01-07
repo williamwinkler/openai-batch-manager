@@ -23,7 +23,8 @@ defmodule Batcher.Batching.Batch do
     transitions do
       transition :start_upload, from: :building, to: :uploading
       transition :upload, from: :uploading, to: :uploaded
-      transition :create_openai_batch, from: :uploaded, to: :openai_processing
+      transition :create_openai_batch, from: [:uploaded, :expired], to: :openai_processing
+      transition :mark_expired, from: :openai_processing, to: :expired
       transition :openai_processing_completed, from: :openai_processing, to: :openai_completed
       transition :start_downloading, from: :openai_completed, to: :downloading
       transition :finalize_processing, from: :downloading, to: :ready_to_deliver
@@ -80,7 +81,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :create_openai_batch do
         action :create_openai_batch
-        where expr(state == :uploaded)
+        where expr(state == :uploaded or state == :expired)
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
@@ -259,6 +260,16 @@ defmodule Batcher.Batching.Batch do
       constraints instance_of: __MODULE__
       transaction? false
       run Batching.Actions.ExpireStaleBuildingBatch
+    end
+
+    update :mark_expired do
+      description "Mark batch as expired from OpenAI and reschedule"
+      require_atomic? false
+      change set_attribute(:openai_status_last_checked_at, nil)
+      change set_attribute(:expires_at, nil)
+      change set_attribute(:openai_batch_id, nil)
+      change transition_state(:expired)
+      change run_oban_trigger(:create_openai_batch)
     end
 
     action :delete_expired_batch, :struct do

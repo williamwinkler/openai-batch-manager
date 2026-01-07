@@ -32,9 +32,16 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
         )
         |> Ash.update()
 
-      {:ok, %{"status" => status} = resp} when status in ["failed", "expired"] ->
+      {:ok, %{"status" => "expired"}} ->
+        Logger.info("Batch #{batch.id} expired on OpenAI, rescheduling")
+
+        batch
+        |> Ash.Changeset.for_update(:mark_expired, %{})
+        |> Ash.update()
+
+      {:ok, %{"status" => "failed"} = resp} ->
         error_msg = JSON.encode!(resp)
-        Logger.error("Batch #{batch.id} processing #{status} on OpenAI: #{error_msg}")
+        Logger.error("Batch #{batch.id} processing failed on OpenAI: #{error_msg}")
         expires_at_data = parse_expires_at(resp, batch)
 
         batch

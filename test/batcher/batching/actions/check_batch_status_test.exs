@@ -1,5 +1,6 @@
 defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
   use Batcher.DataCase, async: false
+  use Oban.Testing, repo: Batcher.Repo
 
   alias Batcher.Batching
 
@@ -97,21 +98,42 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       assert latest_transition.to == :failed
     end
 
-    test "transitions to failed when status is expired", %{server: server} do
+    test "transitions to expired and reschedules when status is expired", %{server: server} do
       openai_batch_id = "batch_expired123"
+      openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
 
       batch_before =
         seeded_batch(
           state: :openai_processing,
-          openai_batch_id: openai_batch_id
+          openai_batch_id: openai_batch_id,
+          openai_input_file_id: openai_input_file_id
         )
         |> generate()
 
-      response = %{
+      # Ensure batch has at least one request (use seeded_request to bypass state validation)
+      generate(
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model
+        )
+      )
+
+      # Mock the expired status check
+      expired_response = %{
         "status" => "expired"
       }
 
-      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", expired_response, 200)
+
+      # Mock the new batch creation (using existing file ID)
+      new_batch_response = %{
+        "id" => "batch_new123",
+        "status" => "validating",
+        "input_file_id" => openai_input_file_id
+      }
+
+      expect_json_response(server, :post, "/v1/batches", new_batch_response, 200)
 
       {:ok, batch_after} =
         Batching.Batch
@@ -119,15 +141,36 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
         |> Map.put(:subject, batch_before)
         |> Ash.run_action()
 
-      batch_after = Ash.load!(batch_after, [:transitions])
+      # Immediately after mark_expired, batch is in :expired state
+      assert batch_after.state == :expired
+      # These are unset when marking as expired
+      assert batch_after.openai_status_last_checked_at == nil
+      assert batch_after.expires_at == nil
+      assert batch_after.openai_batch_id == nil
 
-      assert batch_after.state == :failed
-      assert batch_after.openai_status_last_checked_at
+      # Drain the oban queue to process the triggered create_openai_batch job
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
+      Oban.drain_queue(queue: :default)
 
-      # Verify transition record
-      latest_transition = List.last(batch_after.transitions)
-      assert latest_transition.from == :openai_processing
-      assert latest_transition.to == :failed
+      # Reload the batch to see the final state
+      batch_final = Ash.get!(Batching.Batch, batch_after.id, load: [:transitions])
+
+      assert batch_final.state == :openai_processing
+      assert batch_final.openai_batch_id == "batch_new123"
+
+      # Verify transition records - should have 2 transitions:
+      # 1. openai_processing → expired
+      # 2. expired → openai_processing
+      assert length(batch_final.transitions) == 2
+      transitions = Enum.sort_by(batch_final.transitions, & &1.transitioned_at)
+
+      first_transition = Enum.at(transitions, 0)
+      assert first_transition.from == :openai_processing
+      assert first_transition.to == :expired
+
+      second_transition = Enum.at(transitions, 1)
+      assert second_transition.from == :expired
+      assert second_transition.to == :openai_processing
     end
 
     test "updates last_checked_at without state change when status is pending", %{server: server} do
@@ -224,7 +267,7 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
 
     test "sets expires_at from API response when status is pending", %{server: server} do
       openai_batch_id = "batch_expires_at123"
-      expires_at_unix = 1767881657
+      expires_at_unix = 1_767_881_657
 
       batch_before =
         seeded_batch(
@@ -251,8 +294,11 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
 
     test "does not overwrite expires_at if already set", %{server: server} do
       openai_batch_id = "batch_expires_at_existing123"
-      existing_expires_at = DateTime.truncate(DateTime.add(DateTime.utc_now(), 3600, :second), :second)
-      new_expires_at_unix = 1767881657
+
+      existing_expires_at =
+        DateTime.truncate(DateTime.add(DateTime.utc_now(), 3600, :second), :second)
+
+      new_expires_at_unix = 1_767_881_657
 
       batch_before =
         seeded_batch(
@@ -280,7 +326,7 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
 
     test "sets expires_at when batch completes", %{server: server} do
       openai_batch_id = "batch_completed_expires123"
-      expires_at_unix = 1767881657
+      expires_at_unix = 1_767_881_657
 
       batch_before =
         seeded_batch(

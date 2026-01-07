@@ -19,6 +19,9 @@ defmodule Batcher.Batching.Types.BatchStatus do
       # OpenAI has completed the batch
       :openai_completed,
 
+      # Batch expired on OpenAI and needs to be rescheduled
+      :expired,
+
       # Batch file is being downloaded
       :downloading,
 

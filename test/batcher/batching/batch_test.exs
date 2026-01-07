@@ -1,5 +1,6 @@
 defmodule Batcher.Batching.BatchTest do
   use Batcher.DataCase, async: true
+  use Oban.Testing, repo: Batcher.Repo
 
   alias Batcher.Batching
 
@@ -75,7 +76,7 @@ defmodule Batcher.Batching.BatchTest do
       assert transition.batch_id == batch.id
 
       # Add a request before transitioning (empty batches cannot be uploaded)
-      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model))
       batch = Batching.get_batch_by_id!(batch.id)
 
       # Transition to uploading
@@ -186,7 +187,7 @@ defmodule Batcher.Batching.BatchTest do
     test "sets the state to :uploading" do
       batch = generate(batch())
       # Add a request to the batch (empty batches cannot be uploaded)
-      generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
+      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model))
 
       assert batch.state == :building
 
@@ -663,6 +664,111 @@ defmodule Batcher.Batching.BatchTest do
         assert latest_transition.from == state
         assert latest_transition.to == :cancelled
       end
+    end
+  end
+
+  describe "Batcher.Batching.Batch.mark_expired" do
+    test "transitions from openai_processing to expired and triggers create_openai_batch", %{server: server} do
+      openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
+
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: "batch_123",
+          openai_input_file_id: openai_input_file_id
+        )
+        |> generate()
+
+      # Ensure batch has at least one request (use seeded_request to bypass state validation)
+      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model))
+
+      # Mock the new batch creation (using existing file ID)
+      new_batch_response = %{
+        "id" => "batch_new456",
+        "status" => "validating",
+        "input_file_id" => openai_input_file_id
+      }
+
+      expect_json_response(server, :post, "/v1/batches", new_batch_response, 200)
+
+      {:ok, batch_after} =
+        batch
+        |> Ash.Changeset.for_update(:mark_expired, %{})
+        |> Ash.update()
+
+      # Should be in expired state (oban trigger will move it to openai_processing)
+      assert batch_after.state == :expired
+      # These should be unset
+      assert batch_after.openai_status_last_checked_at == nil
+      assert batch_after.expires_at == nil
+      assert batch_after.openai_batch_id == nil
+
+      # Drain the oban queue to process the triggered job
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
+      Oban.drain_queue(queue: :default)
+
+      # Reload the batch to see the final state
+      batch_final = Ash.get!(Batching.Batch, batch_after.id, load: [:transitions])
+
+      assert batch_final.state == :openai_processing
+      assert batch_final.openai_batch_id == "batch_new456"
+
+      # Verify transition records - should have 2 transitions:
+      # 1. openai_processing → expired
+      # 2. expired → openai_processing
+      assert length(batch_final.transitions) >= 2
+      transitions = Enum.sort_by(batch_final.transitions, & &1.transitioned_at)
+      recent_transitions = Enum.take(transitions, -2)
+
+      first_transition = Enum.at(recent_transitions, 0)
+      assert first_transition.from == :openai_processing
+      assert first_transition.to == :expired
+
+      second_transition = Enum.at(recent_transitions, 1)
+      assert second_transition.from == :expired
+      assert second_transition.to == :openai_processing
+    end
+
+    test "fails if batch is not in openai_processing state" do
+      batch = generate(seeded_batch(state: :building))
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:mark_expired, %{})
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "unsets expires_at, openai_status_last_checked_at, and openai_batch_id when marking as expired" do
+      expires_at = DateTime.add(DateTime.utc_now(), 3600, :second) |> DateTime.truncate(:second)
+      last_checked_at = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: "batch_123",
+          openai_input_file_id: "file-123",
+          expires_at: expires_at,
+          openai_status_last_checked_at: last_checked_at
+        )
+        |> generate()
+
+      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model))
+
+      {:ok, batch_after} =
+        batch
+        |> Ash.Changeset.for_update(:mark_expired, %{})
+        |> Ash.update()
+
+      # These should be unset immediately
+      assert batch_after.openai_status_last_checked_at == nil
+      assert batch_after.expires_at == nil
+      assert batch_after.openai_batch_id == nil
+      assert batch_after.state == :expired
+
+      # Oban job should be enqueued for create_openai_batch
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
     end
   end
 end
