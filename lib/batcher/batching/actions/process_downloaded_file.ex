@@ -60,9 +60,66 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
           "Batch #{batch.id} download and processing complete, transitioning to ready_to_deliver"
         )
 
-        batch
-        |> Ash.Changeset.for_update(:finalize_processing)
-        |> Ash.update()
+        {:ok, updated_batch} =
+          batch
+          |> Ash.Changeset.for_update(:finalize_processing)
+          |> Ash.update()
+
+        # Check if all requests are already in terminal states (e.g., all failed at OpenAI)
+        # If so, we need to determine the final batch state:
+        # - If ALL requests failed → batch goes to :failed
+        # - If at least some succeeded (delivered/delivery_failed) → batch goes to :done
+        updated_batch = Ash.load!(updated_batch, [:requests_terminal_count, :request_count])
+
+        if updated_batch.requests_terminal_count do
+          # Count total requests and requests in "success" states
+          total_count = updated_batch.request_count
+
+          # Success states = requests that OpenAI processed successfully
+          success_states = [:delivered, :delivery_failed, :openai_processed]
+
+          success_count =
+            Batching.Request
+            |> Ash.Query.filter(batch_id == ^updated_batch.id)
+            |> Ash.Query.filter(state in ^success_states)
+            |> Ash.count!()
+
+          cond do
+            total_count == 0 ->
+              # Edge case: batch has no requests - just mark as done
+              Logger.info("Batch #{batch.id} has no requests, marking as done")
+
+              updated_batch
+              |> Ash.Changeset.for_update(:start_delivering)
+              |> Ash.update!()
+              |> Ash.Changeset.for_update(:done)
+              |> Ash.update()
+
+            success_count > 0 ->
+              # At least some requests succeeded - batch is done
+              Logger.info(
+                "Batch #{batch.id} has all requests in terminal states with #{success_count} successes, marking as done"
+              )
+
+              updated_batch
+              |> Ash.Changeset.for_update(:start_delivering)
+              |> Ash.update!()
+              |> Ash.Changeset.for_update(:done)
+              |> Ash.update()
+
+            true ->
+              # All requests failed - batch should be marked as failed
+              Logger.info(
+                "Batch #{batch.id} has all requests in terminal states but all failed, marking as failed"
+              )
+
+              updated_batch
+              |> Ash.Changeset.for_update(:failed, %{error_msg: "All requests in batch failed"})
+              |> Ash.update()
+          end
+        else
+          {:ok, updated_batch}
+        end
 
       {{:error, reason}, _, _, _} ->
         Logger.error("Batch #{batch.id} failed to process output file: #{inspect(reason)}")

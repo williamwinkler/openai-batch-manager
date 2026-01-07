@@ -234,7 +234,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         |> Ash.run_action()
 
       # Should complete successfully (missing custom_id is logged but doesn't fail)
-      assert batch_after.state == :ready_to_deliver
+      # Since there are no requests in the batch, all are vacuously terminal, so batch goes to done
+      assert batch_after.state == :done
     end
 
     test "handles download failures gracefully", %{server: server} do
@@ -269,8 +270,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         |> Ash.run_action()
 
       # Should complete successfully with empty file (no requests to process)
+      # Since there are no non-terminal requests, batch goes directly to done
       assert {:ok, batch_after} = result
-      assert batch_after.state == :ready_to_deliver
+      assert batch_after.state == :done
     end
 
     test "transitions to ready_to_deliver after processing completes", %{server: server} do
@@ -485,7 +487,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       batch_after = Ash.load!(batch_after, [:requests])
 
-      assert batch_after.state == :ready_to_deliver
+      # All requests failed at OpenAI, so batch goes to failed
+      assert batch_after.state == :failed
 
       failed_req = Enum.find(batch_after.requests, &(&1.custom_id == failed_request.custom_id))
 
@@ -743,7 +746,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       batch_after = Ash.load!(batch_after, [:requests])
 
-      assert batch_after.state == :ready_to_deliver
+      # All requests are already in terminal states, so batch goes directly to done
+      assert batch_after.state == :done
 
       # Verify requests are still in their original terminal states
       delivered_req =
@@ -1076,7 +1080,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       assert error_data["custom_id"] == failed_request.custom_id
     end
 
-    test "empty output file with error file transitions batch to ready_to_deliver", %{
+    test "empty output file with error file transitions batch to failed (all requests failed)", %{
       server: server
     } do
       output_file_id = "file-empty-output123"
@@ -1133,9 +1137,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       batch_after = Ash.load!(batch_after, [:requests])
 
-      # Should transition to ready_to_deliver (not failed) because output_file_id exists
-      # even though it's empty - the presence of output_file_id means we had some successful processing
-      assert batch_after.state == :ready_to_deliver
+      # Should transition to failed because all requests failed at OpenAI
+      assert batch_after.state == :failed
     end
 
     test "skips requests already in openai_processed state (idempotency for retries)", %{

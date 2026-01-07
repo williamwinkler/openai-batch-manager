@@ -24,7 +24,14 @@ defmodule Batcher.OpenaiApiClient do
     Req.post(
       url,
       headers: headers,
-      body: Multipart.body_stream(multipart)
+      body: Multipart.body_stream(multipart),
+      # File uploads can be slow - use generous timeouts
+      pool_timeout: 30_000,
+      receive_timeout: 120_000,
+      # Retry on transient network errors (connection closed, timeout, etc.)
+      retry: :transient,
+      max_retries: 3,
+      retry_delay: fn attempt -> attempt * 1000 end
     )
     |> handle_response()
   end
