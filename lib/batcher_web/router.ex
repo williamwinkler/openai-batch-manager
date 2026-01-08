@@ -17,6 +17,10 @@ defmodule BatcherWeb.Router do
     plug OpenApiSpex.Plug.PutApiSpec, module: BatcherWeb.ApiSpec
   end
 
+  # Health check endpoint for container orchestration (Docker, Kubernetes)
+  # Returns 200 OK with minimal overhead - no auth, no session, no CSRF
+  get "/health", BatcherWeb.HealthController, :check
+
   scope "/", BatcherWeb do
     pipe_through :browser
 

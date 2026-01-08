@@ -1,40 +1,100 @@
-# Docker Usage & Batch File Storage
+# Docker Usage
 
+This project includes a production-ready Dockerfile. The container stores the database and batch files in `/data`, which should be mounted as a volume for persistence.
 
-This project stores temporary batch files in `/data` inside the container. For both development and production, mount a local directory to `/data` for easy access and persistence.
+## Quick Start
 
-## Docker Run Example
+### Build the Image
 
-
-
-To run the application and persist batch files, mount a volume to `/data`:
-
-```sh
-docker run \
-   -v $(pwd)/data:/data \
-   -e DATABASE_URL=sqlite:///data/db.sqlite3 \
-   -p 4000:4000 \
-   openai-batch-manager:latest
+```bash
+docker build -t openai-batch-manager:latest .
 ```
 
-## Docker Compose Example
+### Run with Docker
 
-```yaml
-version: '3.8'
-services:
-   batcher:
-      image: openai-batch-manager:latest
-      ports:
-         - "4000:4000"
-      environment:
-         - DATABASE_URL=sqlite:///var/lib/openai-batch-manager/db.sqlite3
-         volumes:
-         - ./data:/data
+The simplest way to run - just pass your OpenAI API key and mount a data volume:
+
+```bash
+# Generate a secret key (one-time)
+export SECRET_KEY_BASE=$(mix phx.gen.secret)
+
+# Run the container
+docker run -d \
+  --name openai-batch-manager \
+  -p 4000:4000 \
+  -v $(pwd)/data:/data \
+  -e OPENAI_API_KEY="your-api-key-here" \
+  -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
+  openai-batch-manager:latest
 ```
 
-**Note:**
-- The host directory `./data` will persist batch files outside the container.
-- You can change the host path as needed, but the container path must remain `/data`.
+### Run with Docker Compose
+
+1. Copy the example compose file:
+   ```bash
+   cp docker-compose.example.yml docker-compose.yml
+   ```
+
+2. Edit `docker-compose.yml` and set your environment variables:
+   ```bash
+   # Generate secret key
+   export SECRET_KEY_BASE=$(mix phx.gen.secret)
+
+   # Set in docker-compose.yml or use .env file
+   ```
+
+3. Start the service:
+   ```bash
+   docker-compose up -d
+   ```
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | ✅ Yes | - | Your OpenAI API key |
+| `SECRET_KEY_BASE` | ✅ Yes | - | Generate with `mix phx.gen.secret` |
+| `DATABASE_PATH` | No | `/data/batcher.db` | SQLite database file path |
+| `BATCH_STORAGE_PATH` | No | `/data/batches` | Directory for batch files |
+| `PORT` | No | `4000` | HTTP port to listen on |
+| `PHX_HOST` | No | `localhost` | Hostname for the application |
+| `POOL_SIZE` | No | `1` | Database pool size (keep at 1 for SQLite) |
+
+## Volume Mounts
+
+The container expects a volume mounted at `/data` containing:
+- Database file: `/data/batcher.db` (created automatically)
+- Batch files: `/data/batches/` (created automatically)
+
+**Example:**
+```bash
+# Create local data directory
+mkdir -p ./data
+
+# Mount it in the container
+docker run -v $(pwd)/data:/data ...
+```
+
+## Database Migrations
+
+Migrations run automatically on container startup:
+- **First run**: Creates the database and runs all migrations
+- **Upgrades**: When you replace an old container with a new version, pending migrations are automatically detected and applied
+- **Safe**: Already-run migrations are skipped (idempotent)
+
+## Health Check
+
+The container includes a health check that verifies the application is responding. Check status with:
+
+```bash
+docker ps  # Look for "healthy" status
+```
+
+## Accessing the Application
+
+Once running, access:
+- Main application: http://localhost:4000
+- Oban dashboard: http://localhost:4000/oban
 # LLM Batch Manager
 
 A Phoenix 1.8.1 web application built with the Ash Framework for managing batching of LLM prompts for processing by providers like OpenAI.
