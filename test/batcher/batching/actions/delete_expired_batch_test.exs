@@ -172,6 +172,5 @@ defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
       # Should succeed (cascade delete handles related records)
       assert {:ok, nil} = result
     end
-
   end
 end

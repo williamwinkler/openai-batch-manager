@@ -23,8 +23,8 @@ defmodule Batcher.MixProject do
           ~r/^Inspect\./,
           # OpenAPI spec schemas (struct definitions only)
           ~r/^BatcherWeb\.Schemas\./,
-          # Auto-generated Jason.Encoder implementations (we use built-in JSON)
-          ~r/^Jason\.Encoder\./,
+          # Auto-generated JSON.Encoder implementations (we use built-in JSON)
+          ~r/^JSON\.Encoder\./,
           # Infrastructure/config modules
           Batcher.Application,
           Batcher.Release,
@@ -116,7 +116,8 @@ defmodule Batcher.MixProject do
       {:dotenvy, "~> 1.1.0"},
       {:multipart, "~> 0.4.0"},
       {:process_tree, "~> 0.2"},
-      {:test_server, "~> 0.1", only: :test}
+      {:test_server, "~> 0.1", only: :test},
+      {:amqp, "~> 4.1"}
     ]
   end
 

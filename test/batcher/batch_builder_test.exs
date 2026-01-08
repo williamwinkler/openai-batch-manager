@@ -366,6 +366,7 @@ defmodule Batcher.BatchBuilderTest do
 
       # Wait for it to die
       ref = Process.monitor(pid)
+
       receive do
         {:DOWN, ^ref, :process, ^pid, _} -> :ok
       after
@@ -394,11 +395,18 @@ defmodule Batcher.BatchBuilderTest do
 
       # Start two concurrent requests to trigger race condition
       task1 = Task.async(fn -> BatchBuilder.add_request(url, model, request_data) end)
-      task2 = Task.async(fn ->
-        # Slight delay to increase chance of race
-        Process.sleep(10)
-        BatchBuilder.add_request(url, model, Map.put(request_data, :custom_id, "already_started_test_2"))
-      end)
+
+      task2 =
+        Task.async(fn ->
+          # Slight delay to increase chance of race
+          Process.sleep(10)
+
+          BatchBuilder.add_request(
+            url,
+            model,
+            Map.put(request_data, :custom_id, "already_started_test_2")
+          )
+        end)
 
       result1 = Task.await(task1)
       result2 = Task.await(task2)
@@ -429,7 +437,10 @@ defmodule Batcher.BatchBuilderTest do
       # Send another state change notification (should be ignored)
       # This tests the terminating flag prevents double termination
       batch = Batching.get_batch_by_id!(batch_id)
-      BatcherWeb.Endpoint.broadcast("batches:state_changed:#{batch_id}", "state_changed", %{data: batch})
+
+      BatcherWeb.Endpoint.broadcast("batches:state_changed:#{batch_id}", "state_changed", %{
+        data: batch
+      })
 
       # BatchBuilder should have shut down
       assert Registry.lookup(Batcher.BatchRegistry, {url, model}) == []
@@ -455,7 +466,12 @@ defmodule Batcher.BatchBuilderTest do
       Ash.destroy!(batch)
 
       # Try to add another request - should handle error gracefully
-      result = BatchBuilder.add_request(url, model, Map.put(request_data, :custom_id, "get_batch_error_test_2"))
+      result =
+        BatchBuilder.add_request(
+          url,
+          model,
+          Map.put(request_data, :custom_id, "get_batch_error_test_2")
+        )
 
       # Should return error
       assert {:error, _} = result

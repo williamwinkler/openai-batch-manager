@@ -668,7 +668,9 @@ defmodule Batcher.Batching.BatchTest do
   end
 
   describe "Batcher.Batching.Batch.mark_expired" do
-    test "transitions from openai_processing to expired and triggers create_openai_batch", %{server: server} do
+    test "transitions from openai_processing to expired and triggers create_openai_batch", %{
+      server: server
+    } do
       openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
 
       batch =

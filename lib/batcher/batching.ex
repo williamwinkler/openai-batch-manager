@@ -10,6 +10,7 @@ defmodule Batcher.Batching do
       define :start_batch_upload, action: :start_upload
       define :read_batch_by_id, action: :read, get_by: :id
       define :list_batches, action: :read
+      define :destroy_batch, action: :destroy
     end
 
     resource Batcher.Batching.Request do

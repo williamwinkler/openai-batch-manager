@@ -10,27 +10,31 @@ defmodule Batcher.Application do
     # Ensure batch storage directory exists on startup
     ensure_batch_directory()
 
-    children = [
-      BatcherWeb.Telemetry,
-      Batcher.Repo,
-      {Ecto.Migrator,
-       repos: Application.fetch_env!(:batcher, :ecto_repos), skip: skip_migrations?()},
-      # Registry for BatchBuilder GenServers (keyed by {endpoint, model})
-      {Registry, keys: :unique, name: Batcher.BatchRegistry},
-      # DynamicSupervisor for BatchBuilder instances
-      {DynamicSupervisor, name: Batcher.BatchSupervisor, strategy: :one_for_one},
-      {Oban,
-       AshOban.config(
-         Application.fetch_env!(:batcher, :ash_domains),
-         Application.fetch_env!(:batcher, Oban)
-       )},
-      # Start a worker by calling: Batcher.Worker.start_link(arg)
-      # {Batcher.Worker, arg},
-      # Start to serve requests, typically the last entry
-      {DNSCluster, query: Application.get_env(:batcher, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Batcher.PubSub},
-      BatcherWeb.Endpoint
-    ]
+    children =
+      [
+        BatcherWeb.Telemetry,
+        Batcher.Repo,
+        {Ecto.Migrator,
+         repos: Application.fetch_env!(:batcher, :ecto_repos), skip: skip_migrations?()},
+        # Registry for BatchBuilder GenServers (keyed by {endpoint, model})
+        {Registry, keys: :unique, name: Batcher.BatchRegistry},
+        # DynamicSupervisor for BatchBuilder instances
+        {DynamicSupervisor, name: Batcher.BatchSupervisor, strategy: :one_for_one},
+        {Oban,
+         AshOban.config(
+           Application.fetch_env!(:batcher, :ash_domains),
+           Application.fetch_env!(:batcher, Oban)
+         )},
+        # RabbitMQ input consumer (optional - only starts if configured)
+        maybe_rabbitmq_consumer(),
+        # Start a worker by calling: Batcher.Worker.start_link(arg)
+        # {Batcher.Worker, arg},
+        # Start to serve requests, typically the last entry
+        {DNSCluster, query: Application.get_env(:batcher, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Batcher.PubSub},
+        BatcherWeb.Endpoint
+      ]
+      |> Enum.reject(&is_nil/1)
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -55,5 +59,19 @@ defmodule Batcher.Application do
     batches_dir = System.get_env("BATCHES_DIR") || "./data/batches"
     File.mkdir_p!(batches_dir)
     :ok
+  end
+
+  defp maybe_rabbitmq_consumer do
+    case Application.get_env(:batcher, :rabbitmq_input) do
+      nil ->
+        # Not configured, don't start consumer
+        nil
+
+      config ->
+        # Configured - start consumer
+        # If connection fails, init/1 will raise an error
+        # causing the supervisor and application to shut down (fail-fast behavior)
+        {Batcher.RabbitMQ.InputConsumer, config}
+    end
   end
 end

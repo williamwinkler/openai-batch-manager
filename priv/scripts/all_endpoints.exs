@@ -8,7 +8,7 @@
 # Run with: mix run priv/scripts/all_endpoints.exs
 
 defmodule AllEndpointsScript do
-  @webhook_url "https://webhook.site/4545ea3d-c543-4655-8de3-3324b479d4e4"
+  @webhook_url "https://webhook.site/737a3db4-1de7-429e-aae6-6239a3582fe9"
   @api_url "http://localhost:4000/api/requests"
 
   def run do

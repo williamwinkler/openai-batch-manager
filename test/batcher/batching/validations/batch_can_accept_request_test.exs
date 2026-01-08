@@ -182,6 +182,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       # Create 3 requests with large payloads (total ~1.05MB > 1MB limit)
       for i <- 1..3 do
         custom_id = "size_limit_#{i}_#{:rand.uniform(100_000)}"
+
         {:ok, _} =
           Batching.create_request(%{
             batch_id: batch.id,
@@ -252,6 +253,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       # Create 3 requests with large payloads (total ~1.05MB > 1MB limit)
       for i <- 1..3 do
         custom_id = "format_test_#{i}_#{:rand.uniform(100_000)}"
+
         {:ok, _} =
           Batching.create_request(%{
             batch_id: batch.id,

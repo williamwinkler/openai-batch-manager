@@ -37,6 +37,23 @@ default_batch_path =
 
 config :batcher, :batch_storage, base_path: default_batch_path
 
+# RabbitMQ input consumption (optional)
+# If RABBITMQ_URL is set, connection MUST succeed or app will exit
+# Skip in test environment - tests manage their own consumer instances
+rabbitmq_url = System.get_env("RABBITMQ_URL")
+
+if rabbitmq_url && config_env() != :test do
+  rabbitmq_input_queue =
+    System.get_env("RABBITMQ_INPUT_QUEUE") ||
+      raise "RABBITMQ_INPUT_QUEUE is required when RABBITMQ_URL is set"
+
+  config :batcher, :rabbitmq_input,
+    url: rabbitmq_url,
+    queue: rabbitmq_input_queue,
+    exchange: System.get_env("RABBITMQ_INPUT_EXCHANGE"),
+    routing_key: System.get_env("RABBITMQ_INPUT_ROUTING_KEY")
+end
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

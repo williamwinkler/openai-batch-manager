@@ -22,14 +22,16 @@ defmodule Batcher.OpenaiApiClient do
     url = "#{base_url()}/v1/files"
 
     retry_opts = retry_options()
+    timeout_opts = timeout_options()
 
     Req.post(
       url,
       headers: headers,
       body: Multipart.body_stream(multipart),
-      # File uploads can be slow - use generous timeouts
-      pool_timeout: 30_000,
-      receive_timeout: 120_000,
+      # File uploads can be slow - use generous timeouts in production
+      pool_timeout: timeout_opts[:pool_timeout],
+      receive_timeout: timeout_opts[:receive_timeout],
+      connect_options: [timeout: timeout_opts[:connect_timeout]],
       # Retry on transient network errors (connection closed, timeout, etc.)
       retry: retry_opts[:retry],
       max_retries: retry_opts[:max_retries],
@@ -43,8 +45,18 @@ defmodule Batcher.OpenaiApiClient do
   """
   def retrieve_file_metadata(file_id) do
     url = "#{base_url()}/v1/files/#{file_id}"
+    timeout_opts = timeout_options()
+    retry_opts = retry_options()
 
-    Req.get(url, headers: headers())
+    Req.get(url,
+      headers: headers(),
+      pool_timeout: timeout_opts[:pool_timeout],
+      receive_timeout: timeout_opts[:receive_timeout],
+      connect_options: [timeout: timeout_opts[:connect_timeout]],
+      retry: retry_opts[:retry],
+      max_retries: retry_opts[:max_retries],
+      retry_delay: retry_opts[:retry_delay]
+    )
     |> handle_response()
   end
 
@@ -63,9 +75,40 @@ defmodule Batcher.OpenaiApiClient do
     # Ensure output directory exists
     File.mkdir_p!(output_dir)
 
-    case Req.get(url, headers: headers(), into: File.stream!(dest_path)) do
-      {:ok, _response} ->
+    timeout_opts = timeout_options()
+    retry_opts = retry_options()
+
+    case Req.get(url,
+           headers: headers(),
+           into: File.stream!(dest_path),
+           pool_timeout: timeout_opts[:pool_timeout],
+           receive_timeout: timeout_opts[:receive_timeout],
+           connect_options: [timeout: timeout_opts[:connect_timeout]],
+           retry: retry_opts[:retry],
+           max_retries: retry_opts[:max_retries],
+           retry_delay: retry_opts[:retry_delay]
+         ) do
+      {:ok, %{status: status}} when status >= 200 and status < 300 ->
         {:ok, dest_path}
+
+      {:ok, %{status: status}} when status >= 500 ->
+        # Clean up partial file on server error
+        File.rm(dest_path)
+        Logger.error("OpenAI download failed with server error: HTTP #{status}")
+        {:error, :server_error}
+
+      {:ok, %{status: 404}} ->
+        File.rm(dest_path)
+        {:error, :not_found}
+
+      {:ok, %{status: 401}} ->
+        File.rm(dest_path)
+        {:error, :unauthorized}
+
+      {:ok, %{status: status}} ->
+        File.rm(dest_path)
+        Logger.error("OpenAI download failed: HTTP #{status}")
+        {:error, {:http_error, status}}
 
       {:error, reason} ->
         {:error, reason}
@@ -77,8 +120,14 @@ defmodule Batcher.OpenaiApiClient do
   """
   def delete_file(file_id) do
     url = "#{base_url()}/v1/files/#{file_id}"
+    timeout_opts = timeout_options()
 
-    Req.delete(url, headers: headers())
+    Req.delete(url,
+      headers: headers(),
+      pool_timeout: timeout_opts[:pool_timeout],
+      receive_timeout: timeout_opts[:receive_timeout],
+      connect_options: [timeout: timeout_opts[:connect_timeout]]
+    )
     |> handle_response()
   end
 
@@ -87,6 +136,7 @@ defmodule Batcher.OpenaiApiClient do
   """
   def create_batch(input_file_id, endpoint, completion_window \\ "24h") do
     url = "#{base_url()}/v1/batches"
+    timeout_opts = timeout_options()
 
     Req.post(
       url,
@@ -95,7 +145,10 @@ defmodule Batcher.OpenaiApiClient do
         input_file_id: input_file_id,
         endpoint: endpoint,
         completion_window: completion_window
-      }
+      },
+      pool_timeout: timeout_opts[:pool_timeout],
+      receive_timeout: timeout_opts[:receive_timeout],
+      connect_options: [timeout: timeout_opts[:connect_timeout]]
     )
     |> handle_response()
   end
@@ -105,8 +158,14 @@ defmodule Batcher.OpenaiApiClient do
   """
   def cancel_batch(batch_id) do
     url = "#{base_url()}/v1/batches/#{batch_id}/cancel"
+    timeout_opts = timeout_options()
 
-    Req.post(url, headers: headers())
+    Req.post(url,
+      headers: headers(),
+      pool_timeout: timeout_opts[:pool_timeout],
+      receive_timeout: timeout_opts[:receive_timeout],
+      connect_options: [timeout: timeout_opts[:connect_timeout]]
+    )
     |> handle_response()
   end
 
@@ -115,8 +174,18 @@ defmodule Batcher.OpenaiApiClient do
   """
   def check_batch_status("batch_" <> _ = batch_id) do
     url = "#{base_url()}/v1/batches/#{batch_id}"
+    timeout_opts = timeout_options()
+    retry_opts = retry_options()
 
-    Req.get(url, headers: headers())
+    Req.get(url,
+      headers: headers(),
+      pool_timeout: timeout_opts[:pool_timeout],
+      receive_timeout: timeout_opts[:receive_timeout],
+      connect_options: [timeout: timeout_opts[:connect_timeout]],
+      retry: retry_opts[:retry],
+      max_retries: retry_opts[:max_retries],
+      retry_delay: retry_opts[:retry_delay]
+    )
     |> handle_response()
   end
 
@@ -187,5 +256,16 @@ defmodule Batcher.OpenaiApiClient do
     else
       [retry: :transient, max_retries: 3, retry_delay: fn attempt -> attempt * 1000 end]
     end
+  end
+
+  defp timeout_options() do
+    # Use configurable timeouts - low for tests, generous for production
+    http_timeouts = Application.get_env(:batcher, :http_timeouts, [])
+
+    %{
+      pool_timeout: Keyword.get(http_timeouts, :pool_timeout, 30_000),
+      receive_timeout: Keyword.get(http_timeouts, :receive_timeout, 120_000),
+      connect_timeout: Keyword.get(http_timeouts, :connect_timeout, 10_000)
+    }
   end
 end

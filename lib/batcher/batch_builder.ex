@@ -74,11 +74,13 @@ defmodule Batcher.BatchBuilder do
 
   ## Server Callbacks
 
+  @max_prompts 50_000
+
   @impl true
   def init({url, model}) do
     batch = get_building_batch(url, model)
 
-    if batch.request_count >= 50_000 do
+    if batch.request_count >= @max_prompts do
       raise "BatchBuilder initialized but batch is already full"
     end
 

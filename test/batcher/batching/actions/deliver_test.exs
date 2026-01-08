@@ -85,7 +85,9 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert request_after.state == :delivered
     end
 
-    test "saves response body in error_msg on delivery_attempt (not request) on 4xx error", %{server: server} do
+    test "saves response body in error_msg on delivery_attempt (not request) on 4xx error", %{
+      server: server
+    } do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response"}
 
@@ -128,7 +130,9 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.error_msg =~ "INVALID"
     end
 
-    test "saves response body in error_msg on delivery_attempt (not request) on 5xx error", %{server: server} do
+    test "saves response body in error_msg on delivery_attempt (not request) on 5xx error", %{
+      server: server
+    } do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response"}
 
@@ -367,7 +371,9 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert batch_after.state == :done
     end
 
-    test "transitions batch to done when all requests are delivered or delivery_failed", %{server: server} do
+    test "transitions batch to done when all requests are delivered or delivery_failed", %{
+      server: server
+    } do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response"}
 

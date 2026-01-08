@@ -145,11 +145,17 @@ defmodule Batcher.Batching.Actions.Deliver do
   end
 
   defp post_webhook(url, payload) do
+    # Use configurable timeout - low for tests, reasonable for production
+    http_timeouts = Application.get_env(:batcher, :http_timeouts, [])
+    receive_timeout = Keyword.get(http_timeouts, :receive_timeout, 30_000)
+    connect_timeout = Keyword.get(http_timeouts, :connect_timeout, 10_000)
+
     case Req.post(url,
            json: payload,
            headers: [{"content-type", "application/json"}],
            retry: false,
-           receive_timeout: 30_000
+           receive_timeout: receive_timeout,
+           connect_options: [timeout: connect_timeout]
          ) do
       {:ok, response} ->
         {:ok, response.status, response.headers, response.body}
@@ -198,14 +204,14 @@ defmodule Batcher.Batching.Actions.Deliver do
 
   defp encode_response_body(body) when is_binary(body) do
     # Try to parse as JSON, if it fails, return as-is
-    case Jason.decode(body) do
-      {:ok, decoded} -> Jason.encode!(decoded)
+    case JSON.decode(body) do
+      {:ok, decoded} -> JSON.encode!(decoded)
       {:error, _} -> body
     end
   end
 
   defp encode_response_body(body) when is_map(body) do
-    Jason.encode!(body)
+    JSON.encode!(body)
   end
 
   defp encode_response_body(body) do

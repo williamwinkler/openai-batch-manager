@@ -62,3 +62,13 @@ config :phoenix_live_view,
 config :batcher, :batch_limits,
   max_requests_per_batch: 5,
   max_batch_size_bytes: 1024 * 1024
+
+# Use very low HTTP timeouts in tests to fail fast when testing error scenarios
+config :batcher, :http_timeouts,
+  pool_timeout: 100,
+  receive_timeout: 200,
+  connect_timeout: 100
+
+# Disable RabbitMQ consumer in tests - tests manage their own consumer instances
+# This prevents the Application from starting the consumer automatically
+config :batcher, :rabbitmq_input, nil

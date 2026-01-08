@@ -23,5 +23,7 @@ max_cases =
     val -> String.to_integer(val)
   end
 
-ExUnit.start(max_cases: max_cases)
+# Exclude integration tests by default that require external services
+# Run with: mix test --include rabbitmq
+ExUnit.start(max_cases: max_cases, exclude: [:rabbitmq])
 Ecto.Adapters.SQL.Sandbox.mode(Batcher.Repo, :manual)

@@ -12,9 +12,17 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         |> generate()
 
       # Create requests in various terminal states
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :failed))
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :failed)
+      )
 
       {:ok, batch_after} =
         Batching.Batch
@@ -31,8 +39,18 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         |> generate()
 
       # Mix of terminal and non-terminal states
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :openai_processed))
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :openai_processed
+        )
+      )
 
       {:ok, batch_after} =
         Batching.Batch
@@ -48,7 +66,14 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         seeded_batch(state: :ready_to_deliver)
         |> generate()
 
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :openai_processed))
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :openai_processed
+        )
+      )
 
       {:ok, batch_after} =
         Batching.Batch
@@ -66,11 +91,30 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         |> generate()
 
       # Create requests in all possible terminal states
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :failed))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivery_failed))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :expired))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :cancelled))
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :failed)
+      )
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :delivery_failed
+        )
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :expired)
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :cancelled)
+      )
 
       {:ok, batch_after} =
         Batching.Batch
@@ -86,7 +130,9 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         seeded_batch(state: :delivering)
         |> generate()
 
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered))
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
 
       {:ok, batch_after} =
         Batching.Batch
@@ -126,8 +172,13 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         seeded_batch(state: :delivering)
         |> generate()
 
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered))
-      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivering))
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivering)
+      )
 
       {:ok, batch_after} =
         Batching.Batch

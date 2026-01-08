@@ -47,7 +47,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", request_body)
 
       assert response(conn, 202)
-      body = Jason.decode!(conn.resp_body)
+      body = JSON.decode!(conn.resp_body)
       assert body["custom_id"] == "test_req_1"
 
       # Verify request was created
@@ -78,7 +78,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn2 = post(conn, ~p"/api/requests", request_body)
 
       assert response(conn2, 409)
-      body = Jason.decode!(conn2.resp_body)
+      body = JSON.decode!(conn2.resp_body)
       assert body["errors"]
       error = hd(body["errors"])
       assert error["code"] == "duplicate_custom_id"
@@ -103,7 +103,7 @@ defmodule BatcherWeb.RequestControllerTest do
 
       # OpenApiSpex validation returns 422 for validation errors
       assert response(conn, 422)
-      response_body = Jason.decode!(conn.resp_body)
+      response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
 
@@ -126,7 +126,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", request_body)
 
       assert response(conn, 202)
-      body = Jason.decode!(conn.resp_body)
+      body = JSON.decode!(conn.resp_body)
       assert body["custom_id"] == "rabbitmq_req"
 
       # Verify request was created
@@ -151,7 +151,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", invalid_body)
 
       assert response(conn, 422)
-      response_body = Jason.decode!(conn.resp_body)
+      response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
 
@@ -172,7 +172,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", invalid_body)
 
       assert response(conn, 422)
-      response_body = Jason.decode!(conn.resp_body)
+      response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
 
@@ -194,7 +194,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", invalid_body)
 
       assert response(conn, 422)
-      response_body = Jason.decode!(conn.resp_body)
+      response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
 
@@ -216,7 +216,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", invalid_body)
 
       assert response(conn, 422)
-      response_body = Jason.decode!(conn.resp_body)
+      response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
 
@@ -290,7 +290,7 @@ defmodule BatcherWeb.RequestControllerTest do
 
           # Should return 500 with generic error message
           assert response(conn2, 500)
-          body = Jason.decode!(conn2.resp_body)
+          body = JSON.decode!(conn2.resp_body)
           assert body["errors"]
           error = hd(body["errors"])
           assert error["code"] == "internal_error"
@@ -323,7 +323,7 @@ defmodule BatcherWeb.RequestControllerTest do
       conn = post(conn, ~p"/api/requests", request_body)
 
       assert response(conn, 202)
-      body = Jason.decode!(conn.resp_body)
+      body = JSON.decode!(conn.resp_body)
       assert body["custom_id"] == "simple_request"
     end
   end

@@ -3,6 +3,7 @@ defmodule BatcherWeb.Schemas.RequestResponseSchema do
   OpenAPI schema for successful prompt creation response.
   """
   require OpenApiSpex
+  require Protocol
   alias OpenApiSpex.Schema
 
   OpenApiSpex.schema(%{
@@ -17,4 +18,7 @@ defmodule BatcherWeb.Schemas.RequestResponseSchema do
       }
     }
   })
+
+  # Derive JSON.Encoder for the struct created by OpenApiSpex
+  Protocol.derive(JSON.Encoder, __MODULE__, only: [:custom_id])
 end

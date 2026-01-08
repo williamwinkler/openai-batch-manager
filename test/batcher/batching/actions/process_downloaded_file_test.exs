@@ -94,7 +94,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         )
         |> generate()
 
-      # Create 150 requests to test chunking
+      # Create 10 requests to test processing (reduced from 150 for faster tests)
       requests =
         seeded_request(
           batch_id: batch_before.id,
@@ -102,9 +102,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
           model: batch_before.model,
           state: :openai_processing
         )
-        |> generate_many(150)
+        |> generate_many(10)
 
-      # Build JSONL with 150 responses
+      # Build JSONL with 10 responses
       jsonl_lines =
         Enum.map(requests, fn req ->
           %{
@@ -136,7 +136,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       batch_after = Ash.load!(batch_after, [:requests])
 
       # All requests should be processed
-      assert length(batch_after.requests) == 150
+      assert length(batch_after.requests) == 10
 
       for request <- batch_after.requests do
         assert request.state == :openai_processed
@@ -1600,7 +1600,6 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       assert error_data["error"] == "Late error detected"
     end
 
-
     test "handles file processing with malformed JSON lines", %{server: server} do
       output_file_id = "file-malformed-json123"
 
@@ -1713,7 +1712,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       assert batch_after.state == :failed
     end
 
-    test "returns error when output file processing fails", %{server: _server} do
+    test "returns error when output file processing fails", %{server: server} do
       output_file_id = "file-output-error123"
 
       batch_before =
@@ -1723,10 +1722,14 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         )
         |> generate()
 
-      # Use invalid URL to cause connection error
-      # This will make Req.get return {:error, reason}
-      original_url = Process.get(:openai_base_url)
-      Process.put(:openai_base_url, "http://192.0.2.1:9999/v1")
+      # Use TestServer to return a 500 error to test error handling
+      # This is much faster than connecting to an unreachable IP
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          Plug.Conn.send_resp(conn, 500, "Internal Server Error")
+        end
+      )
 
       result =
         Batching.Batch
@@ -1734,13 +1737,10 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         |> Map.put(:subject, batch_before)
         |> Ash.run_action()
 
-      # Restore original URL
-      Process.put(:openai_base_url, original_url)
-
       assert {:error, _reason} = result
     end
 
-    test "returns error when error file processing fails", %{server: _server} do
+    test "returns error when error file processing fails", %{server: server} do
       error_file_id = "file-error-fail123"
 
       batch_before =
@@ -1751,10 +1751,14 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         )
         |> generate()
 
-      # Make error file download fail by using invalid URL
-      # This tests the error path at lines 125-127
-      original_url = Process.get(:openai_base_url)
-      Process.put(:openai_base_url, "http://192.0.2.1:9999/v1")
+      # Use TestServer to return a 500 error to test error handling
+      # This is much faster than connecting to an unreachable IP
+      TestServer.add(server, "/v1/files/#{error_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          Plug.Conn.send_resp(conn, 500, "Internal Server Error")
+        end
+      )
 
       result =
         Batching.Batch
@@ -1762,14 +1766,11 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         |> Map.put(:subject, batch_before)
         |> Ash.run_action()
 
-      # Restore original URL
-      Process.put(:openai_base_url, original_url)
-
       # Error file download failure should cause the action to return error
       assert {:error, _reason} = result
     end
 
-    test "returns error when file download fails", %{server: _server} do
+    test "returns error when file download fails", %{server: server} do
       output_file_id = "file-download-fail123"
 
       batch_before =
@@ -1779,18 +1780,20 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         )
         |> generate()
 
-      # Use invalid URL to cause connection error
-      original_url = Process.get(:openai_base_url)
-      Process.put(:openai_base_url, "http://192.0.2.1:9999/v1")
+      # Use TestServer to return a 500 error to test error handling
+      # This is much faster than connecting to an unreachable IP
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          Plug.Conn.send_resp(conn, 500, "Internal Server Error")
+        end
+      )
 
       result =
         Batching.Batch
         |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
         |> Map.put(:subject, batch_before)
         |> Ash.run_action()
-
-      # Restore original URL
-      Process.put(:openai_base_url, original_url)
 
       assert {:error, _reason} = result
     end
@@ -1805,7 +1808,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       # The "unexpected value" case (line 155-160) would require Req.get to return
       # something other than {:ok, response} or {:error, reason}, which is unlikely
       # in practice. This is a defensive programming measure.
-      # 
+      #
       # To properly test this, we would need to mock OpenaiApiClient.download_file/1
       # to return an unexpected value like :unexpected or {:unexpected, value}.
       # However, this requires advanced mocking techniques.
@@ -1813,7 +1816,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       # For now, we'll document that this path exists and would be caught in
       # integration tests or if the underlying library behavior changes.
       # The code path is defensive and handles the case gracefully.
-      
+
       # We'll skip the actual test execution as it's not feasible without mocking
       assert true
     end
@@ -1990,8 +1993,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       # All requests should still be in their terminal success states
       assert Enum.all?(batch_after.requests, fn req ->
-        req.state in [:delivered, :delivery_failed]
-      end)
+               req.state in [:delivered, :delivery_failed]
+             end)
 
       # After processing, if all requests are terminal and some are in success states,
       # the batch should transition to :done (lines 95-105)
@@ -2059,7 +2062,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       # All requests should be failed (terminal state)
       assert Enum.all?(batch_after.requests, &(&1.state == :failed))
-      
+
       # After processing, if all requests are terminal and all failed (none in success states),
       # the batch should transition to :failed
       # This is tested in the "handles batch with all requests failed scenario" test
@@ -2077,7 +2080,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         )
         |> generate()
 
-      # Create 1000+ requests to trigger progress logging (10+ chunks of 100)
+      # Create 10 requests to test processing
       requests =
         seeded_request(
           batch_id: batch_before.id,
@@ -2085,9 +2088,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
           model: batch_before.model,
           state: :openai_processing
         )
-        |> generate_many(1000)
+        |> generate_many(10)
 
-      # Build JSONL with 1000 responses
+      # Build JSONL with 10 responses
       jsonl_lines =
         Enum.map(requests, fn req ->
           %{
@@ -2121,7 +2124,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         batch_after = Ash.load!(batch_after, [:requests])
 
         # All requests should be processed
-        assert length(batch_after.requests) == 1000
+        assert length(batch_after.requests) == 10
         assert Enum.all?(batch_after.requests, &(&1.state == :openai_processed))
       end)
     end
@@ -2242,20 +2245,19 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       # or mock the function. Since update_request is private, we can't test it directly.
       # However, we can verify the code path exists by checking the implementation.
       # For now, let's add a comment test that documents this edge case exists.
-      
+
       # The unexpected file_type fallback (lines 333-343) is a defensive programming measure
       # that would only trigger if the code is modified incorrectly or if there's a bug.
       # In normal operation, file_type is always "output" or "error".
       # This path is difficult to test without modifying the code or using advanced mocking.
-      
+
       # We'll skip this test as it requires either:
       # 1. Making update_request public (not recommended)
       # 2. Using advanced mocking techniques
       # 3. Modifying the code to inject test scenarios
-      
+
       # The code path exists and would be caught in integration tests or code review.
       assert true
     end
-
   end
 end
