@@ -60,7 +60,9 @@ if config_env() == :prod do
 
   config :batcher, Batcher.Repo,
     database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # CRITICAL: SQLite only supports one writer at a time. Pool size of 1 serializes writes
+    # and prevents "Database busy" errors. Override with POOL_SIZE env var if needed.
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
     # SQLite production optimizations
     timeout: 60_000,
     queue_target: 5_000,
@@ -70,7 +72,7 @@ if config_env() == :prod do
        [
          """
          PRAGMA journal_mode=WAL;
-         PRAGMA busy_timeout=5000;
+         PRAGMA busy_timeout=10000;
          PRAGMA synchronous=NORMAL;
          PRAGMA cache_size=-64000;
          PRAGMA temp_store=memory;

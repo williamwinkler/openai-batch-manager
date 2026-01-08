@@ -6,13 +6,24 @@ config :ash, :pub_sub, debug?: true
 # Configure your database
 config :batcher, Batcher.Repo,
   database: Path.expand("../batcher_dev.db", __DIR__),
-  pool_size: 10,
+  # CRITICAL: SQLite only supports one writer at a time. Pool size of 1 serializes writes
+  # and prevents "Database busy" errors when Oban, Ash queries, and web requests compete.
+  pool_size: 1,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   # SQLite optimizations for concurrent access (web requests + Oban jobs + LiveView)
   timeout: 60_000,
   after_connect:
-    {Exqlite.Sqlite3, :execute, ["PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"]}
+    {Exqlite.Sqlite3, :execute,
+     [
+       """
+       PRAGMA journal_mode=WAL;
+       PRAGMA busy_timeout=10000;
+       PRAGMA synchronous=NORMAL;
+       PRAGMA cache_size=-64000;
+       PRAGMA temp_store=MEMORY;
+       """
+     ]}
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
