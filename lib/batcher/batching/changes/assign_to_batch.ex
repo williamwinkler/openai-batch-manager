@@ -16,14 +16,85 @@ defmodule Batcher.Batching.Changes.AssignToBatch do
     model = Ash.Changeset.get_attribute(changeset, :model)
 
     # Extract all prompt data from the changeset
+    # Structure data the way BatchBuilder expects it
+    request_payload = Ash.Changeset.get_attribute(changeset, :request_payload)
+
+    # If request_payload is already a string (SetPayload ran), decode it
+    request_payload_map =
+      if is_binary(request_payload) do
+        JSON.decode!(request_payload)
+      else
+        request_payload
+      end
+
+    # Extract body from request_payload or create it
+    # Handle both string and atom keys - BatchBuilder expects atom keys
+    body =
+      case Map.get(request_payload_map, "body") || Map.get(request_payload_map, :body) do
+        nil ->
+          # No body in request_payload, create one with model
+          %{model: model}
+
+        body_map when is_map(body_map) ->
+          # Access model from body, handling both string and atom keys
+          body_model = Map.get(body_map, "model") || Map.get(body_map, :model) || model
+          # Create body map with atom keys as BatchBuilder expects
+          # Convert string keys to atoms safely
+          body_map
+          |> Enum.map(fn
+            {k, v} when is_binary(k) ->
+              atom_key =
+                case k do
+                  "model" ->
+                    :model
+
+                  "input" ->
+                    :input
+
+                  "temperature" ->
+                    :temperature
+
+                  "max_tokens" ->
+                    :max_tokens
+
+                  _ ->
+                    # Only convert to atom if it already exists to avoid creating new atoms
+                    try do
+                      String.to_existing_atom(k)
+                    rescue
+                      ArgumentError -> k
+                    end
+                end
+
+              {atom_key, v}
+
+            {k, v} ->
+              {k, v}
+          end)
+          |> Map.new()
+          |> Map.put(:model, body_model)
+      end
+
+    # Build delivery map from argument (SetDeliveryConfig hasn't run yet)
+    # Extract from delivery argument, handling both map and atom-keyed maps
+    delivery_arg = Ash.Changeset.get_argument(changeset, :delivery) || %{}
+
+    # Normalize delivery to have string keys
+    delivery =
+      delivery_arg
+      |> Enum.map(fn
+        {k, v} when is_atom(k) -> {to_string(k), v}
+        {k, v} -> {k, v}
+      end)
+      |> Map.new()
+
     prompt_data = %{
       custom_id: Ash.Changeset.get_attribute(changeset, :custom_id),
       url: url,
-      model: model,
-      request_payload: Ash.Changeset.get_attribute(changeset, :request_payload),
-      delivery_type: Ash.Changeset.get_attribute(changeset, :delivery_type),
-      webhook_url: Ash.Changeset.get_attribute(changeset, :webhook_url),
-      rabbitmq_queue: Ash.Changeset.get_attribute(changeset, :rabbitmq_queue),
+      body: body,
+      method:
+        Map.get(request_payload_map, "method") || Map.get(request_payload_map, :method) || "POST",
+      delivery: delivery,
       tag: Ash.Changeset.get_attribute(changeset, :tag)
     }
 

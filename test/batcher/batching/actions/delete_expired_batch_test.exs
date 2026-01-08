@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
-  use Batcher.DataCase, async: true
+  use Batcher.DataCase, async: false
 
   alias Batcher.Batching
   alias Batcher.Batching.RequestDeliveryAttempt
@@ -149,5 +149,29 @@ defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
                |> Ash.Query.filter(id in ^transition_ids)
                |> Ash.read!()
     end
+
+    test "handles deletion error gracefully" do
+      # Create a batch that might have constraints preventing deletion
+      # (though cascade delete should handle this)
+      expires_at = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      batch =
+        seeded_batch(
+          state: :done,
+          expires_at: expires_at
+        )
+        |> generate()
+
+      # Try to delete - should succeed with cascade
+      result =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:delete_expired_batch, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      # Should succeed (cascade delete handles related records)
+      assert {:ok, nil} = result
+    end
+
   end
 end

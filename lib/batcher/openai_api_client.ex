@@ -21,6 +21,8 @@ defmodule Batcher.OpenaiApiClient do
 
     url = "#{base_url()}/v1/files"
 
+    retry_opts = retry_options()
+
     Req.post(
       url,
       headers: headers,
@@ -29,9 +31,9 @@ defmodule Batcher.OpenaiApiClient do
       pool_timeout: 30_000,
       receive_timeout: 120_000,
       # Retry on transient network errors (connection closed, timeout, etc.)
-      retry: :transient,
-      max_retries: 3,
-      retry_delay: fn attempt -> attempt * 1000 end
+      retry: retry_opts[:retry],
+      max_retries: retry_opts[:max_retries],
+      retry_delay: retry_opts[:retry_delay]
     )
     |> handle_response()
   end
@@ -177,5 +179,13 @@ defmodule Batcher.OpenaiApiClient do
       {"Authorization", "Bearer #{api_key()}"},
       {"Content-Type", "application/json"}
     ]
+  end
+
+  defp retry_options() do
+    if Application.get_env(:batcher, :disable_http_retries, false) do
+      [retry: false, max_retries: 0, retry_delay: nil]
+    else
+      [retry: :transient, max_retries: 3, retry_delay: fn attempt -> attempt * 1000 end]
+    end
   end
 end

@@ -10,7 +10,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
 
     Logger.info("Processing batch #{batch.id}: building and uploading file")
 
-    batches_dir = Application.get_env(:batcher, :batches_dir, "./data/batches")
+    batches_dir = Application.get_env(:batcher, :batches_dir) || "./data/batches"
     batch_file_path = Path.join(batches_dir, "batch_#{batch.id}.jsonl")
 
     try do

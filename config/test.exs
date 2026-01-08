@@ -1,8 +1,11 @@
 import Config
 config :batcher, Oban, testing: :manual
-config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
+config :ash, policies: [show_policy_breakdowns?: true]
 
 config :batcher, Batcher.OpenaiApiClient, openai_api_key: "sk-test-dummy-key"
+
+# Disable HTTP retries in tests to avoid TestServer receiving multiple requests
+config :batcher, :disable_http_retries, true
 
 # Configure your database
 #
@@ -11,8 +14,9 @@ config :batcher, Batcher.OpenaiApiClient, openai_api_key: "sk-test-dummy-key"
 # Run `mix help test` for more information.
 config :batcher, Batcher.Repo,
   database: Path.expand("../batcher_test.db", __DIR__),
-  # Reduced pool size to reduce contention under heavy system load
-  pool_size: 3,
+  # Increased pool size to handle more concurrent sandbox checkouts
+  # With WAL mode and proper busy_timeout, SQLite can handle concurrent reads
+  pool_size: 5,
   pool: Ecto.Adapters.SQL.Sandbox,
   # SQLite-specific settings for better concurrency
   timeout: 60_000,
@@ -24,7 +28,7 @@ config :batcher, Batcher.Repo,
      [
        """
        PRAGMA journal_mode=WAL;
-       PRAGMA busy_timeout=30000;
+       PRAGMA busy_timeout=50000;
        PRAGMA synchronous=NORMAL;
        PRAGMA cache_size=-64000;
        PRAGMA temp_store=MEMORY;

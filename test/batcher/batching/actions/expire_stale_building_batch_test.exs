@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatchTest do
-  use Batcher.DataCase, async: true
+  use Batcher.DataCase, async: false
 
   alias Batcher.Batching
 

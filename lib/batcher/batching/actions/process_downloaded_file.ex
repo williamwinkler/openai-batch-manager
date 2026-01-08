@@ -152,9 +152,12 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
         Logger.error("Batch #{batch_id} failed to download #{file_type} file: #{inspect(reason)}")
         {:error, reason}
 
-      error ->
-        Logger.error("Batch #{batch_id} #{file_type} file download crashed: #{inspect(error)}")
-        {:error, error}
+      other ->
+        Logger.error(
+          "Batch #{batch_id} #{file_type} file download returned unexpected value: #{inspect(other)}"
+        )
+
+        {:error, other}
     end
   end
 
@@ -164,7 +167,22 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
     chunks_processed =
       file_path
       |> File.stream!()
-      |> Stream.map(&JSON.decode!/1)
+      |> Stream.map(&String.trim/1)
+      |> Stream.reject(&(&1 == ""))
+      |> Stream.map(fn line ->
+        case JSON.decode(line) do
+          {:ok, decoded} ->
+            decoded
+
+          {:error, _} ->
+            Logger.warning(
+              "Skipping malformed JSON line in batch #{batch_id}: #{String.slice(line, 0, 100)}"
+            )
+
+            nil
+        end
+      end)
+      |> Stream.reject(&is_nil/1)
       # Process 100 at a time
       |> Stream.chunk_every(100)
       |> Stream.with_index(1)

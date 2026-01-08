@@ -12,7 +12,39 @@ defmodule Batcher.MixProject do
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
-      consolidate_protocols: Mix.env() != :dev
+      consolidate_protocols: Mix.env() != :dev,
+      test_coverage: [
+        ignore_modules: [
+          # Auto-generated AshOban schedulers
+          ~r/\.AshOban\.Scheduler\./,
+          # Auto-generated AshOban workers (all are auto-generated)
+          ~r/\.AshOban\.Worker\./,
+          # Auto-generated Inspect protocols
+          ~r/^Inspect\./,
+          # OpenAPI spec schemas (struct definitions only)
+          ~r/^BatcherWeb\.Schemas\./,
+          # Auto-generated Jason.Encoder implementations (we use built-in JSON)
+          ~r/^Jason\.Encoder\./,
+          # Infrastructure/config modules
+          Batcher.Application,
+          Batcher.Release,
+          BatcherWeb.Telemetry,
+          # Domain module (just defines resources, no business logic)
+          Batcher.Batching,
+          BatcherWeb.PageHTML,
+          BatcherWeb.CoreComponents,
+          BatcherWeb.ErrorHTML,
+          BatcherWeb.Layouts,
+          BatcherWeb.Router,
+          Batcher.Repo,
+          Batcher.DataCase,
+          Batcher.Generator,
+          # Unused change module (replaced by Actions.CheckBatchStatus)
+          Batcher.Batching.Changes.CheckOpenaiBatchStatus,
+          # Unused change module (not used in actual codebase)
+          Batcher.Batching.Changes.AssignToBatch
+        ]
+      ]
     ]
   end
 

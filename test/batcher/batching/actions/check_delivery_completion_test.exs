@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
-  use Batcher.DataCase, async: true
+  use Batcher.DataCase, async: false
 
   alias Batcher.Batching
 

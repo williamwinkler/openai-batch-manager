@@ -168,7 +168,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.error_msg =~ "error"
     end
 
-    test "handles connection refused error", %{server: _server} do
+    test "handles connection refused error" do
       # Use an invalid URL that will cause connection refused
       # Use a non-routable IP address to ensure connection failure
       webhook_url = "http://192.0.2.1:8080/webhook"
@@ -208,7 +208,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.error_msg != nil
     end
 
-    test "raises error for RabbitMQ delivery type", %{server: _server} do
+    test "raises error for RabbitMQ delivery type" do
       batch =
         seeded_batch(state: :ready_to_deliver)
         |> generate()
@@ -232,7 +232,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert {:error, %Ash.Error.Invalid{}} = result
     end
 
-    test "raises error when webhook_url is missing", %{server: _server} do
+    test "raises error when webhook_url is missing" do
       batch =
         seeded_batch(state: :ready_to_deliver)
         |> generate()
@@ -480,6 +480,232 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert length(request_after.delivery_attempts) == 1
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.type == :webhook
+    end
+
+    test "handles webhook response with JSON body in error message", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Return JSON error response
+      error_response = %{"error" => "Rate limited", "retry_after" => 60}
+      expect_json_response(server, :post, "/webhook", error_response, 429)
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+      attempt = List.first(request_after.delivery_attempts)
+      # Error message should contain JSON-encoded response
+      assert attempt.error_msg
+      assert attempt.error_msg =~ "error"
+      assert attempt.error_msg =~ "Rate limited"
+    end
+
+    test "handles webhook response with plain text body in error message", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Return plain text error response
+      TestServer.add(server, "/webhook",
+        via: :post,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("text/plain")
+          |> Plug.Conn.send_resp(400, "Bad Request: Invalid payload")
+        end
+      )
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+      attempt = List.first(request_after.delivery_attempts)
+      # Error message should contain the text response
+      assert attempt.error_msg
+      assert attempt.error_msg =~ "Bad Request"
+    end
+
+    test "handles webhook response with non-JSON map body", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Return JSON error response (Req will decode it to a map)
+      expect_json_response(server, :post, "/webhook", %{"error" => "Invalid"}, 400)
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+      attempt = List.first(request_after.delivery_attempts)
+      # Error message should contain error details
+      assert attempt.error_msg
+      assert attempt.error_msg =~ "error"
+    end
+
+    test "handles webhook timeout error", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Use invalid URL to cause connection timeout
+      # Use a non-routable IP that will timeout
+      request =
+        request
+        |> Ecto.Changeset.change(webhook_url: "http://192.0.2.1:8080/webhook")
+        |> Batcher.Repo.update!()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.success == false
+      assert attempt.error_msg
+    end
+
+    test "handles 3xx redirect responses as errors", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Return 3xx redirect (not 2xx)
+      expect_json_response(server, :post, "/webhook", %{redirect: true}, 301)
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.success == false
+      assert request_after.state == :delivery_failed
+    end
+
+    test "does not transition batch if not in ready_to_deliver state", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      # Batch already in delivering state (not ready_to_deliver)
+      # Create a batch with multiple requests so it doesn't transition to :done
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      # Create two requests - one to deliver, one to keep batch from completing
+      request1 =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      _request2 =
+        seeded_request(
+          batch_id: batch.id,
+          state: :pending,
+          delivery_type: :webhook,
+          webhook_url: webhook_url,
+          response_payload: response_payload
+        )
+        |> generate()
+
+      expect_json_response(server, :post, "/webhook", %{received: true}, 200)
+
+      {:ok, _request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request1)
+        |> Ash.run_action()
+
+      # Batch should remain in delivering state (start_delivering only runs if state is ready_to_deliver)
+      # and won't transition to :done because request2 is still pending
+      batch_after = Batching.get_batch_by_id!(batch.id)
+      assert batch_after.state == :delivering
     end
   end
 

@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.BatchTest do
-  use Batcher.DataCase, async: true
+  use Batcher.DataCase, async: false
   use Oban.Testing, repo: Batcher.Repo
 
   alias Batcher.Batching

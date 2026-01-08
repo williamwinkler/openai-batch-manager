@@ -177,19 +177,31 @@ defmodule Batcher.BatchBuilder do
             err.field == :custom_id and String.contains?(err.message, "already been taken")
           end)
 
-        if is_duplicate do
-          Logger.warning("Duplicate custom_id attempted",
-            custom_id: request_data.custom_id,
-            batch_id: state.batch_id
-          )
+        # Check if this is a "batch full" validation error
+        is_batch_full =
+          Enum.any?(error.errors, fn err ->
+            err.field == :batch_id and String.contains?(err.message, "Batch is full")
+          end)
 
-          {:reply, {:error, :custom_id_already_taken}, state}
-        else
-          Logger.error(
-            "Failed to create request in database: #{inspect(error, pretty: true, limit: :infinity)}"
-          )
+        cond do
+          is_duplicate ->
+            Logger.warning("Duplicate custom_id attempted",
+              custom_id: request_data.custom_id,
+              batch_id: state.batch_id
+            )
 
-          {:reply, {:error, error}, state}
+            {:reply, {:error, :custom_id_already_taken}, state}
+
+          is_batch_full ->
+            Logger.info("Batch #{state.batch_id} is full, cannot accept more requests")
+            {:reply, {:error, :batch_full}, state}
+
+          true ->
+            Logger.error(
+              "Failed to create request in database: #{inspect(error, pretty: true, limit: :infinity)}"
+            )
+
+            {:reply, {:error, error}, state}
         end
 
       {:error, error} ->

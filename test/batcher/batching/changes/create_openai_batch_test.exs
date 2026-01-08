@@ -239,5 +239,104 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
 
       assert updated_processing.state == :openai_processing
     end
+
+    test "handles OpenAI API timeout error" do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      # Use invalid URL to cause connection timeout
+      original_url = Process.get(:openai_base_url)
+      Process.put(:openai_base_url, "http://192.0.2.1:9999/v1")
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      # Restore original URL
+      Process.put(:openai_base_url, original_url)
+
+      # Should fail with timeout/network error
+      assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "handles OpenAI API network error" do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      # Use invalid URL to cause network error
+      original_url = Process.get(:openai_base_url)
+      Process.put(:openai_base_url, "http://invalid-host-that-does-not-exist:9999")
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      # Restore original URL
+      Process.put(:openai_base_url, original_url)
+
+      # Should fail with network error
+      assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "handles OpenAI API error with nested error structure", %{server: server} do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      error_response = %{
+        "error" => %{
+          "message" => "Invalid file format",
+          "type" => "invalid_request_error",
+          "param" => "input_file_id",
+          "code" => "invalid_file"
+        }
+      }
+
+      expect_json_response(server, :post, "/v1/batches", error_response, 400)
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "handles OpenAI API error with string message", %{server: server} do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      error_response = %{
+        "error" => "File not found"
+      }
+
+      expect_json_response(server, :post, "/v1/batches", error_response, 404)
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "handles bulk update when no pending requests exist", %{server: server} do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      # Batch has no requests
+      openai_response = %{
+        "id" => "batch_abc123",
+        "status" => "validating",
+        "input_file_id" => "file-123"
+      }
+
+      expect_json_response(server, :post, "/v1/batches", openai_response, 200)
+
+      {:ok, updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      # Should succeed even with no requests to update
+      assert updated_batch.openai_batch_id == "batch_abc123"
+      assert updated_batch.state == :openai_processing
+    end
   end
 end

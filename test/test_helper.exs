@@ -9,15 +9,17 @@ ExUnit.after_suite(fn _results ->
   end
 end)
 
-# Configure ExUnit to run fewer concurrent tests to reduce SQLite contention
-# SQLite has limited concurrency, especially under heavy system load
+# Configure ExUnit to run concurrent tests with SQLite WAL mode
+# With WAL mode, SQLite allows concurrent readers and serializes writers
 # Can be overridden with EXUNIT_MAX_CASES environment variable
 # For systems under heavy load (100% CPU), use EXUNIT_MAX_CASES=1 for sequential execution
+# Conservative limit: SQLite serializes writes, so too many concurrent writers cause "Database busy"
 max_cases =
   System.get_env("EXUNIT_MAX_CASES")
   |> case do
-    # Sequential execution by default to avoid "Database busy" errors
-    nil -> 1
+    # Conservative limit: 4 concurrent test processes to avoid write contention
+    # WAL mode allows concurrent reads, but writes are still serialized
+    nil -> min(4, System.schedulers_online())
     val -> String.to_integer(val)
   end
 
