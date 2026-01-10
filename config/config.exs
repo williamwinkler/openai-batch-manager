@@ -27,7 +27,11 @@ config :batcher, Oban,
   # Reduce polling frequency to avoid hammering SQLite database
   # SQLite with pool_size=1 serializes writes, so aggressive polling causes contention
   poll_interval: 1_000,
-  plugins: [{Oban.Plugins.Cron, []}]
+  plugins: [
+    {Oban.Plugins.Cron, []},
+    # Prune completed jobs older than 1 day every hour
+    {Oban.Plugins.Pruner, max_age: 86_400, interval: 3600}
+  ]
 
 # BatchBuilder configuration
 config :batcher, Batcher.BatchBuilder,
