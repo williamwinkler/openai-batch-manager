@@ -80,6 +80,26 @@ defmodule Batcher.RabbitMQ.InputConsumer do
     {:noreply, state}
   end
 
+  @impl true
+  def terminate(_reason, %{conn: conn, chan: chan}) do
+    # Gracefully close channel and connection to avoid RabbitMQ warnings
+    try do
+      if Process.alive?(chan.pid), do: Channel.close(chan)
+    catch
+      _, _ -> :ok
+    end
+
+    try do
+      if Process.alive?(conn.pid), do: Connection.close(conn)
+    catch
+      _, _ -> :ok
+    end
+
+    :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
   ## Private Functions
 
   defp connect_and_setup(url, queue, exchange, routing_key) do

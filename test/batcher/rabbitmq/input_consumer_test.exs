@@ -43,8 +43,18 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
     # Enable shared sandbox mode so the InputConsumer GenServer can access the database
     Ecto.Adapters.SQL.Sandbox.mode(Batcher.Repo, {:shared, self()})
 
+    # Generate a unique model name per test to ensure complete isolation
+    # This avoids any interference from existing batches or BatchBuilder processes
+    test_model = "not-a-real-model-#{System.unique_integer([:positive])}"
+
     # Check if RabbitMQ is available
-    rabbitmq_url = System.get_env("RABBITMQ_URL") || "amqp://guest:guest@localhost:5672/"
+    # Use default URL if env var is not set or empty
+    rabbitmq_url =
+      case System.get_env("RABBITMQ_URL") do
+        nil -> "amqp://guest:guest@localhost:5672"
+        "" -> "amqp://guest:guest@localhost:5672"
+        url -> url
+      end
 
     case Connection.open(rabbitmq_url) do
       {:ok, conn} ->
@@ -68,19 +78,28 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
           end
         end)
 
-        {:ok, conn: conn, chan: chan, queue: test_queue, stop_consumer: &stop_consumer/0, rabbitmq_available: true}
+        {:ok,
+         conn: conn,
+         chan: chan,
+         queue: test_queue,
+         model: test_model,
+         rabbitmq_url: rabbitmq_url,
+         stop_consumer: &stop_consumer/0,
+         rabbitmq_available: true}
 
       {:error, _reason} ->
         # Return context indicating RabbitMQ is not available
         # Tests will check this and fail with a clear message if needed
-        {:ok, rabbitmq_available: false}
+        {:ok, rabbitmq_available: false, model: test_model, rabbitmq_url: rabbitmq_url}
     end
   end
 
   # Helper to skip test if RabbitMQ is not available
   defp require_rabbitmq(context) do
     if context[:rabbitmq_available] != true do
-      flunk("RabbitMQ is not available. Make sure RabbitMQ is running. These tests are skipped by default. Run with: mix test --include rabbitmq")
+      flunk(
+        "RabbitMQ is not available. Make sure RabbitMQ is running. These tests are skipped by default. Run with: mix test --include rabbitmq"
+      )
     end
   end
 
@@ -103,13 +122,13 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
   describe "message processing" do
     test "processes valid message and creates request", context do
       require_rabbitmq(context)
-      %{chan: chan, queue: queue} = context
+      %{chan: chan, queue: queue, model: model, rabbitmq_url: rabbitmq_url} = context
       alias Batcher.Batching
 
       # Start consumer (queue must exist)
       {:ok, _pid} =
         InputConsumer.start_link(
-          url: System.get_env("RABBITMQ_URL") || "amqp://guest:guest@localhost:5672/",
+          url: rabbitmq_url,
           queue: queue
         )
 
@@ -124,7 +143,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
           "url" => "/v1/responses",
           "method" => "POST",
           "body" => %{
-            "model" => "gpt-4o-mini",
+            "model" => model,
             "input" => "Test input from RabbitMQ"
           },
           "delivery" => %{
@@ -145,29 +164,33 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
       # Retry finding the batch since BatchBuilder creates it asynchronously
       # Increase retries and delay to give more time for batch creation
       batch =
-        retry_until(fn ->
-          {:ok, batches} = Batching.list_batches()
-          # Don't assert here - just return nil if no batches found, let retry continue
-          if length(batches) >= 1 do
-            Enum.find(batches, fn b -> b.url == "/v1/responses" and b.model == "gpt-4o-mini" end)
-          else
-            nil
-          end
-        end, 20, 200)
+        retry_until(
+          fn ->
+            {:ok, batches} = Batching.list_batches()
+            # Don't assert here - just return nil if no batches found, let retry continue
+            if length(batches) >= 1 do
+              Enum.find(batches, fn b -> b.url == "/v1/responses" and b.model == model end)
+            else
+              nil
+            end
+          end,
+          20,
+          200
+        )
 
-      assert batch != nil, "Expected to find a batch for /v1/responses and gpt-4o-mini"
+      assert batch != nil, "Expected to find a batch for /v1/responses and #{model}"
 
       # Verify the request exists in the batch
       {:ok, requests} = Batching.list_requests_in_batch(batch.id)
       request = Enum.find(requests, fn r -> r.custom_id == custom_id end)
       assert request != nil
       assert request.url == "/v1/responses"
-      assert request.model == "gpt-4o-mini"
+      assert request.model == model
     end
 
     test "rejects invalid JSON message", context do
       require_rabbitmq(context)
-      %{chan: chan, queue: queue} = context
+      %{chan: chan, queue: queue, rabbitmq_url: rabbitmq_url} = context
       alias Batcher.Batching
 
       # Get initial batch count
@@ -177,7 +200,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
       # Start consumer (queue must exist)
       {:ok, _pid} =
         InputConsumer.start_link(
-          url: System.get_env("RABBITMQ_URL") || "amqp://guest:guest@localhost:5672/",
+          url: rabbitmq_url,
           queue: queue
         )
 
@@ -201,13 +224,13 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
 
     test "handles duplicate custom_id", context do
       require_rabbitmq(context)
-      %{chan: chan, queue: queue} = context
+      %{chan: chan, queue: queue, model: model, rabbitmq_url: rabbitmq_url} = context
       alias Batcher.Batching
 
       # Start consumer (queue must exist)
       {:ok, _pid} =
         InputConsumer.start_link(
-          url: System.get_env("RABBITMQ_URL") || "amqp://guest:guest@localhost:5672/",
+          url: rabbitmq_url,
           queue: queue
         )
 
@@ -222,7 +245,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
           "url" => "/v1/responses",
           "method" => "POST",
           "body" => %{
-            "model" => "gpt-4o-mini",
+            "model" => model,
             "input" => "Test"
           },
           "delivery" => %{
@@ -246,28 +269,36 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
       # Verify only one request was created (duplicate is acked but not created)
       # Find the request by searching all batches since BatchBuilder creates batches asynchronously
       request =
-        retry_until(fn ->
-          {:ok, batches} = Batching.list_batches()
-          Enum.reduce_while(batches, nil, fn batch, _acc ->
-            {:ok, requests} = Batching.list_requests_in_batch(batch.id)
-            case Enum.find(requests, fn r -> r.custom_id == custom_id end) do
-              nil -> {:cont, nil}
-              found_request -> {:halt, found_request}
-            end
-          end)
-        end, 20, 200)
+        retry_until(
+          fn ->
+            {:ok, batches} = Batching.list_batches()
+
+            Enum.reduce_while(batches, nil, fn batch, _acc ->
+              {:ok, requests} = Batching.list_requests_in_batch(batch.id)
+
+              case Enum.find(requests, fn r -> r.custom_id == custom_id end) do
+                nil -> {:cont, nil}
+                found_request -> {:halt, found_request}
+              end
+            end)
+          end,
+          20,
+          200
+        )
 
       assert request != nil, "Expected to find a request with custom_id #{custom_id}"
 
       # Verify it's in the correct batch
       batch = Batching.get_batch_by_id!(request.batch_id)
       assert batch.url == "/v1/responses"
-      assert batch.model == "gpt-4o-mini"
+      assert batch.model == model
 
       # Verify only one request exists with this custom_id (duplicate was acked but not created)
       {:ok, all_requests} = Batching.list_requests_in_batch(batch.id)
       matching_requests = Enum.filter(all_requests, fn r -> r.custom_id == custom_id end)
-      assert length(matching_requests) == 1, "Expected exactly one request, found #{length(matching_requests)}"
+
+      assert length(matching_requests) == 1,
+             "Expected exactly one request, found #{length(matching_requests)}"
     end
   end
 

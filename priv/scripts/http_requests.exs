@@ -1,10 +1,27 @@
 # priv/scripts/http_requests.exs
 
-for _i <- 1..3 do
+def random_model do
+  Enum.random([
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5.1",
+    "gpt-5.2",
+    "o3-mini",
+    "o3",
+    "o4-mini",
+    "o4"
+  ])
+end
+
+for _i <- 1..10 do
   req = %{
     "body" => %{
       "input" => "Analyze the following product review and extract key information: 'I bought this laptop last month and it's been amazing! The battery lasts 10 hours, the screen is crystal clear, and it runs all my apps smoothly. The only downside is it's a bit heavy at 2.5kg. Overall rating: 4.5/5 stars.'",
-      "model" => "gpt-4o-mini",
+      "model" => random_model(),
       "response_format" => %{
         "type" => "json_schema",
         "json_schema" => %{
@@ -81,12 +98,12 @@ for _i <- 1..3 do
   )
 end
 
-# Send 10 additional requests with correct parameter structure (these will succeed)
-for _i <- 1..3 do
+
+for _i <- 1..50 do
   req = %{
     "body" => %{
       "input" => "Analyze the following product review and extract key information: 'I bought this laptop last month and it's been amazing! The battery lasts 10 hours, the screen is crystal clear, and it runs all my apps smoothly. The only downside is it's a bit heavy at 2.5kg. Overall rating: 4.5/5 stars.'",
-      "model" => "gpt-4o-mini",
+      "model" => random_model(),
       "text" => %{
         "format" => %{
           "type" => "json_schema",
