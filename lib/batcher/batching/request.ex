@@ -66,14 +66,13 @@ defmodule Batcher.Batching.Request do
 
     create :create do
       description "Create a new request in a batch"
-      accept [:batch_id, :custom_id, :url, :model]
+      accept [:batch_id, :custom_id, :url, :model, :delivery_config]
 
       argument :request_payload, :map, allow_nil?: false
-      argument :delivery, :map, allow_nil?: false
 
       validate Batching.Validations.BatchCanAcceptRequest
+      validate Batching.Validations.DeliveryConfig
 
-      change Batching.Changes.SetDeliveryConfig
       change Batching.Changes.SetPayload
 
       primary? true
@@ -206,24 +205,9 @@ defmodule Batcher.Batching.Request do
     end
 
     # Delivery configuration
-    attribute :delivery_type, Batching.Types.RequestDeliveryType do
+    attribute :delivery_config, :map do
+      description "Configuration for delivering the processed request"
       allow_nil? false
-      description "How to deliver the processed result"
-      public? true
-    end
-
-    attribute :webhook_url, :string do
-      description "Webhook URL (required if delivery_type is webhook)"
-      public? true
-    end
-
-    attribute :rabbitmq_exchange, :string do
-      description "RabbitMQ exchange"
-      public? true
-    end
-
-    attribute :rabbitmq_queue, :string do
-      description "RabbitMQ queue (required if delivery_type is rabbitmq)"
       public? true
     end
 

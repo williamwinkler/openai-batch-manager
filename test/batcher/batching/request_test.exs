@@ -22,9 +22,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -34,15 +34,15 @@ defmodule Batcher.Batching.RequestTest do
       assert request.batch_id == batch.id
       assert request.url == batch.url
       assert request.model == batch.model
-      assert request.delivery_type == :webhook
-      assert request.webhook_url == "https://example.com/webhook"
+      assert request.delivery_config["type"] == "webhook"
+      assert request.delivery_config["webhook_url"] == "https://example.com/webhook"
       assert request.request_payload
       assert request.request_payload_size > 0
       assert request.created_at
       assert request.updated_at
     end
 
-    test "creates a request with rabbitmq delivery" do
+    test "creates a request with rabbitmq delivery using default exchange" do
       batch = generate(batch())
       custom_id = "req_456"
 
@@ -58,15 +58,14 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "rabbitmq",
-            rabbitmq_queue: "results_queue"
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "results_queue"
           }
         })
 
-      assert request.delivery_type == :rabbitmq
-      assert request.rabbitmq_queue == "results_queue"
-      assert request.webhook_url == nil
+      assert request.delivery_config["type"] == "rabbitmq"
+      assert request.delivery_config["rabbitmq_queue"] == "results_queue"
     end
 
     test "can't create request with duplicate custom_id in same batch" do
@@ -85,9 +84,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -103,9 +102,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook2"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook2"
           }
         })
       end
@@ -128,9 +127,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch1.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -146,9 +145,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch2.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -171,9 +170,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -195,9 +194,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: "/v1/responses"
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -223,9 +222,9 @@ defmodule Batcher.Batching.RequestTest do
               method: "POST",
               url: batch.url
             },
-            delivery: %{
-              type: "webhook",
-              webhook_url: "https://example.com/webhook"
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
             }
           })
       end
@@ -243,9 +242,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -278,9 +277,9 @@ defmodule Batcher.Batching.RequestTest do
             url: batch.url,
             model: batch.model,
             request_payload: Map.put(large_payload_base, :custom_id, "large_#{i}"),
-            delivery: %{
-              type: "webhook",
-              webhook_url: "https://example.com/webhook"
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
             }
           })
       end
@@ -293,9 +292,9 @@ defmodule Batcher.Batching.RequestTest do
           url: batch.url,
           model: batch.model,
           request_payload: Map.put(large_payload_base, :custom_id, "large_4"),
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -319,9 +318,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -345,9 +344,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -371,9 +370,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: "/v1/chat/completions"
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -397,13 +396,13 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook"
+          delivery_config: %{
+            "type" => "webhook"
           }
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :webhook_url and String.contains?(err.message, "required")
+               err.field == :delivery_config and String.contains?(err.message, "webhook_url is required")
              end)
     end
 
@@ -422,18 +421,18 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "not-a-valid-url"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "not-a-valid-url"
           }
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :webhook_url and String.contains?(err.message, "valid url")
+               err.field == :delivery_config and String.contains?(err.message, "valid HTTP/HTTPS URL")
              end)
     end
 
-    test "can't create request with rabbitmq delivery but missing rabbitmq_queue" do
+    test "can't create request with rabbitmq delivery but missing queue and exchange" do
       batch = generate(batch())
 
       {:error, %Ash.Error.Invalid{} = error} =
@@ -448,17 +447,19 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "rabbitmq"
+          delivery_config: %{
+            "type" => "rabbitmq"
           }
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :rabbitmq_queue and String.contains?(err.message, "required")
+               err.field == :delivery_config and
+                 String.contains?(err.message, "rabbitmq_queue") and
+                 String.contains?(err.message, "rabbitmq_exchange")
              end)
     end
 
-    test "can't create request with empty rabbitmq_queue" do
+    test "can't create request with rabbitmq exchange but missing routing_key" do
       batch = generate(batch())
 
       {:error, %Ash.Error.Invalid{} = error} =
@@ -473,14 +474,41 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "rabbitmq",
-            rabbitmq_queue: ""
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "test_exchange"
           }
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :rabbitmq_queue and String.contains?(err.message, "required")
+               err.field == :delivery_config and
+                 String.contains?(err.message, "rabbitmq_routing_key is required")
+             end)
+    end
+
+    test "can't create request with empty rabbitmq_queue when using default exchange" do
+      batch = generate(batch())
+
+      {:error, %Ash.Error.Invalid{} = error} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_123",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_123",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => ""
+          }
+        })
+
+      assert Enum.any?(error.errors, fn err ->
+               err.field == :delivery_config
              end)
     end
 
@@ -499,18 +527,18 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "unsupported_type"
+          delivery_config: %{
+            "type" => "unsupported_type"
           }
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :delivery_type and
-                 String.contains?(err.message, "Unsupported type")
+               err.field == :delivery_config and
+                 String.contains?(err.message, "unsupported delivery type")
              end)
     end
 
-    test "can create request with rabbitmq delivery and optional exchange" do
+    test "can create request with rabbitmq exchange and routing_key" do
       batch = generate(batch())
 
       {:ok, request} =
@@ -525,16 +553,71 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "rabbitmq",
-            rabbitmq_queue: "results_queue",
-            rabbitmq_exchange: "my_exchange"
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "my_exchange",
+            "rabbitmq_routing_key" => "results.completed"
           }
         })
 
-      assert request.delivery_type == :rabbitmq
-      assert request.rabbitmq_queue == "results_queue"
-      assert request.rabbitmq_exchange == "my_exchange"
+      assert request.delivery_config["type"] == "rabbitmq"
+      assert request.delivery_config["rabbitmq_exchange"] == "my_exchange"
+      assert request.delivery_config["rabbitmq_routing_key"] == "results.completed"
+    end
+
+    test "can create request with rabbitmq exchange, routing_key and optional queue" do
+      batch = generate(batch())
+
+      {:ok, request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_rabbitmq_full",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_rabbitmq_full",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "my_exchange",
+            "rabbitmq_routing_key" => "results.completed",
+            "rabbitmq_queue" => "results_queue"
+          }
+        })
+
+      assert request.delivery_config["type"] == "rabbitmq"
+      assert request.delivery_config["rabbitmq_exchange"] == "my_exchange"
+      assert request.delivery_config["rabbitmq_routing_key"] == "results.completed"
+      assert request.delivery_config["rabbitmq_queue"] == "results_queue"
+    end
+
+    test "can create request with rabbitmq queue only (default exchange mode)" do
+      batch = generate(batch())
+
+      {:ok, request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_rabbitmq_queue_only",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_rabbitmq_queue_only",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "results_queue"
+          }
+        })
+
+      assert request.delivery_config["type"] == "rabbitmq"
+      assert request.delivery_config["rabbitmq_queue"] == "results_queue"
+      assert request.delivery_config["rabbitmq_exchange"] == nil
     end
   end
 
@@ -555,9 +638,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -595,9 +678,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch1.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -613,9 +696,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch1.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -632,9 +715,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch2.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -966,9 +1049,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -977,9 +1060,9 @@ defmodule Batcher.Batching.RequestTest do
         Batcher.Batching.RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: false,
+          outcome: :connection_error,
           error_msg: "First attempt failed",
-          type: :webhook
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt1} = Ash.create(changeset1)
@@ -988,8 +1071,8 @@ defmodule Batcher.Batching.RequestTest do
         Batcher.Batching.RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :webhook
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt2} = Ash.create(changeset2)
@@ -999,11 +1082,11 @@ defmodule Batcher.Batching.RequestTest do
 
       assert length(request.delivery_attempts) == 2
 
-      failed_attempt = Enum.find(request.delivery_attempts, &(!&1.success))
+      failed_attempt = Enum.find(request.delivery_attempts, &(&1.outcome != :success))
       assert failed_attempt.error_msg == "First attempt failed"
 
-      successful_attempt = Enum.find(request.delivery_attempts, & &1.success)
-      assert successful_attempt.success == true
+      successful_attempt = Enum.find(request.delivery_attempts, &(&1.outcome == :success))
+      assert successful_attempt.outcome == :success
     end
 
     test "loads request.batch relationship" do
@@ -1021,9 +1104,9 @@ defmodule Batcher.Batching.RequestTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 

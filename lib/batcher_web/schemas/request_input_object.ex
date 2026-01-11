@@ -1,6 +1,6 @@
 defmodule BatcherWeb.Schemas.RequestInputObject do
   alias OpenApiSpex.Schema
-  alias BatcherWeb.Schemas.DeliverySchema
+  alias BatcherWeb.Schemas.DeliveryConfigSchema
 
   @behaviour OpenApiSpex.Schema
 
@@ -10,18 +10,18 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
       title: "RequestInputObject",
       description: "The per-line object of the batch input file + delivery instructions.",
       type: :object,
-      required: [:custom_id, :url, :method, :body, :delivery],
+      required: [:custom_id, :url, :method, :body, :delivery_config],
       additionalProperties: false,
       properties: %{
         custom_id: %Schema{
           type: :string,
           description:
-            "A developer-provided per-request id that will be used to match outputs to inputs. Must be unique for each request in a batch.",
-          example: "my-custom-id-123"
+            "A developer-provided per-request id that will be used to match outputs to inputs. Must be unique for each request in a batch.\nRecommended format: `<action>_<unique_id>` (e.g., `analyzeWebsite_abc123`) to help categorize results by action type when processed.",
+          example: "analyzeWebsite_550e8400-e29b-41d4-a716-446655440000"
         },
         url: %Schema{
           type: :string,
-          enum: Batcher.Batching.Types.OpenaiBatchEndpoints,
+          enum: Batcher.Batching.Types.OpenaiBatchEndpoints.values(),
           description: "The OpenAI API relative URL to be used for the request."
         },
         method: %Schema{
@@ -30,14 +30,14 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
           description:
             "The HTTP method to be used for the request. Currently only 'POST' is supported."
         },
-        delivery: DeliverySchema.schema(),
+        delivery_config: DeliveryConfigSchema.schema(),
         body: body_schema()
       }
       # example: %{
       #   "method" => "POST",
       #   "url" => "/v1/responses",
       #   "custom_id" => "2a6c0a28-95d0-412f-bf50-f598dd541630",
-      #   "delivery" => %{
+      #   "delivery_config" => %{
       #     "type" => "webhook",
       #     "webhook_url" => "https://api.example.com/webhook?auth=secret"
       #   },

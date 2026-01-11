@@ -1,4 +1,4 @@
-defmodule Batcher.RabbitMQ.InputConsumer do
+defmodule Batcher.RabbitMQ.Consumer do
   @moduledoc """
   GenServer that consumes messages from RabbitMQ and processes them as batch requests.
 

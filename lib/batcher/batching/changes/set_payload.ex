@@ -45,11 +45,15 @@ defmodule Batcher.Batching.Changes.SetPayload do
 
   defp set_json_payload(changeset, request_payload) do
     if changeset.valid? do
-      # Remove delivery and batch_id before encoding to JSON
+      # Remove delivery, delivery_config, and batch_id before encoding to JSON
       request_payload_json =
         request_payload
         |> Map.delete(:delivery)
+        |> Map.delete("delivery")
+        |> Map.delete(:delivery_config)
+        |> Map.delete("delivery_config")
         |> Map.delete(:batch_id)
+        |> Map.delete("batch_id")
         |> JSON.encode!()
 
       changeset

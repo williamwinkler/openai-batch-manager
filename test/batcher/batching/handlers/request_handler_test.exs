@@ -52,8 +52,8 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
       assert request.custom_id == "handler_test_1"
       assert request.url == "/v1/responses"
       assert request.model == "gpt-4o-mini"
-      assert request.delivery_type == :webhook
-      assert request.webhook_url == "https://example.com/webhook"
+      assert request.delivery_config["type"] == "webhook"
+      assert request.delivery_config["webhook_url"] == "https://example.com/webhook"
     end
 
     test "retries on batch_full error and creates new batch" do
@@ -67,15 +67,15 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           custom_id: "existing_req",
           url: "/v1/responses",
           model: "gpt-4o-mini",
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          },
           request_payload: %{
             custom_id: "existing_req",
             body: %{input: "test", model: "gpt-4o-mini"},
             method: "POST",
             url: "/v1/responses"
-          },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
           }
         })
 
@@ -129,7 +129,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
       assert {:error, :custom_id_already_taken} = result
     end
 
-    test "handles RabbitMQ delivery type" do
+    test "handles RabbitMQ delivery type with queue only (default exchange)" do
       request_data = %{
         custom_id: "rabbitmq_handler_test",
         url: "/v1/responses",
@@ -140,7 +140,6 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
         },
         delivery: %{
           type: "rabbitmq",
-          rabbitmq_exchange: "batching.results",
           rabbitmq_queue: "results_queue"
         }
       }
@@ -148,8 +147,32 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
       {:ok, request} = RequestHandler.handle(request_data)
 
       assert request.custom_id == "rabbitmq_handler_test"
-      assert request.delivery_type == :rabbitmq
-      assert request.rabbitmq_queue == "results_queue"
+      assert request.delivery_config["type"] == "rabbitmq"
+      assert request.delivery_config["rabbitmq_queue"] == "results_queue"
+    end
+
+    test "handles RabbitMQ delivery type with exchange and routing_key" do
+      request_data = %{
+        custom_id: "rabbitmq_exchange_handler_test",
+        url: "/v1/responses",
+        method: "POST",
+        body: %{
+          model: "gpt-4o-mini",
+          input: "Test input"
+        },
+        delivery: %{
+          type: "rabbitmq",
+          rabbitmq_exchange: "batching.results",
+          rabbitmq_routing_key: "requests.completed"
+        }
+      }
+
+      {:ok, request} = RequestHandler.handle(request_data)
+
+      assert request.custom_id == "rabbitmq_exchange_handler_test"
+      assert request.delivery_config["type"] == "rabbitmq"
+      assert request.delivery_config["rabbitmq_exchange"] == "batching.results"
+      assert request.delivery_config["rabbitmq_routing_key"] == "requests.completed"
     end
 
     test "handles concurrent requests to same BatchBuilder" do

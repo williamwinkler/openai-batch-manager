@@ -10,7 +10,11 @@ defmodule Batcher.Batching.Actions.Deliver do
   - Error details are stored on delivery_attempt only (not on request.error_msg)
 
   For RabbitMQ delivery:
-  - Currently raises error (not yet supported)
+  - Publishes response_payload to RabbitMQ queue/exchange
+  - Records delivery attempt (success or failure)
+  - On success: transitions request to :delivered
+  - On failure: transitions request to :delivery_failed (not :failed, which is for OpenAI errors)
+  - Error details are stored on delivery_attempt only (not on request.error_msg)
   """
   require Logger
   require Ash.Query
@@ -33,30 +37,21 @@ defmodule Batcher.Batching.Actions.Deliver do
     Logger.info("Delivering request #{request.id} (attempt #{attempt_number})")
 
     # Check delivery type
-    case request.delivery_type do
-      :rabbitmq ->
-        error_msg = "RabbitMQ delivery not yet supported"
-        Logger.error("RabbitMQ delivery attempted for request #{request.id}: #{error_msg}")
+    case request.delivery_config["type"] do
+      "rabbitmq" ->
+        deliver_rabbitmq(request)
 
-        {:error,
-         Ash.Error.Invalid.exception(
-           errors: [
-             %Ash.Error.Changes.InvalidAttribute{
-               field: :delivery_type,
-               message: error_msg
-             }
-           ]
-         )}
-
-      :webhook ->
+      "webhook" ->
         deliver_webhook(request)
     end
   end
 
   defp deliver_webhook(request) do
+    webhook_url = request.delivery_config["webhook_url"]
+
     # Validate required fields
     cond do
-      is_nil(request.webhook_url) ->
+      is_nil(webhook_url) ->
         error_msg = "webhook_url is required for webhook delivery"
         Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
 
@@ -64,7 +59,7 @@ defmodule Batcher.Batching.Actions.Deliver do
          Ash.Error.Invalid.exception(
            errors: [
              %Ash.Error.Changes.InvalidAttribute{
-               field: :webhook_url,
+               field: :delivery_config,
                message: error_msg
              }
            ]
@@ -85,11 +80,109 @@ defmodule Batcher.Batching.Actions.Deliver do
          )}
 
       true ->
-        perform_webhook_delivery(request)
+        perform_webhook_delivery(request, webhook_url)
     end
   end
 
-  defp perform_webhook_delivery(request) do
+  defp deliver_rabbitmq(request) do
+    # Support both old format (exchange/routing_key/queue) and new format (rabbitmq_exchange/rabbitmq_queue/rabbitmq_routing_key)
+    exchange =
+      request.delivery_config["rabbitmq_exchange"] ||
+        request.delivery_config["exchange"] || ""
+
+    # Priority: rabbitmq_routing_key (new) > routing_key (legacy) > rabbitmq_queue > queue (legacy)
+    routing_key =
+      request.delivery_config["rabbitmq_routing_key"] ||
+        request.delivery_config["routing_key"] ||
+        request.delivery_config["rabbitmq_queue"] ||
+        request.delivery_config["queue"]
+
+    # Validate required fields
+    cond do
+      is_nil(routing_key) ->
+        error_msg = "queue or routing_key is required for RabbitMQ delivery"
+        Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
+
+        {:error,
+         Ash.Error.Invalid.exception(
+           errors: [
+             %Ash.Error.Changes.InvalidAttribute{
+               field: :delivery_config,
+               message: error_msg
+             }
+           ]
+         )}
+
+      is_nil(request.response_payload) ->
+        error_msg = "response_payload is required for delivery"
+        Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
+
+        {:error,
+         Ash.Error.Invalid.exception(
+           errors: [
+             %Ash.Error.Changes.InvalidAttribute{
+               field: :response_payload,
+               message: error_msg
+             }
+           ]
+         )}
+
+      true ->
+        perform_rabbitmq_delivery(request, exchange, routing_key)
+    end
+  end
+
+  defp perform_rabbitmq_delivery(request, exchange, routing_key) do
+    # Transition to delivering state
+    request_updated =
+      request
+      |> Ash.Changeset.for_update(:begin_delivery)
+      |> Ash.update!()
+      |> Ash.load!(:batch)
+
+    # Check if batch needs to transition to :delivering
+    batch = request_updated.batch
+
+    if batch.state == :ready_to_deliver do
+      batch
+      |> Ash.Changeset.for_update(:start_delivering)
+      |> Ash.update!()
+    end
+
+    # Perform RabbitMQ publish
+    case Batcher.RabbitMQ.Publisher.publish(
+           exchange,
+           routing_key,
+           request_updated.response_payload
+         ) do
+      :ok ->
+        # Success
+        Logger.info(
+          "RabbitMQ delivery successful for request #{request_updated.custom_id} (exchange=#{exchange} routing_key=#{routing_key})"
+        )
+
+        request_after =
+          request_updated
+          |> Ash.Changeset.for_update(:complete_delivery)
+          |> Ash.Changeset.put_context(:delivery_attempt, %{outcome: :success})
+          |> Ash.update!()
+
+        handle_delivery_result({:ok, request_after}, batch)
+
+      {:error, reason} ->
+        # RabbitMQ error
+        outcome = map_rabbitmq_error(reason)
+        error_msg = format_rabbitmq_error(reason)
+
+        Logger.warning(
+          "RabbitMQ delivery failed for request #{request_updated.id} (exchange=#{exchange} routing_key=#{routing_key}): #{error_msg}"
+        )
+
+        handle_delivery_failure(request_updated, batch, outcome, error_msg)
+    end
+  end
+
+  defp perform_webhook_delivery(request, webhook_url) do
     # Transition to delivering state
     request_updated =
       request
@@ -107,18 +200,18 @@ defmodule Batcher.Batching.Actions.Deliver do
     end
 
     # Perform webhook POST
-    case post_webhook(request_updated.webhook_url, request_updated.response_payload) do
+    case post_webhook(webhook_url, request_updated.response_payload) do
       {:ok, status, _headers, _body} when status >= 200 and status < 300 ->
         # Success
         Logger.info(
-          "Webhook delivery successful for request #{request_updated.id} (status: #{status})"
+          "Webhook delivery successful for request #{request_updated.custom_id} (status: #{status})"
         )
 
         request_after =
           request_updated
           |> Ash.Changeset.for_update(:complete_delivery)
           |> Ash.Changeset.put_context(:delivery_attempt, %{
-            success: true,
+            outcome: :success,
             error_msg: nil
           })
           |> Ash.update!()
@@ -133,14 +226,15 @@ defmodule Batcher.Batching.Actions.Deliver do
           "Webhook delivery failed for request #{request_updated.id} (status: #{status}): #{error_msg}"
         )
 
-        handle_delivery_failure(request_updated, batch, error_msg)
+        handle_delivery_failure(request_updated, batch, :http_status_not_2xx, error_msg)
 
       {:error, reason} ->
         # Network error
+        outcome = map_webhook_error(reason)
         error_msg = format_error(reason)
         Logger.error("Webhook delivery error for request #{request_updated.id}: #{error_msg}")
 
-        handle_delivery_failure(request_updated, batch, error_msg)
+        handle_delivery_failure(request_updated, batch, outcome, error_msg)
     end
   end
 
@@ -171,14 +265,14 @@ defmodule Batcher.Batching.Actions.Deliver do
     {:ok, request}
   end
 
-  defp handle_delivery_failure(request, batch, error_msg) do
+  defp handle_delivery_failure(request, batch, outcome, error_msg) do
     # Mark request as delivery_failed (not :failed) because this is a delivery error,
     # not an OpenAI processing error. The error is recorded on the delivery_attempt.
     request_after =
       request
       |> Ash.Changeset.for_update(:mark_delivery_failed, %{})
       |> Ash.Changeset.put_context(:delivery_attempt, %{
-        success: false,
+        outcome: outcome,
         error_msg: error_msg
       })
       |> Ash.update!()
@@ -186,6 +280,42 @@ defmodule Batcher.Batching.Actions.Deliver do
     # Check if all requests in batch are delivered/delivery_failed
     check_batch_completion(batch)
     {:ok, request_after}
+  end
+
+  defp map_rabbitmq_error(reason) do
+    case reason do
+      :queue_not_found -> :queue_not_found
+      :exchange_not_found -> :exchange_not_found
+      :not_connected -> :connection_error
+      :timeout -> :timeout
+      _ -> :other
+    end
+  end
+
+  defp map_webhook_error(reason) do
+    case reason do
+      %{__struct__: %{reason: :timeout}} -> :timeout
+      %{__struct__: %{reason: :econnrefused}} -> :connection_error
+      %{__struct__: %{reason: :nxdomain}} -> :connection_error
+      %{reason: :timeout} -> :timeout
+      %{reason: :econnrefused} -> :connection_error
+      %{reason: :nxdomain} -> :connection_error
+      :timeout -> :timeout
+      :econnrefused -> :connection_error
+      :nxdomain -> :connection_error
+      _ -> :connection_error
+    end
+  end
+
+  defp format_rabbitmq_error(reason) do
+    case reason do
+      :queue_not_found -> "Queue not found"
+      :exchange_not_found -> "Exchange not found"
+      :not_connected -> "Not connected to RabbitMQ"
+      :timeout -> "Publish confirmation timeout"
+      :nack -> "Message was nacked by broker"
+      other -> "RabbitMQ error: #{inspect(other)}"
+    end
   end
 
   defp check_batch_completion(batch) do

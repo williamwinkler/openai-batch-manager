@@ -14,7 +14,7 @@ defmodule Batcher.RequestValidatorTest do
             "model" => "gpt-4o-mini",
             "input" => "Test input"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
           }
@@ -25,11 +25,11 @@ defmodule Batcher.RequestValidatorTest do
       assert validated.url == "/v1/responses"
       assert validated.method == "POST"
       assert validated.body.model == "gpt-4o-mini"
-      assert validated.delivery.type == "webhook"
-      assert validated.delivery.webhook_url == "https://example.com/webhook"
+      assert validated.delivery_config.type == "webhook"
+      assert validated.delivery_config.webhook_url == "https://example.com/webhook"
     end
 
-    test "validates valid RabbitMQ delivery message" do
+    test "validates valid RabbitMQ delivery message with queue only (default exchange)" do
       json =
         JSON.encode!(%{
           "custom_id" => "rabbitmq-test",
@@ -39,18 +39,40 @@ defmodule Batcher.RequestValidatorTest do
             "model" => "gpt-4o-mini",
             "input" => "Test input"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "rabbitmq",
-            "rabbitmq_exchange" => "batching.results",
             "rabbitmq_queue" => "results_queue"
           }
         })
 
       assert {:ok, validated} = RequestValidator.validate_json(json)
       assert validated.custom_id == "rabbitmq-test"
-      assert validated.delivery.type == "rabbitmq"
-      assert validated.delivery.rabbitmq_queue == "results_queue"
-      assert validated.delivery.rabbitmq_exchange == "batching.results"
+      assert validated.delivery_config.type == "rabbitmq"
+      assert validated.delivery_config.rabbitmq_queue == "results_queue"
+    end
+
+    test "validates valid RabbitMQ delivery message with exchange and routing_key" do
+      json =
+        JSON.encode!(%{
+          "custom_id" => "rabbitmq-exchange-test",
+          "url" => "/v1/responses",
+          "method" => "POST",
+          "body" => %{
+            "model" => "gpt-4o-mini",
+            "input" => "Test input"
+          },
+          "delivery_config" => %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "batching.results",
+            "rabbitmq_routing_key" => "requests.completed"
+          }
+        })
+
+      assert {:ok, validated} = RequestValidator.validate_json(json)
+      assert validated.custom_id == "rabbitmq-exchange-test"
+      assert validated.delivery_config.type == "rabbitmq"
+      assert validated.delivery_config.rabbitmq_exchange == "batching.results"
+      assert validated.delivery_config.rabbitmq_routing_key == "requests.completed"
     end
 
     test "returns error for invalid JSON string" do
@@ -63,7 +85,7 @@ defmodule Batcher.RequestValidatorTest do
       json =
         JSON.encode!(%{
           "custom_id" => "test"
-          # Missing url, method, body, delivery
+          # Missing url, method, body, delivery_config
         })
 
       assert {:error, {:validation_failed, _errors}} = RequestValidator.validate_json(json)
@@ -79,7 +101,7 @@ defmodule Batcher.RequestValidatorTest do
             "model" => "gpt-4o-mini",
             "input" => "Test"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
           }
@@ -98,7 +120,7 @@ defmodule Batcher.RequestValidatorTest do
             "input" => "Test"
             # Missing model
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
           }
@@ -117,7 +139,7 @@ defmodule Batcher.RequestValidatorTest do
             "model" => "gpt-4o-mini",
             "input" => "Test"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook"
             # Missing webhook_url
           }
@@ -136,7 +158,7 @@ defmodule Batcher.RequestValidatorTest do
             "model" => "gpt-4o-mini",
             "input" => "Test"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
           }
@@ -147,10 +169,10 @@ defmodule Batcher.RequestValidatorTest do
       assert Map.has_key?(validated, :custom_id)
       assert Map.has_key?(validated, :url)
       assert Map.has_key?(validated, :body)
-      assert Map.has_key?(validated, :delivery)
+      assert Map.has_key?(validated, :delivery_config)
       # Verify nested maps also have atom keys
       assert Map.has_key?(validated.body, :model)
-      assert Map.has_key?(validated.delivery, :type)
+      assert Map.has_key?(validated.delivery_config, :type)
     end
 
     test "validates different endpoint types" do
@@ -172,7 +194,7 @@ defmodule Batcher.RequestValidatorTest do
               "model" => "gpt-4o-mini",
               "input" => "Test"
             },
-            "delivery" => %{
+            "delivery_config" => %{
               "type" => "webhook",
               "webhook_url" => "https://example.com/webhook"
             }
@@ -194,7 +216,7 @@ defmodule Batcher.RequestValidatorTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -211,6 +233,50 @@ defmodule Batcher.RequestValidatorTest do
       }
 
       assert {:error, {:validation_failed, _errors}} = RequestValidator.validate(data)
+    end
+
+    test "handles validation errors with different error formats" do
+      # Test with data that might produce different error formats
+      data = %{
+        "custom_id" => "test",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => "invalid" # Should be a map
+      }
+
+      result = RequestValidator.validate(data)
+      assert {:error, {:validation_failed, errors}} = result
+      assert is_list(errors)
+      # Verify errors are formatted as strings
+      assert Enum.all?(errors, &is_binary/1)
+    end
+  end
+
+  describe "error formatting" do
+    test "formats errors with path lists" do
+      # This tests the format_errors function with path lists
+      data = %{
+        "custom_id" => "test",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => %{
+          "model" => "gpt-4o-mini"
+          # Missing input
+        }
+      }
+
+      # This should trigger validation errors that get formatted
+      result = RequestValidator.validate(data)
+      assert {:error, {:validation_failed, errors}} = result
+      assert is_list(errors)
+    end
+
+    test "handles non-map data in validate/1" do
+      # Test that validate/1 only accepts maps (function clause error for non-maps)
+      # This tests the guard clause behavior
+      assert_raise FunctionClauseError, fn ->
+        RequestValidator.validate("not a map")
+      end
     end
   end
 end

@@ -29,9 +29,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -79,9 +79,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -113,9 +113,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -159,9 +159,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -225,9 +225,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -270,9 +270,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -309,9 +309,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -348,9 +348,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -394,9 +394,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -444,9 +444,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -487,9 +487,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -530,9 +530,9 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 

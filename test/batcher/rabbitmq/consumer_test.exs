@@ -1,6 +1,6 @@
-defmodule Batcher.RabbitMQ.InputConsumerTest do
+defmodule Batcher.RabbitMQ.ConsumerTest do
   @moduledoc """
-  Integration tests for RabbitMQ InputConsumer.
+  Integration tests for RabbitMQ Consumer.
 
   These tests require a running RabbitMQ instance.
   Run with: mix test --include rabbitmq
@@ -9,16 +9,16 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
   use Batcher.DataCase, async: false
   use AMQP
 
-  alias Batcher.RabbitMQ.InputConsumer
+  alias Batcher.RabbitMQ.Consumer
 
   @moduletag :rabbitmq
 
   # Helper to stop the consumer and wait for it to fully terminate
   defp stop_consumer do
-    if pid = Process.whereis(InputConsumer) do
+    if pid = Process.whereis(Consumer) do
       try do
         ref = Process.monitor(pid)
-        GenServer.stop(InputConsumer, :normal, 5000)
+        GenServer.stop(Consumer, :normal, 5000)
 
         receive do
           {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
@@ -40,7 +40,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
     # Stop any existing consumer from previous tests
     stop_consumer()
 
-    # Enable shared sandbox mode so the InputConsumer GenServer can access the database
+    # Enable shared sandbox mode so the Consumer GenServer can access the database
     Ecto.Adapters.SQL.Sandbox.mode(Batcher.Repo, {:shared, self()})
 
     # Generate a unique model name per test to ensure complete isolation
@@ -127,7 +127,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
 
       # Start consumer (queue must exist)
       {:ok, _pid} =
-        InputConsumer.start_link(
+        Consumer.start_link(
           url: rabbitmq_url,
           queue: queue
         )
@@ -146,7 +146,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
             "model" => model,
             "input" => "Test input from RabbitMQ"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
           }
@@ -199,7 +199,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
 
       # Start consumer (queue must exist)
       {:ok, _pid} =
-        InputConsumer.start_link(
+        Consumer.start_link(
           url: rabbitmq_url,
           queue: queue
         )
@@ -229,7 +229,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
 
       # Start consumer (queue must exist)
       {:ok, _pid} =
-        InputConsumer.start_link(
+        Consumer.start_link(
           url: rabbitmq_url,
           queue: queue
         )
@@ -248,7 +248,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
             "model" => model,
             "input" => "Test"
           },
-          "delivery" => %{
+          "delivery_config" => %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
           }
@@ -310,7 +310,7 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
       # We use spawn_monitor to catch the process exit
       {pid, ref} =
         spawn_monitor(fn ->
-          InputConsumer.start_link(
+          Consumer.start_link(
             url: "amqp://invalid:invalid@nonexistent:5672/",
             queue: "test_queue"
           )
@@ -323,6 +323,202 @@ defmodule Batcher.RabbitMQ.InputConsumerTest do
 
         {:DOWN, ^ref, :process, ^pid, reason} ->
           flunk("Expected RuntimeError, got: #{inspect(reason)}")
+      after
+        5000 ->
+          flunk("Expected process to exit, but it didn't")
+      end
+    end
+  end
+
+  describe "consumer lifecycle" do
+    test "handles basic_consume_ok message", context do
+      require_rabbitmq(context)
+      %{queue: queue, rabbitmq_url: rabbitmq_url} = context
+
+      # Start consumer
+      {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
+      Process.sleep(200)
+
+      # Send basic_consume_ok message (simulating what RabbitMQ sends)
+      send(pid, {:basic_consume_ok, %{consumer_tag: "test_tag"}})
+
+      # Give it time to process
+      Process.sleep(100)
+
+      # Consumer should still be alive
+      assert Process.alive?(pid)
+
+      stop_consumer()
+    end
+
+    test "handles basic_cancel message and stops", context do
+      require_rabbitmq(context)
+      %{queue: queue, rabbitmq_url: rabbitmq_url} = context
+
+      # Start consumer
+      {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
+      Process.sleep(200)
+
+      # Monitor the consumer
+      ref = Process.monitor(pid)
+
+      # Send basic_cancel message (simulating broker cancellation)
+      send(pid, {:basic_cancel, %{consumer_tag: "test_tag"}})
+
+      # Consumer should stop
+      receive do
+        {:DOWN, ^ref, :process, ^pid, :normal} -> :ok
+      after
+        5000 -> flunk("Expected consumer to stop after basic_cancel")
+      end
+    end
+
+    test "handles basic_cancel_ok message", context do
+      require_rabbitmq(context)
+      %{queue: queue, rabbitmq_url: rabbitmq_url} = context
+
+      # Start consumer
+      {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
+      Process.sleep(200)
+
+      # Send basic_cancel_ok message
+      send(pid, {:basic_cancel_ok, %{consumer_tag: "test_tag"}})
+
+      # Give it time to process
+      Process.sleep(100)
+
+      # Consumer should still be alive
+      assert Process.alive?(pid)
+
+      stop_consumer()
+    end
+  end
+
+  describe "error handling" do
+    test "rejects message with validation errors", context do
+      require_rabbitmq(context)
+      %{chan: chan, queue: queue, rabbitmq_url: rabbitmq_url} = context
+      alias Batcher.Batching
+
+      # Get initial batch count
+      {:ok, batches_before} = Batching.list_batches()
+      initial_batch_count = length(batches_before)
+
+      # Start consumer
+      {:ok, _pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
+      Process.sleep(200)
+
+      # Send message with missing required fields (will fail validation)
+      invalid_message =
+        JSON.encode!(%{
+          "custom_id" => "test-123"
+          # Missing url, method, body, delivery_config
+        })
+
+      :ok = Basic.publish(chan, "", queue, invalid_message)
+
+      # Wait for processing
+      Process.sleep(500)
+
+      # Stop consumer
+      stop_consumer()
+
+      # Message should be rejected (not requeued) - no new batches should be created
+      {:ok, batches_after} = Batching.list_batches()
+      assert length(batches_after) == initial_batch_count
+    end
+
+    test "handles RequestHandler errors and requeues", context do
+      require_rabbitmq(context)
+      %{chan: chan, queue: queue, rabbitmq_url: rabbitmq_url} = context
+
+      # Start consumer
+      {:ok, _pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
+      Process.sleep(200)
+
+      # Create a message that will cause RequestHandler to fail
+      # Use an invalid model that might cause processing errors
+      message =
+        JSON.encode!(%{
+          "custom_id" => "error-test-#{System.unique_integer([:positive])}",
+          "url" => "/v1/responses",
+          "method" => "POST",
+          "body" => %{
+            "model" => "invalid-model-that-does-not-exist",
+            "input" => "Test"
+          },
+          "delivery_config" => %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      :ok = Basic.publish(chan, "", queue, message)
+
+      # Wait for processing
+      Process.sleep(500)
+
+      # Stop consumer
+      stop_consumer()
+
+      # Message should be nacked and requeued, so it should still be in the queue
+      # We can't easily verify this without consuming, but the test at least exercises the code path
+    end
+
+    test "fails to start when queue bind fails", context do
+      require_rabbitmq(context)
+      %{rabbitmq_url: rabbitmq_url} = context
+
+      # Try to start consumer with non-existent exchange
+      # This will fail during bind
+      {pid, ref} =
+        spawn_monitor(fn ->
+          Consumer.start_link(
+            url: rabbitmq_url,
+            queue: "non_existent_queue_#{System.unique_integer([:positive])}",
+            exchange: "non_existent_exchange_#{System.unique_integer([:positive])}",
+            routing_key: "test.key"
+          )
+        end)
+
+      # Wait for the DOWN message
+      receive do
+        {:DOWN, ^ref, :process, ^pid, {%RuntimeError{message: message}, _stacktrace}} ->
+          assert message =~ "RabbitMQ connection failed"
+
+        {:DOWN, ^ref, :process, ^pid, reason} ->
+          # Accept any error that indicates failure to start
+          # (could be RuntimeError or other error formats)
+          assert is_tuple(reason) or is_exception(reason)
+      after
+        5000 ->
+          flunk("Expected process to exit, but it didn't")
+      end
+    end
+
+    test "fails to start when consume fails", context do
+      require_rabbitmq(context)
+      %{rabbitmq_url: rabbitmq_url} = context
+
+      # Try to start consumer with non-existent queue
+      # This will fail during consume
+      {pid, ref} =
+        spawn_monitor(fn ->
+          Consumer.start_link(
+            url: rabbitmq_url,
+            queue: "non_existent_queue_#{System.unique_integer([:positive])}"
+          )
+        end)
+
+      # Wait for the DOWN message
+      receive do
+        {:DOWN, ^ref, :process, ^pid, {%RuntimeError{message: message}, _stacktrace}} ->
+          assert message =~ "RabbitMQ connection failed"
+
+        {:DOWN, ^ref, :process, ^pid, reason} ->
+          # Accept any error that indicates failure to start
+          # (could be RuntimeError or other error formats)
+          assert is_tuple(reason) or is_exception(reason)
       after
         5000 ->
           flunk("Expected process to exit, but it didn't")

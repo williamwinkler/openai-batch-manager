@@ -28,9 +28,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
           url: url,
           model: model,
           request_payload: payload_map,
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -64,9 +64,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
           url: url,
           model: model,
           request_payload: payload_map,
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -90,7 +90,7 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
         body: %{input: "test", model: model},
         method: "POST",
         url: url,
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"},
+        delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
         batch_id: batch.id
       }
 
@@ -102,9 +102,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
           url: url,
           model: model,
           request_payload: payload_map,
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -113,9 +113,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
       payload_json = Ash.Changeset.get_attribute(changeset, :request_payload)
       decoded = JSON.decode!(payload_json)
 
-      # Verify delivery and batch_id are removed
-      refute Map.has_key?(decoded, "delivery")
-      refute Map.has_key?(decoded, :delivery)
+      # Verify delivery_config and batch_id are removed
+      refute Map.has_key?(decoded, "delivery_config")
+      refute Map.has_key?(decoded, :delivery_config)
       refute Map.has_key?(decoded, "batch_id")
       refute Map.has_key?(decoded, :batch_id)
 
@@ -144,9 +144,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
             method: "POST",
             url: url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -178,9 +178,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
             method: "POST",
             url: url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -212,9 +212,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
             method: "POST",
             url: "/v1/chat/completions"
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -247,9 +247,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
             method: "POST",
             url: url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 
@@ -286,9 +286,9 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
           url: url,
           model: model,
           request_payload: payload_map,
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 

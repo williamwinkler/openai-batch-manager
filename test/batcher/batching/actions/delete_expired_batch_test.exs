@@ -70,23 +70,23 @@ defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
       {:ok, _attempt1} =
         Ash.create(RequestDeliveryAttempt, %{
           request_id: request1.id,
-          type: :webhook,
-          success: true
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt2} =
         Ash.create(RequestDeliveryAttempt, %{
           request_id: request1.id,
-          type: :webhook,
-          success: false,
-          error_msg: "Failed"
+          outcome: :connection_error,
+          error_msg: "Failed",
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt3} =
         Ash.create(RequestDeliveryAttempt, %{
           request_id: request2.id,
-          type: :webhook,
-          success: true
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       # Create batch transitions by changing state (transitions are created automatically)

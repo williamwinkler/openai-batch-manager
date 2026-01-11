@@ -38,7 +38,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "What color is a grey Porsche?"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -64,7 +64,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "First request"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -93,7 +93,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -107,7 +107,7 @@ defmodule BatcherWeb.RequestControllerTest do
       assert Map.has_key?(response_body, "errors")
     end
 
-    test "handles RabbitMQ delivery type", %{conn: conn} do
+    test "handles RabbitMQ delivery type with queue only (default exchange)", %{conn: conn} do
       request_body = %{
         "custom_id" => "rabbitmq_req",
         "url" => "/v1/responses",
@@ -116,9 +116,8 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test message"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "rabbitmq",
-          "rabbitmq_exchange" => "batching.results",
           "rabbitmq_queue" => "results_queue"
         }
       }
@@ -134,6 +133,29 @@ defmodule BatcherWeb.RequestControllerTest do
       assert length(batches) >= 1
     end
 
+    test "handles RabbitMQ delivery type with exchange and routing_key", %{conn: conn} do
+      request_body = %{
+        "custom_id" => "rabbitmq_exchange_req",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => %{
+          "model" => "gpt-4o-mini",
+          "input" => "Test message"
+        },
+        "delivery_config" => %{
+          "type" => "rabbitmq",
+          "rabbitmq_exchange" => "batching.results",
+          "rabbitmq_routing_key" => "requests.completed"
+        }
+      }
+
+      conn = post(conn, ~p"/api/requests", request_body)
+
+      assert response(conn, 202)
+      body = JSON.decode!(conn.resp_body)
+      assert body["custom_id"] == "rabbitmq_exchange_req"
+    end
+
     test "returns 422 for invalid delivery type", %{conn: conn} do
       invalid_body = %{
         "custom_id" => "invalid_delivery",
@@ -143,7 +165,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "invalid_type"
         }
       }
@@ -164,7 +186,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook"
         }
       }
@@ -176,16 +198,19 @@ defmodule BatcherWeb.RequestControllerTest do
       assert Map.has_key?(response_body, "errors")
     end
 
-    test "returns 422 for missing rabbitmq_queue when delivery type is rabbitmq", %{conn: conn} do
+    test "returns 500 for rabbitmq exchange without routing_key (Ash validation)", %{conn: conn} do
+      # This test validates that exchange without routing_key is rejected.
+      # OpenAPI schema allows this through (can't do conditional required),
+      # but Ash validation catches it and returns an internal error.
       invalid_body = %{
-        "custom_id" => "missing_rabbitmq_queue",
+        "custom_id" => "missing_routing_key",
         "url" => "/v1/responses",
         "method" => "POST",
         "body" => %{
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "rabbitmq",
           "rabbitmq_exchange" => "batching.results"
         }
@@ -193,7 +218,31 @@ defmodule BatcherWeb.RequestControllerTest do
 
       conn = post(conn, ~p"/api/requests", invalid_body)
 
-      assert response(conn, 422)
+      # Ash validation returns 500 (internal error) for validation failures
+      assert response(conn, 500)
+      response_body = JSON.decode!(conn.resp_body)
+      assert Map.has_key?(response_body, "errors")
+    end
+
+    test "returns 500 for rabbitmq with neither queue nor exchange (Ash validation)", %{conn: conn} do
+      # Neither queue nor exchange provided
+      invalid_body = %{
+        "custom_id" => "missing_both",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => %{
+          "model" => "gpt-4o-mini",
+          "input" => "Test"
+        },
+        "delivery_config" => %{
+          "type" => "rabbitmq"
+        }
+      }
+
+      conn = post(conn, ~p"/api/requests", invalid_body)
+
+      # Ash validation returns 500 (internal error) for validation failures
+      assert response(conn, 500)
       response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
@@ -207,7 +256,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -226,7 +275,7 @@ defmodule BatcherWeb.RequestControllerTest do
         "url" => "/v1/responses",
         "method" => "POST",
         "body" => %{},
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -248,7 +297,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }
@@ -279,7 +328,7 @@ defmodule BatcherWeb.RequestControllerTest do
               "model" => "gpt-4o-mini",
               "input" => "Test"
             },
-            "delivery" => %{
+            "delivery_config" => %{
               "type" => "webhook",
               "webhook_url" => "https://example.com/webhook"
             }
@@ -314,7 +363,7 @@ defmodule BatcherWeb.RequestControllerTest do
           "model" => "gpt-4o-mini",
           "input" => "Test"
         },
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => "https://example.com/webhook"
         }

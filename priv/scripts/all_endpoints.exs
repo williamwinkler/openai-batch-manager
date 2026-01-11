@@ -42,7 +42,7 @@ defmodule AllEndpointsScript do
           "input" => prompt
         },
         "custom_id" => Ecto.UUID.generate(),
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => @webhook_url
         },
@@ -97,7 +97,7 @@ defmodule AllEndpointsScript do
           "messages" => messages
         },
         "custom_id" => Ecto.UUID.generate(),
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => @webhook_url
         },
@@ -137,7 +137,7 @@ defmodule AllEndpointsScript do
           "input" => text
         },
         "custom_id" => Ecto.UUID.generate(),
-        "delivery" => %{
+        "delivery_config" => %{
           "type" => "webhook",
           "webhook_url" => @webhook_url
         },

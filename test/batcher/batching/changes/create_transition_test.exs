@@ -173,9 +173,9 @@ defmodule Batcher.Batching.Changes.CreateTransitionTest do
             method: "POST",
             url: batch.url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         })
 

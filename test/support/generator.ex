@@ -67,9 +67,9 @@ defmodule Batcher.Generator do
             :method => "POST",
             :url => url
           },
-          delivery: %{
-            type: "webhook",
-            webhook_url: "https://example.com/webhook"
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
           }
         ],
         overrides: opts
@@ -113,8 +113,10 @@ defmodule Batcher.Generator do
           model: model,
           # Can be overridden by opts
           state: :pending,
-          delivery_type: :webhook,
-          webhook_url: "https://example.com/webhook",
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          },
 
           # IMPORTANT: The database expects these to be set,
           # but normally the action calculates them. We must fake them here.

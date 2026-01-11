@@ -69,6 +69,7 @@ config :batcher, :http_timeouts,
   receive_timeout: 200,
   connect_timeout: 100
 
-# Disable RabbitMQ consumer in tests - tests manage their own consumer instances
-# This prevents the Application from starting the consumer automatically
+# Disable RabbitMQ consumer and publisher in tests - tests manage their own instances
+# This prevents the Application from starting them automatically
 config :batcher, :rabbitmq_input, nil
+config :batcher, :rabbitmq_publisher, nil

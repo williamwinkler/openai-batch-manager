@@ -157,12 +157,16 @@ defmodule Batcher.BatchBuilder do
     # Create Prompt record via internal action
     request_data = Map.put(request_data, :batch_id, state.batch_id)
 
+    delivery_config =
+      Map.get(request_data, :delivery_config)
+      |> stringify_keys()
+
     case Batcher.Batching.create_request(%{
            batch_id: state.batch_id,
            custom_id: request_data.custom_id,
            url: request_data.url,
            model: request_data.body.model,
-           delivery: request_data.delivery,
+           delivery_config: delivery_config,
            request_payload: request_data
          }) do
       {:ok, request} ->
@@ -195,8 +199,10 @@ defmodule Batcher.BatchBuilder do
             {:reply, {:error, :custom_id_already_taken}, state}
 
           is_batch_full ->
-            Logger.info("Batch #{state.batch_id} is full, cannot accept more requests")
-            {:reply, {:error, :batch_full}, state}
+            Logger.info("Batch #{state.batch_id} is full, triggering upload and shutting down")
+
+            # Batch is full - trigger upload, unregister, and stop so a new BatchBuilder can be created
+            trigger_upload_and_stop(state)
 
           true ->
             Logger.error(
@@ -253,6 +259,40 @@ defmodule Batcher.BatchBuilder do
   end
 
   ## Private Functions
+
+  # When batch is full, trigger upload, unregister, and stop so retry creates a new BatchBuilder
+  defp trigger_upload_and_stop(state) do
+    # Unregister first so new requests don't hit this dying process
+    Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+    state = Map.put(state, :terminating, true)
+
+    # Trigger the upload in background (don't block the caller)
+    spawn(fn ->
+      case Batcher.Batching.get_batch_by_id(state.batch_id) do
+        {:ok, batch} ->
+          case Batcher.Batching.start_batch_upload(batch) do
+            {:ok, _} ->
+              Logger.info(
+                "BatchBuilder [#{state.batch_id}] batch upload started after becoming full"
+              )
+
+            {:error, error} ->
+              Logger.error(
+                "BatchBuilder [#{state.batch_id}] failed to start upload after becoming full: #{inspect(error)}"
+              )
+          end
+
+        {:error, error} ->
+          Logger.error(
+            "BatchBuilder [#{state.batch_id}] failed to get batch for upload: #{inspect(error)}"
+          )
+      end
+    end)
+
+    # Reply with :batch_full and stop - the caller will retry and create a new BatchBuilder
+    {:stop, :normal, {:error, :batch_full}, state}
+  end
+
   defp get_building_batch(url, model) do
     case Batcher.Batching.find_building_batch(model, url, load: [:request_count, :size_bytes]) do
       {:ok, existing_batch} ->
@@ -279,5 +319,21 @@ defmodule Batcher.BatchBuilder do
 
   defp via_tuple(url, model) do
     {:via, Registry, {Batcher.BatchRegistry, {url, model}}}
+  end
+
+  defp stringify_keys(struct) when is_struct(struct) do
+    # Convert struct to plain map (removing __struct__ key), then stringify
+    struct
+    |> Map.from_struct()
+    |> stringify_keys()
+  end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} ->
+      key = to_string(k)
+      # Convert enum atom values to strings (e.g., :webhook -> "webhook")
+      value = if k == :type and is_atom(v), do: to_string(v), else: v
+      {key, value}
+    end)
   end
 end

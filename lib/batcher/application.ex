@@ -25,6 +25,8 @@ defmodule Batcher.Application do
            Application.fetch_env!(:batcher, :ash_domains),
            Application.fetch_env!(:batcher, Oban)
          )},
+        # RabbitMQ publisher (optional - only starts if configured)
+        maybe_rabbitmq_publisher(),
         # RabbitMQ input consumer (optional - only starts if configured)
         maybe_rabbitmq_consumer(),
         # Start a worker by calling: Batcher.Worker.start_link(arg)
@@ -61,6 +63,19 @@ defmodule Batcher.Application do
     :ok
   end
 
+  defp maybe_rabbitmq_publisher do
+    case Application.get_env(:batcher, :rabbitmq_publisher) do
+      nil ->
+        # Not configured, don't start publisher
+        nil
+
+      config ->
+        # Configured - start publisher
+        # If connection fails initially, publisher will retry on first publish
+        {Batcher.RabbitMQ.Publisher, config}
+    end
+  end
+
   defp maybe_rabbitmq_consumer do
     case Application.get_env(:batcher, :rabbitmq_input) do
       nil ->
@@ -71,7 +86,7 @@ defmodule Batcher.Application do
         # Configured - start consumer
         # If connection fails, init/1 will raise an error
         # causing the supervisor and application to shut down (fail-fast behavior)
-        {Batcher.RabbitMQ.InputConsumer, config}
+        {Batcher.RabbitMQ.Consumer, config}
     end
   end
 end

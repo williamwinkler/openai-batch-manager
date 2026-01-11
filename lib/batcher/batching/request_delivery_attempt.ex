@@ -23,7 +23,9 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
     defaults [:read]
 
     create :create do
-      accept [:request_id, :type, :success, :error_msg]
+      accept [:request_id, :outcome, :delivery_config, :error_msg]
+
+      validate Batching.Validations.DeliveryConfig
       primary? true
     end
   end
@@ -31,18 +33,18 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
   attributes do
     integer_primary_key :id
 
-    attribute :type, Batching.Types.RequestDeliveryType do
-      description "The type of delivery attempted"
+    attribute :outcome, Batching.Types.RequestDeliveryAttemptOutcome do
+      description "The outcome of the delivery attempt"
       allow_nil? false
     end
 
-    attribute :success, :boolean do
-      description "Whether the delivery attempt was successful"
+    attribute :delivery_config, :map do
+      description "The configuration of the delivery attempt"
       allow_nil? false
     end
 
     attribute :error_msg, :string do
-      description "Error message if the delivery attempt failed"
+      description "Error message if the delivery attempt was unsuccessful"
       allow_nil? true
     end
 

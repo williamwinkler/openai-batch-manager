@@ -42,7 +42,8 @@ defmodule Batcher.MixProject do
           # Unused change module (replaced by Actions.CheckBatchStatus)
           Batcher.Batching.Changes.CheckOpenaiBatchStatus,
           # Unused change module (not used in actual codebase)
-          Batcher.Batching.Changes.AssignToBatch
+          Batcher.Batching.Changes.AssignToBatch,
+          Batcher.RabbitMQ.FakePublisher
         ]
       ]
     ]

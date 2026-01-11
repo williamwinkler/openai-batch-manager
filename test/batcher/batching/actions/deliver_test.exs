@@ -1,15 +1,59 @@
 defmodule Batcher.Batching.Actions.DeliverTest do
   use Batcher.DataCase, async: false
+  use AMQP
 
   alias Batcher.Batching
+  alias Batcher.RabbitMQ.FakePublisher
 
   import Batcher.Generator
   import Batcher.TestServer
 
   setup do
     {:ok, server} = TestServer.start()
-    {:ok, server: server}
+
+    # Setup RabbitMQ if available
+    rabbitmq_url =
+      case System.get_env("RABBITMQ_URL") do
+        nil -> "amqp://guest:guest@localhost:5672"
+        "" -> "amqp://guest:guest@localhost:5672"
+        url -> url
+      end
+
+    rabbitmq_context =
+      case Connection.open(rabbitmq_url) do
+        {:ok, conn} ->
+          {:ok, chan} = Channel.open(conn)
+          test_queue = "test_deliver_#{System.unique_integer([:positive])}"
+
+          {:ok, _} = Queue.declare(chan, test_queue, durable: true)
+
+          on_exit(fn ->
+            try do
+              Queue.delete(chan, test_queue)
+              Channel.close(chan)
+              Connection.close(conn)
+            rescue
+              _ -> :ok
+            catch
+              :exit, _ -> :ok
+            end
+          end)
+
+          %{
+            rabbitmq_available: true,
+            rabbitmq_url: rabbitmq_url,
+            queue: test_queue,
+            conn: conn,
+            chan: chan
+          }
+
+        {:error, _reason} ->
+          %{rabbitmq_available: false, rabbitmq_url: rabbitmq_url}
+      end
+
+    {:ok, Map.merge(%{server: server}, rabbitmq_context)}
   end
+
 
   describe "deliver action" do
     test "successfully delivers webhook with 200 status", %{server: server} do
@@ -24,8 +68,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -48,8 +94,8 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       # Verify delivery attempt was recorded
       assert length(request_after.delivery_attempts) == 1
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.success == true
-      assert attempt.type == :webhook
+      assert attempt.outcome == :success
+      assert attempt.delivery_config["type"] == "webhook"
       assert attempt.error_msg == nil
 
       # Verify batch transitioned to delivering
@@ -68,8 +114,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -99,8 +147,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -124,7 +174,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       # Verify delivery attempt was recorded with failure and contains error details
       assert length(request_after.delivery_attempts) == 1
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.success == false
+      assert attempt.outcome == :http_status_not_2xx
       assert attempt.error_msg
       assert attempt.error_msg =~ "error"
       assert attempt.error_msg =~ "INVALID"
@@ -144,8 +194,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -167,7 +219,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       # Verify delivery attempt was recorded with failure and contains error details
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.success == false
+      assert attempt.outcome != :success
       assert attempt.error_msg
       assert attempt.error_msg =~ "error"
     end
@@ -186,8 +238,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -208,11 +262,143 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       # Error details are stored on delivery_attempt
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.success == false
+      assert attempt.outcome != :success
       assert attempt.error_msg != nil
     end
 
-    test "raises error for RabbitMQ delivery type" do
+    test "successfully delivers to RabbitMQ queue" do
+      # Start fake publisher that returns :ok for all publishes
+      {:ok, _pid} = FakePublisher.start_link()
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      response_payload = %{"output" => "test response", "status" => "success"}
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after =
+        Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts, :batch])
+
+      assert request_after.state == :delivered
+      assert request_after.delivery_attempt_count == 1
+
+      # Verify delivery attempt was recorded
+      assert length(request_after.delivery_attempts) == 1
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :success
+      assert attempt.delivery_config["type"] == "rabbitmq"
+      assert attempt.error_msg == nil
+
+      # Verify batch transitioned to delivering
+      assert request_after.batch.state == :delivering
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "successfully delivers to RabbitMQ exchange with rabbitmq_routing_key" do
+      # Start fake publisher that returns :ok for all publishes
+      {:ok, _pid} = FakePublisher.start_link()
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      response_payload = %{"output" => "test response", "status" => "success"}
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "test_exchange",
+            "rabbitmq_routing_key" => "test.routing.key"
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts, :batch])
+
+      assert request_after.state == :delivered
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :success
+      assert request_after.batch.state == :delivering
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "rabbitmq_routing_key takes priority over rabbitmq_queue for routing" do
+      # Start fake publisher that returns :ok for all publishes
+      {:ok, _pid} = FakePublisher.start_link()
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      response_payload = %{"output" => "test response", "status" => "success"}
+
+      # Both rabbitmq_routing_key and rabbitmq_queue provided - routing_key should be used
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "test_exchange",
+            "rabbitmq_routing_key" => "priority.routing.key",
+            "rabbitmq_queue" => "fallback_queue"
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      assert request_after.state == :delivered
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "handles RabbitMQ queue_not_found error" do
+      # Start fake publisher that returns queue_not_found error
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{{"", "non_existent_queue"} => {:error, :queue_not_found}}
+        )
+
       batch =
         seeded_batch(state: :ready_to_deliver)
         |> generate()
@@ -221,8 +407,417 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :rabbitmq,
-          rabbitmq_queue: "results_queue",
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "non_existent_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      assert request_after.error_msg == nil
+
+      # Error details are stored on delivery_attempt
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :queue_not_found
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "Queue not found"
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "handles RabbitMQ exchange_not_found error" do
+      # Start fake publisher that returns exchange_not_found error
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{{"non_existent_exchange", "test.key"} => {:error, :exchange_not_found}}
+        )
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_exchange" => "non_existent_exchange",
+            "rabbitmq_routing_key" => "test.key"
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :exchange_not_found
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "Exchange not found"
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "handles RabbitMQ not_connected error" do
+      # Start fake publisher that returns not_connected error
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{{"", "test_queue"} => {:error, :not_connected}}
+        )
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :connection_error
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "Not connected to RabbitMQ"
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "handles RabbitMQ timeout error" do
+      # Start fake publisher that returns timeout error
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{{"", "test_queue"} => {:error, :timeout}}
+        )
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :timeout
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "Publish confirmation timeout"
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "handles RabbitMQ nack error" do
+      # Start fake publisher that returns nack error
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{{"", "test_queue"} => {:error, :nack}}
+        )
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :other
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "Message was nacked by broker"
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "handles RabbitMQ other error types" do
+      # Start fake publisher that returns unknown error
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{{"", "test_queue"} => {:error, :unknown_error}}
+        )
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :other
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "RabbitMQ error"
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "transitions batch to done when all RabbitMQ requests are delivered" do
+      # Start fake publisher that returns :ok for all publishes
+      {:ok, _pid} = FakePublisher.start_link()
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      response_payload = %{"output" => "test response"}
+
+      # Create two requests
+      request1 =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      request2 =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Deliver first request
+      {:ok, _} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request1)
+        |> Ash.run_action()
+
+      # Deliver second request (should trigger batch completion)
+      {:ok, _} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request2)
+        |> Ash.run_action()
+
+      # Reload batch to check state
+      batch_after = Batching.get_batch_by_id!(batch.id)
+      assert batch_after.state == :done
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "transitions batch to done when all RabbitMQ requests are delivered or delivery_failed" do
+      # Start fake publisher with mixed responses
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{
+            {"", "success_queue"} => :ok,
+            {"", "fail_queue"} => {:error, :queue_not_found}
+          }
+        )
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      response_payload = %{"output" => "test response"}
+
+      # Create two requests - one will succeed, one will fail
+      request1 =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "success_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      request2 =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "fail_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Deliver first request (success)
+      {:ok, _} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request1)
+        |> Ash.run_action()
+
+      # Deliver second request (failure)
+      {:ok, _} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request2)
+        |> Ash.run_action()
+
+      # Reload batch to check state
+      batch_after = Batching.get_batch_by_id!(batch.id)
+      assert batch_after.state == :done
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "uses rabbitmq_routing_key when both queue and routing_key are provided (legacy support)" do
+      # Start fake publisher
+      {:ok, _pid} = FakePublisher.start_link()
+
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      # Legacy format with routing_key (not rabbitmq_routing_key) still works
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "fallback_queue",
+            "rabbitmq_exchange" => "",
+            "routing_key" => "legacy_routing_key"
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      assert request_after.state == :delivered
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "raises error when queue is missing for RabbitMQ delivery" do
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq"
+          },
           response_payload: %{"output" => "test"}
         )
         |> generate()
@@ -245,8 +840,9 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: nil,
+          delivery_config: %{
+            "type" => "webhook"
+          },
           response_payload: %{"output" => "test"}
         )
         |> generate()
@@ -271,8 +867,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: nil
         )
         |> generate()
@@ -298,8 +896,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -330,8 +930,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -340,8 +942,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -386,8 +990,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -396,8 +1002,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -437,8 +1045,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -467,8 +1077,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -485,7 +1097,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       assert length(request_after.delivery_attempts) == 1
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.type == :webhook
+      assert attempt.delivery_config["type"] == "webhook"
     end
 
     test "handles webhook response with JSON body in error message", %{server: server} do
@@ -500,8 +1112,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -536,8 +1150,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -577,8 +1193,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -611,8 +1229,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -621,7 +1241,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       # Use a non-routable IP that will timeout
       request =
         request
-        |> Ecto.Changeset.change(webhook_url: "http://192.0.2.1:8080/webhook")
+        |> Ecto.Changeset.change(delivery_config: %{"type" => "webhook", "webhook_url" => "http://192.0.2.1:8080/webhook"})
         |> Batcher.Repo.update!()
 
       {:ok, request_after} =
@@ -632,7 +1252,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       request_after = Ash.load!(request_after, [:delivery_attempts])
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.success == false
+      assert attempt.outcome != :success
       assert attempt.error_msg
     end
 
@@ -648,8 +1268,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -665,7 +1287,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       request_after = Ash.load!(request_after, [:delivery_attempts])
       attempt = List.first(request_after.delivery_attempts)
-      assert attempt.success == false
+      assert attempt.outcome != :success
       assert request_after.state == :delivery_failed
     end
 
@@ -684,8 +1306,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :openai_processed,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()
@@ -694,8 +1318,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         seeded_request(
           batch_id: batch.id,
           state: :pending,
-          delivery_type: :webhook,
-          webhook_url: webhook_url,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
           response_payload: response_payload
         )
         |> generate()

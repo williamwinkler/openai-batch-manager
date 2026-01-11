@@ -16,15 +16,15 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :webhook
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, attempt} = Ash.create(changeset)
 
       assert attempt.request_id == request.id
-      assert attempt.type == :webhook
-      assert attempt.success == true
+      assert attempt.delivery_config["type"] == "webhook"
+      assert attempt.outcome == :success
       assert attempt.error_msg == nil
       assert attempt.attempted_at
     end
@@ -37,16 +37,16 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: false,
+          outcome: :http_status_not_2xx,
           error_msg: "HTTP 500 Internal Server Error",
-          type: :webhook
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, attempt} = Ash.create(changeset)
 
       assert attempt.request_id == request.id
-      assert attempt.type == :webhook
-      assert attempt.success == false
+      assert attempt.delivery_config["type"] == "webhook"
+      assert attempt.outcome == :http_status_not_2xx
       assert attempt.error_msg == "HTTP 500 Internal Server Error"
       assert attempt.attempted_at
     end
@@ -59,14 +59,18 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :rabbitmq
+          outcome: :success,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          }
         })
 
       {:ok, attempt} = Ash.create(changeset)
 
-      assert attempt.type == :rabbitmq
-      assert attempt.success == true
+      assert attempt.delivery_config["type"] == "rabbitmq"
+      assert attempt.outcome == :success
     end
   end
 
@@ -80,9 +84,9 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: false,
+          outcome: :connection_error,
           error_msg: "First attempt failed",
-          type: :webhook
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt1} = Ash.create(changeset1)
@@ -91,8 +95,8 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :webhook
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt2} = Ash.create(changeset2)
@@ -102,11 +106,11 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
 
       assert length(request.delivery_attempts) == 2
 
-      failed_attempt = Enum.find(request.delivery_attempts, &(!&1.success))
+      failed_attempt = Enum.find(request.delivery_attempts, &(&1.outcome != :success))
       assert failed_attempt.error_msg == "First attempt failed"
 
-      successful_attempt = Enum.find(request.delivery_attempts, & &1.success)
-      assert successful_attempt.success == true
+      successful_attempt = Enum.find(request.delivery_attempts, &(&1.outcome == :success))
+      assert successful_attempt.outcome == :success
     end
 
     test "attempts are ordered by attempted_at" do
@@ -118,8 +122,8 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: false,
-          type: :webhook
+          outcome: :connection_error,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt1} = Ash.create(changeset1)
@@ -131,8 +135,8 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :webhook
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _attempt2} = Ash.create(changeset2)
@@ -159,9 +163,9 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
           RequestDeliveryAttempt
           |> Ash.Changeset.for_create(:create, %{
             request_id: request.id,
-            success: false,
+            outcome: :connection_error,
             error_msg: "Attempt #{i} failed",
-            type: :webhook
+            delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
           })
 
         {:ok, _attempt} = Ash.create(changeset)
@@ -169,7 +173,7 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
 
       request = Ash.load!(request, [:delivery_attempts])
 
-      failed_attempts = Enum.filter(request.delivery_attempts, &(!&1.success))
+      failed_attempts = Enum.filter(request.delivery_attempts, &(&1.outcome != :success))
       assert length(failed_attempts) == 3
     end
 
@@ -183,9 +187,9 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
           RequestDeliveryAttempt
           |> Ash.Changeset.for_create(:create, %{
             request_id: request.id,
-            success: false,
+            outcome: :connection_error,
             error_msg: "Failed",
-            type: :webhook
+            delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
           })
 
         {:ok, _attempt} = Ash.create(changeset)
@@ -196,8 +200,8 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :webhook
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, _success_attempt} = Ash.create(changeset)
@@ -206,7 +210,7 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
 
       assert length(request.delivery_attempts) == 3
 
-      successful_attempts = Enum.filter(request.delivery_attempts, & &1.success)
+      successful_attempts = Enum.filter(request.delivery_attempts, &(&1.outcome == :success))
       assert length(successful_attempts) == 1
     end
   end
@@ -216,14 +220,12 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
       batch = generate(batch())
       request = generate(seeded_request(batch_id: batch.id, custom_id: "test_req"))
 
-      # type is not accepted by create action, so we need to set it after creation
-      # or use force_change_attribute. For now, let's test what's actually accepted.
       changeset =
         RequestDeliveryAttempt
         |> Ash.Changeset.for_create(:create, %{
           request_id: request.id,
-          success: true,
-          type: :webhook
+          outcome: :success,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
       {:ok, attempt} = Ash.create(changeset)

@@ -21,10 +21,7 @@ defmodule Batcher.Repo.Migrations.Init do
       add :updated_at, :utc_datetime_usec, null: false
       add :created_at, :utc_datetime_usec, null: false
       add :error_msg, :text
-      add :rabbitmq_queue, :text
-      add :rabbitmq_exchange, :text
-      add :webhook_url, :text
-      add :delivery_type, :text, null: false
+      add :delivery_config, :map, null: false
       add :state, :text, null: false
       add :response_payload, :map
       add :request_payload_size, :bigint, null: false
@@ -47,8 +44,8 @@ defmodule Batcher.Repo.Migrations.Init do
 
       add :attempted_at, :utc_datetime_usec, null: false
       add :error_msg, :text
-      add :success, :boolean, null: false
-      add :type, :text, null: false
+      add :delivery_config, :map, null: false
+      add :outcome, :text, null: false
       add :id, :bigserial, null: false, primary_key: true
     end
 
@@ -57,6 +54,7 @@ defmodule Batcher.Repo.Migrations.Init do
     create table(:batches, primary_key: false) do
       add :updated_at, :utc_datetime_usec, null: false
       add :created_at, :utc_datetime_usec, null: false
+      add :expires_at, :utc_datetime
       add :output_tokens, :bigint
       add :reasoning_tokens, :bigint
       add :cached_tokens, :bigint

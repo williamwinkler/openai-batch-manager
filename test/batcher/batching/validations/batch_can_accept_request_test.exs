@@ -80,9 +80,9 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
             url: batch.url,
             model: batch.model,
             request_payload: Map.put(large_payload_base, :custom_id, "large_#{i}"),
-            delivery: %{
-              type: "webhook",
-              webhook_url: "https://example.com/webhook"
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
             }
           })
       end
@@ -190,9 +190,9 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
             url: batch.url,
             model: batch.model,
             request_payload: Map.put(large_payload_base, :custom_id, custom_id),
-            delivery: %{
-              type: "webhook",
-              webhook_url: "https://example.com/webhook"
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
             }
           })
       end
@@ -261,9 +261,9 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
             url: batch.url,
             model: batch.model,
             request_payload: Map.put(large_payload_base, :custom_id, custom_id),
-            delivery: %{
-              type: "webhook",
-              webhook_url: "https://example.com/webhook"
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
             }
           })
       end

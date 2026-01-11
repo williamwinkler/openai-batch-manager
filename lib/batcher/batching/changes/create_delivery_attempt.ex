@@ -18,16 +18,14 @@ defmodule Batcher.Batching.Changes.CreateDeliveryAttempt do
   end
 
   defp create_attempt_from_changeset(cs, result) do
-    # Get delivery attempt data from changeset context
-    delivery_type = Ash.Changeset.get_attribute(cs, :delivery_type) || result.delivery_type
-    success = get_in(cs.context, [:delivery_attempt, :success])
+    outcome = get_in(cs.context, [:delivery_attempt, :outcome])
     error_msg = get_in(cs.context, [:delivery_attempt, :error_msg])
 
-    if success != nil do
+    if outcome != nil do
       params = %{
         request_id: result.id,
-        type: delivery_type,
-        success: success,
+        delivery_config: result.delivery_config,
+        outcome: outcome,
         error_msg: error_msg
       }
 
