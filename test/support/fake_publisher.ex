@@ -31,15 +31,22 @@ defmodule Batcher.RabbitMQ.FakePublisher do
   def start_link(opts \\ []) do
     responses = Keyword.get(opts, :responses, %{})
     default_response = Keyword.get(opts, :default_response, :ok)
+
     # Register under the same name as the real Publisher so it can be used as a drop-in replacement
-    GenServer.start_link(__MODULE__, {responses, default_response}, name: Batcher.RabbitMQ.Publisher)
+    GenServer.start_link(__MODULE__, {responses, default_response},
+      name: Batcher.RabbitMQ.Publisher
+    )
   end
 
   @doc """
   Publish a message (same interface as real Publisher).
   """
   def publish(exchange, routing_key, payload, opts \\ []) do
-    GenServer.call(Batcher.RabbitMQ.Publisher, {:publish, exchange, routing_key, payload, opts}, 10_000)
+    GenServer.call(
+      Batcher.RabbitMQ.Publisher,
+      {:publish, exchange, routing_key, payload, opts},
+      10_000
+    )
   end
 
   @doc """

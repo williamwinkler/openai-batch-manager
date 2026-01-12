@@ -307,15 +307,14 @@ defmodule Batcher.BatchBuilderTest do
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
 
-      # Delete the batch directly from DB (simulating edge case)
+      # Delete the batch directly from DB - this will terminate the BatchBuilder
       {:ok, batch} = Batching.get_batch_by_id(request.batch_id)
       Ash.destroy!(batch)
 
-      # Try to finish building - should handle gracefully
-      result = BatchBuilder.upload_batch(url, model)
-
-      # Should return error or handle gracefully
-      assert result == :ok or match?({:error, _}, result)
+      # BatchBuilder should be terminated, so upload_batch will fail
+      # because there's no BatchBuilder process
+      result = catch_exit(BatchBuilder.upload_batch(url, model))
+      assert match?({:noproc, _}, result)
     end
 
     test "handles finish_building when start_upload fails" do
@@ -461,11 +460,12 @@ defmodule Batcher.BatchBuilderTest do
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
       batch_id = request.batch_id
 
-      # Delete the batch to cause get_batch_by_id to fail
+      # Delete the batch - this will terminate the BatchBuilder
       batch = Batching.get_batch_by_id!(batch_id)
       Ash.destroy!(batch)
 
-      # Try to add another request - should handle error gracefully
+      # Try to add another request - BatchBuilder was terminated, so it will
+      # create a new BatchBuilder and new batch (correct behavior)
       result =
         BatchBuilder.add_request(
           url,
@@ -473,8 +473,9 @@ defmodule Batcher.BatchBuilderTest do
           Map.put(request_data, :custom_id, "get_batch_error_test_2")
         )
 
-      # Should return error
-      assert {:error, _} = result
+      # Should succeed - creates new batch since old one was destroyed
+      assert {:ok, new_request} = result
+      assert new_request.batch_id != batch_id
     end
   end
 end

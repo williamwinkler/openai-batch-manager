@@ -65,11 +65,17 @@ defmodule Batcher.BatchBuilder do
           {:error, reason} ->
             # Check if this is a transient database error and retry
             if transient_db_error?(reason) and retries > 0 do
-              Logger.warning("Transient database error starting BatchBuilder, retrying... (#{retries} retries left)")
+              Logger.warning(
+                "Transient database error starting BatchBuilder, retrying... (#{retries} retries left)"
+              )
+
               Process.sleep(200)
               add_request(url, model, request_data, retries - 1)
             else
-              Logger.error("Failed to start BatchBuilder for url=#{url} model=#{model}: #{inspect(reason)}")
+              Logger.error(
+                "Failed to start BatchBuilder for url=#{url} model=#{model}: #{inspect(reason)}"
+              )
+
               {:error, {:batch_builder_start_failed, reason}}
             end
         end
@@ -109,6 +115,7 @@ defmodule Batcher.BatchBuilder do
     )
 
     BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
+    BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch.id}")
 
     {:ok,
      %{
@@ -147,6 +154,14 @@ defmodule Batcher.BatchBuilder do
         Logger.error("BatchBuilder [#{state.batch_id}] failed to get batch: #{inspect(error)}")
         {:reply, {:error, error}, state}
     end
+  end
+
+  @impl true
+  def handle_call(:terminate, _from, state) do
+    Logger.info("BatchBuilder [#{state.batch_id}] terminating due to batch deletion")
+    Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+    state = Map.put(state, :terminating, true)
+    {:stop, :normal, :ok, state}
   end
 
   @impl true
@@ -275,6 +290,31 @@ defmodule Batcher.BatchBuilder do
       else
         {:noreply, state}
       end
+    end
+  end
+
+  @impl true
+  def handle_info(
+        %Phoenix.Socket.Broadcast{
+          topic: "batches:destroyed:" <> _batch_id,
+          payload: _notification
+        },
+        state
+      ) do
+    # Skip termination if we're already terminating (prevents double termination)
+    if state.terminating do
+      Logger.debug(
+        "BatchBuilder [#{state.batch_id}] received destroy notification but already terminating, skipping"
+      )
+
+      {:noreply, state}
+    else
+      Logger.info("BatchBuilder [#{state.batch_id}] stopping. Batch was destroyed")
+
+      # Unregister before terminating
+      Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+      state = Map.put(state, :terminating, true)
+      {:stop, :normal, state}
     end
   end
 

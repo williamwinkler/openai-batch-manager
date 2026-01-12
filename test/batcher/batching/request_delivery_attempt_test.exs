@@ -165,7 +165,10 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
             request_id: request.id,
             outcome: :connection_error,
             error_msg: "Attempt #{i} failed",
-            delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
           })
 
         {:ok, _attempt} = Ash.create(changeset)
@@ -189,7 +192,10 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
             request_id: request.id,
             outcome: :connection_error,
             error_msg: "Failed",
-            delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
           })
 
         {:ok, _attempt} = Ash.create(changeset)

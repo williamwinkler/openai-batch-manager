@@ -134,7 +134,7 @@ defmodule Batcher.Batching.Batch do
   end
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
 
     create :create do
       description "Create a new batch"
@@ -260,6 +260,7 @@ defmodule Batcher.Batching.Batch do
 
     update :cancel do
       require_atomic? false
+      change Batching.Changes.CancelBatch
       change transition_state(:cancelled)
     end
 
@@ -293,6 +294,13 @@ defmodule Batcher.Batching.Batch do
       transaction? false
       run Batching.Actions.DeleteExpiredBatch
     end
+
+    destroy :destroy do
+      description "Destroy a batch, notifying BatchBuilder, cancelling OpenAI batch if needed, and deleting OpenAI files"
+      primary? true
+      require_atomic? false
+      change Batching.Changes.CleanupOnDestroy
+    end
   end
 
   pub_sub do
@@ -300,6 +308,13 @@ defmodule Batcher.Batching.Batch do
 
     prefix "batches"
     publish :start_upload, ["started_uploading", :id]
+    publish :destroy, ["destroyed", :id]
+
+    publish_all :update, ["state_changed", :id],
+      filter: fn notification ->
+        # Only publish if state attribute changed
+        Ash.Changeset.changing_attribute?(notification.changeset, :state)
+      end
   end
 
   changes do
@@ -308,9 +323,6 @@ defmodule Batcher.Batching.Batch do
             parent_id_field: :batch_id,
             state_attribute: :state},
            where: [changing(:state)]
-
-    change Batching.Changes.PublishStateChange,
-      where: [changing(:state)]
   end
 
   attributes do

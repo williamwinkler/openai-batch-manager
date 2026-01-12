@@ -54,7 +54,6 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     {:ok, Map.merge(%{server: server}, rabbitmq_context)}
   end
 
-
   describe "deliver action" do
     test "successfully delivers webhook with 200 status", %{server: server} do
       webhook_url = TestServer.url(server) <> "/webhook"
@@ -482,9 +481,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     test "handles RabbitMQ not_connected error" do
       # Start fake publisher that returns not_connected error
       {:ok, _pid} =
-        FakePublisher.start_link(
-          responses: %{{"", "test_queue"} => {:error, :not_connected}}
-        )
+        FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :not_connected}})
 
       batch =
         seeded_batch(state: :ready_to_deliver)
@@ -524,9 +521,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     test "handles RabbitMQ timeout error" do
       # Start fake publisher that returns timeout error
       {:ok, _pid} =
-        FakePublisher.start_link(
-          responses: %{{"", "test_queue"} => {:error, :timeout}}
-        )
+        FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :timeout}})
 
       batch =
         seeded_batch(state: :ready_to_deliver)
@@ -566,9 +561,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     test "handles RabbitMQ nack error" do
       # Start fake publisher that returns nack error
       {:ok, _pid} =
-        FakePublisher.start_link(
-          responses: %{{"", "test_queue"} => {:error, :nack}}
-        )
+        FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :nack}})
 
       batch =
         seeded_batch(state: :ready_to_deliver)
@@ -608,9 +601,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     test "handles RabbitMQ other error types" do
       # Start fake publisher that returns unknown error
       {:ok, _pid} =
-        FakePublisher.start_link(
-          responses: %{{"", "test_queue"} => {:error, :unknown_error}}
-        )
+        FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :unknown_error}})
 
       batch =
         seeded_batch(state: :ready_to_deliver)
@@ -1241,7 +1232,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       # Use a non-routable IP that will timeout
       request =
         request
-        |> Ecto.Changeset.change(delivery_config: %{"type" => "webhook", "webhook_url" => "http://192.0.2.1:8080/webhook"})
+        |> Ecto.Changeset.change(
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "http://192.0.2.1:8080/webhook"
+          }
+        )
         |> Batcher.Repo.update!()
 
       {:ok, request_after} =

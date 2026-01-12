@@ -224,7 +224,9 @@ defmodule BatcherWeb.RequestControllerTest do
       assert Map.has_key?(response_body, "errors")
     end
 
-    test "returns 500 for rabbitmq with neither queue nor exchange (Ash validation)", %{conn: conn} do
+    test "returns 500 for rabbitmq with neither queue nor exchange (Ash validation)", %{
+      conn: conn
+    } do
       # Neither queue nor exchange provided
       invalid_body = %{
         "custom_id" => "missing_both",
@@ -313,13 +315,17 @@ defmodule BatcherWeb.RequestControllerTest do
       # Get the BatchBuilder PID
       case Registry.lookup(Batcher.BatchRegistry, {batch.url, batch.model}) do
         [{_pid, _}] ->
-          # Delete the batch while BatchBuilder is still running
-          # This will cause get_batch_by_id to fail in BatchBuilder.handle_call
-          # which will return {:error, error}, triggering the generic error handler
+          # Delete the batch - this will publish a pub_sub event that terminates the BatchBuilder
           Ash.destroy!(batch)
 
-          # Now try to add a request - BatchBuilder should fail to get the batch
-          # and return {:error, error}, which RequestHandler wraps as {:error, {:batch_assignment_error, ...}}
+          # Wait a bit for pub_sub message to be processed
+          Process.sleep(50)
+
+          # Verify BatchBuilder was terminated
+          assert Registry.lookup(Batcher.BatchRegistry, {batch.url, batch.model}) == []
+
+          # Now try to add a request - since BatchBuilder was terminated,
+          # it will create a new BatchBuilder and new batch (correct behavior)
           request_body = %{
             "custom_id" => "error_test_#{:rand.uniform(100_000)}",
             "url" => "/v1/responses",
@@ -334,18 +340,13 @@ defmodule BatcherWeb.RequestControllerTest do
             }
           }
 
-          # Try to add request - BatchBuilder should fail because batch doesn't exist
+          # Try to add request - should succeed and create new batch
           conn2 = post(conn, ~p"/api/requests", request_body)
 
-          # Should return 500 with generic error message
-          assert response(conn2, 500)
+          # Should return 202 (accepted) since new batch was created successfully
+          assert response(conn2, 202)
           body = JSON.decode!(conn2.resp_body)
-          assert body["errors"]
-          error = hd(body["errors"])
-          assert error["code"] == "internal_error"
-          assert error["title"] == "Internal Server Error"
-          # Should not leak internal error details
-          refute String.contains?(error["detail"], "batch_assignment_error")
+          assert body["custom_id"] == request_body["custom_id"]
 
         [] ->
           # No BatchBuilder found - this shouldn't happen but handle it gracefully

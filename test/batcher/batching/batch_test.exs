@@ -625,13 +625,24 @@ defmodule Batcher.Batching.BatchTest do
   end
 
   describe "Batcher.Batching.Batch.cancel" do
-    test "transitions batch to cancelled state" do
+    test "transitions batch to cancelled state", %{server: server} do
+      openai_batch_id = "batch_123"
+
       batch_before =
         seeded_batch(
           state: :openai_processing,
-          openai_batch_id: "batch_123"
+          openai_batch_id: openai_batch_id
         )
         |> generate()
+
+      # Mock successful cancel response
+      cancel_response = %{
+        "id" => openai_batch_id,
+        "status" => "cancelling",
+        "object" => "batch"
+      }
+
+      expect_json_response(server, :post, "/v1/batches/#{openai_batch_id}/cancel", cancel_response, 200)
 
       batch_after =
         batch_before
@@ -647,11 +658,29 @@ defmodule Batcher.Batching.BatchTest do
       assert latest_transition.transitioned_at
     end
 
-    test "can cancel batch from different states" do
+    test "can cancel batch from different states", %{server: server} do
       states = [:building, :uploading, :uploaded, :openai_processing]
 
       for state <- states do
-        batch_before = generate(seeded_batch(state: state))
+        openai_batch_id = if state == :openai_processing, do: "batch_#{state}", else: nil
+
+        batch_before =
+          seeded_batch(
+            state: state,
+            openai_batch_id: openai_batch_id
+          )
+          |> generate()
+
+        # Only mock API call for openai_processing state
+        if state == :openai_processing do
+          cancel_response = %{
+            "id" => openai_batch_id,
+            "status" => "cancelling",
+            "object" => "batch"
+          }
+
+          expect_json_response(server, :post, "/v1/batches/#{openai_batch_id}/cancel", cancel_response, 200)
+        end
 
         batch_after =
           batch_before

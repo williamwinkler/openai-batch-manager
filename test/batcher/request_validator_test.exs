@@ -241,7 +241,8 @@ defmodule Batcher.RequestValidatorTest do
         "custom_id" => "test",
         "url" => "/v1/responses",
         "method" => "POST",
-        "body" => "invalid" # Should be a map
+        # Should be a map
+        "body" => "invalid"
       }
 
       result = RequestValidator.validate(data)

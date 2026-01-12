@@ -402,7 +402,8 @@ defmodule Batcher.Batching.RequestTest do
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :delivery_config and String.contains?(err.message, "webhook_url is required")
+               err.field == :delivery_config and
+                 String.contains?(err.message, "webhook_url is required")
              end)
     end
 
@@ -428,7 +429,8 @@ defmodule Batcher.Batching.RequestTest do
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :delivery_config and String.contains?(err.message, "valid HTTP/HTTPS URL")
+               err.field == :delivery_config and
+                 String.contains?(err.message, "valid HTTP/HTTPS URL")
              end)
     end
 

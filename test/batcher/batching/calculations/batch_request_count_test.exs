@@ -58,10 +58,10 @@ defmodule Batcher.Batching.Calculations.BatchRequestCountTest do
               method: "POST",
               url: batch.url
             },
-          delivery_config: %{
-            "type" => "webhook",
-            "webhook_url" => "https://example.com/webhook"
-          }
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
           })
       end
 
@@ -139,10 +139,10 @@ defmodule Batcher.Batching.Calculations.BatchRequestCountTest do
               method: "POST",
               url: batch1.url
             },
-          delivery_config: %{
-            "type" => "webhook",
-            "webhook_url" => "https://example.com/webhook"
-          }
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
           })
       end
 
@@ -160,10 +160,10 @@ defmodule Batcher.Batching.Calculations.BatchRequestCountTest do
               method: "POST",
               url: batch2.url
             },
-          delivery_config: %{
-            "type" => "webhook",
-            "webhook_url" => "https://example.com/webhook"
-          }
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
           })
       end
 

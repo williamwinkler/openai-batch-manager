@@ -119,10 +119,12 @@ if config_env() == :prod do
         # Auto-generate a secret key base (same method as mix phx.gen.secret)
         generated = Base.encode64(:crypto.strong_rand_bytes(64))
         require Logger
+
         Logger.warning(
           "SECRET_KEY_BASE not set - auto-generated a new one. " <>
             "This will change on each restart. Set SECRET_KEY_BASE explicitly for production."
         )
+
         generated
 
       value ->
