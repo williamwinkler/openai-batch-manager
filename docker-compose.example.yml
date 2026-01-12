@@ -10,8 +10,8 @@ services:
     environment:
       # Required: OpenAI API key
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # Required: Secret key base (generate with: mix phx.gen.secret)
-      - SECRET_KEY_BASE=${SECRET_KEY_BASE:-changeme-in-production}
+      # Optional: Secret key base (auto-generated if not set - fine for localhost use)
+      # - SECRET_KEY_BASE=${SECRET_KEY_BASE}
       # Optional: Override defaults
       - PORT=4000
       - PHX_HOST=localhost

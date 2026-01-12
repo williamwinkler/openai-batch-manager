@@ -110,16 +110,24 @@ if config_env() == :prod do
        ]}
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
-  # A default value is used in config/dev.exs and config/test.exs but you
-  # want to use a different value for prod and you most likely don't want
-  # to check this value into version control, so we use an environment
-  # variable instead.
+  # If not provided, we auto-generate one (fine for localhost use).
+  # For production deployments, you should set SECRET_KEY_BASE explicitly
+  # so it persists across restarts.
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+    case System.get_env("SECRET_KEY_BASE") do
+      nil ->
+        # Auto-generate a secret key base (same method as mix phx.gen.secret)
+        generated = Base.encode64(:crypto.strong_rand_bytes(64))
+        require Logger
+        Logger.warning(
+          "SECRET_KEY_BASE not set - auto-generated a new one. " <>
+            "This will change on each restart. Set SECRET_KEY_BASE explicitly for production."
+        )
+        generated
+
+      value ->
+        value
+    end
 
   host = System.get_env("PHX_HOST") || "example.com"
   port = String.to_integer(System.get_env("PORT") || "4000")

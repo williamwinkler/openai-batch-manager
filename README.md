@@ -15,16 +15,12 @@ docker build -t openai-batch-manager:latest .
 The simplest way to run - just pass your OpenAI API key and mount a data volume:
 
 ```bash
-# Generate a secret key (one-time)
-export SECRET_KEY_BASE=$(mix phx.gen.secret)
-
-# Run the container
+# Run the container (SECRET_KEY_BASE is auto-generated if not provided)
 docker run -d \
   --name openai-batch-manager \
   -p 4000:4000 \
   -v $(pwd)/data:/data \
   -e OPENAI_API_KEY="your-api-key-here" \
-  -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   openai-batch-manager:latest
 ```
 
@@ -53,7 +49,7 @@ docker run -d \
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | ✅ Yes | - | Your OpenAI API key |
-| `SECRET_KEY_BASE` | ✅ Yes | - | Generate with `mix phx.gen.secret` |
+| `SECRET_KEY_BASE` | No | Auto-generated | Secret for signing cookies (auto-generated if not set) |
 | `DATABASE_PATH` | No | `/data/batcher.db` | SQLite database file path |
 | `BATCH_STORAGE_PATH` | No | `/data/batches` | Directory for batch files |
 | `PORT` | No | `4000` | HTTP port to listen on |

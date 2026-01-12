@@ -18,25 +18,19 @@ docker build -t openai-batch-manager:latest .
 ### Minimal Setup (Just API Key + Volume)
 
 ```bash
-# Generate a secret key (one-time, save it somewhere safe)
-# Option 1: If you have Elixir installed
-export SECRET_KEY_BASE=$(mix phx.gen.secret)
-
-# Option 2: Using OpenSSL (if you don't have Elixir)
-export SECRET_KEY_BASE=$(openssl rand -base64 64 | tr -d '\n')
-
 # Create data directory
 mkdir -p ./data
 
-# Run the container
+# Run the container (SECRET_KEY_BASE is auto-generated if not provided)
 docker run -d \
   --name openai-batch-manager \
   -p 4000:4000 \
   -v $(pwd)/data:/data \
   -e OPENAI_API_KEY="sk-your-key-here" \
-  -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   openai-batch-manager:latest
 ```
+
+**Note:** `SECRET_KEY_BASE` is optional and will be auto-generated if not set. This is fine for localhost use, but for production you may want to set it explicitly so it persists across restarts.
 
 ### Using Docker Compose
 
@@ -47,7 +41,7 @@ docker run -d \
 
 2. **Edit `docker-compose.yml`** and set:
    - `OPENAI_API_KEY`: Your OpenAI API key
-   - `SECRET_KEY_BASE`: Generate with `mix phx.gen.secret`
+   - `SECRET_KEY_BASE`: (Optional) Secret for signing cookies - auto-generated if not set
 
 3. **Start the service:**
    ```bash
@@ -94,9 +88,10 @@ All data is stored in the mounted volume at `./data`:
 ### Required
 
 - `OPENAI_API_KEY`: Your OpenAI API key
-- `SECRET_KEY_BASE`: Secret for signing cookies (generate with `mix phx.gen.secret`)
 
 ### Optional (with defaults)
+
+- `SECRET_KEY_BASE`: Secret for signing cookies (auto-generated if not set - fine for localhost use)
 
 - `DATABASE_PATH`: Database file path (default: `/data/batcher.db`)
 - `BATCH_STORAGE_PATH`: Batch files directory (default: `/data/batches`)
