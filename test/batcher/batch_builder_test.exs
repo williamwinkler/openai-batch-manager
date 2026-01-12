@@ -46,7 +46,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
@@ -88,7 +88,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
@@ -114,7 +114,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, _request1} = BatchBuilder.add_request(url, model, request_data1)
@@ -139,7 +139,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request2} = BatchBuilder.add_request(url, model, request_data2)
@@ -163,7 +163,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       # Create first request
@@ -186,7 +186,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test 1", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       request_data2 = %{
@@ -194,7 +194,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test 2", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       # Start two concurrent requests
@@ -224,7 +224,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
@@ -250,7 +250,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       # Add 4 requests (one less than limit)
@@ -302,7 +302,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
@@ -328,7 +328,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
@@ -352,7 +352,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       # Create BatchBuilder
@@ -390,7 +390,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       # Start two concurrent requests to trigger race condition
@@ -425,7 +425,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
@@ -455,7 +455,7 @@ defmodule Batcher.BatchBuilderTest do
         url: url,
         body: %{input: "test", model: model},
         method: "POST",
-        delivery: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)

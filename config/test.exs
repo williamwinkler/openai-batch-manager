@@ -28,7 +28,7 @@ config :batcher, Batcher.Repo,
      [
        """
        PRAGMA journal_mode=WAL;
-       PRAGMA busy_timeout=50000;
+       PRAGMA busy_timeout=5000;
        PRAGMA synchronous=NORMAL;
        PRAGMA cache_size=-64000;
        PRAGMA temp_store=MEMORY;

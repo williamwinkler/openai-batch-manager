@@ -40,14 +40,14 @@ defmodule Batcher.BatchBuilder do
   - `{:error, :batch_full}` - Batch is full, retry will create new batch
   - `{:error, reason}` - Failed to create request
   """
-  def add_request(url, model, request_data) do
+  def add_request(url, model, request_data, retries \\ 5) do
     case Registry.lookup(Batcher.BatchRegistry, {url, model}) do
       [{pid, _}] ->
         try do
           GenServer.call(pid, {:add_request, request_data}, 30_000)
         catch
           # If the BatchBuilder exited between the lookup and the call, retry
-          :exit, _ -> add_request(url, model, request_data)
+          :exit, _ -> add_request(url, model, request_data, retries)
         end
 
       [] ->
@@ -61,9 +61,29 @@ defmodule Batcher.BatchBuilder do
 
           {:error, {:already_started, pid}} ->
             GenServer.call(pid, {:add_request, request_data}, 30_000)
+
+          {:error, reason} ->
+            # Check if this is a transient database error and retry
+            if transient_db_error?(reason) and retries > 0 do
+              Logger.warning("Transient database error starting BatchBuilder, retrying... (#{retries} retries left)")
+              Process.sleep(200)
+              add_request(url, model, request_data, retries - 1)
+            else
+              Logger.error("Failed to start BatchBuilder for url=#{url} model=#{model}: #{inspect(reason)}")
+              {:error, {:batch_builder_start_failed, reason}}
+            end
         end
     end
   end
+
+  # Check if the error is a transient database error (e.g., SQLite database busy)
+  defp transient_db_error?({{:badmatch, {:error, %Ash.Error.Unknown{} = error}}, _stack}) do
+    Enum.any?(error.errors, fn err ->
+      is_binary(Map.get(err, :error)) and String.contains?(err.error, "Database busy")
+    end)
+  end
+
+  defp transient_db_error?(_), do: false
 
   @doc """
   Force upload of the current batch (marks ready for upload).

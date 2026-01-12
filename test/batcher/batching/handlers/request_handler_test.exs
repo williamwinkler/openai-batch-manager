@@ -11,7 +11,11 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
     # Clear any existing BatchBuilders to avoid stale state from previous tests
     # This is needed because GenServers keep references to batches that may have
     # been rolled back by the Ecto sandbox
-    for {url, model} <- [{"/v1/responses", "gpt-4o-mini"}] do
+    for {url, model} <- [
+          {"/v1/responses", "gpt-4o-mini"},
+          {"/v1/chat/completions", "gpt-4"},
+          {"/v1/embeddings", "text-embedding-ada-002"}
+        ] do
       case Registry.lookup(Batcher.BatchRegistry, {url, model}) do
         [{pid, _}] ->
           ref = Process.monitor(pid)
@@ -41,7 +45,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test input"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -90,7 +94,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test input"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -114,7 +118,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "First request"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -138,7 +142,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test input"
         },
-        delivery: %{
+        delivery_config: %{
           type: "rabbitmq",
           rabbitmq_queue: "results_queue"
         }
@@ -160,7 +164,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test input"
         },
-        delivery: %{
+        delivery_config: %{
           type: "rabbitmq",
           rabbitmq_exchange: "batching.results",
           rabbitmq_routing_key: "requests.completed"
@@ -184,7 +188,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test 1"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -198,7 +202,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test 2"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -233,7 +237,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -259,7 +263,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook"
           # Missing webhook_url - will cause validation error that gets wrapped
         }
@@ -285,7 +289,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
             model: "gpt-4o-mini",
             input: "Test #{i}"
           },
-          delivery: %{
+          delivery_config: %{
             type: "webhook",
             webhook_url: "https://example.com/webhook"
           }
@@ -304,7 +308,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -328,6 +332,10 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
         {:error, :batch_full} ->
           # Retry failed again - this is an edge case
           :ok
+
+        {:error, :batch_not_building} ->
+          # Batch state changed between lookups - edge case in concurrent scenarios
+          :ok
       end
     end
 
@@ -341,7 +349,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         },
@@ -366,7 +374,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4o-mini",
           input: "Test"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -388,7 +396,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "gpt-4",
           messages: [%{role: "user", content: "Hello"}]
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
@@ -402,7 +410,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           model: "text-embedding-ada-002",
           input: "Test embedding"
         },
-        delivery: %{
+        delivery_config: %{
           type: "webhook",
           webhook_url: "https://example.com/webhook"
         }
