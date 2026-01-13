@@ -206,6 +206,7 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       accept [:error_msg]
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+      change Batching.Changes.FailBatch
       change transition_state(:failed)
     end
 

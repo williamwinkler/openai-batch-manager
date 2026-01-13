@@ -61,10 +61,41 @@ defmodule Batcher.RabbitMQ.PublisherTest do
 
         on_exit(fn ->
           try do
-            Queue.delete(chan, test_queue)
-            Exchange.delete(chan, test_exchange)
-            Channel.close(chan)
-            Connection.close(conn)
+            # Open a new connection for cleanup in case the original one was closed
+            case Connection.open(rabbitmq_url) do
+              {:ok, cleanup_conn} ->
+                {:ok, cleanup_chan} = Channel.open(cleanup_conn)
+
+                # Delete test queue and exchange
+                try do
+                  Queue.delete(cleanup_chan, test_queue)
+                rescue
+                  _ -> :ok
+                catch
+                  :exit, _ -> :ok
+                end
+
+                try do
+                  Exchange.delete(cleanup_chan, test_exchange)
+                rescue
+                  _ -> :ok
+                catch
+                  :exit, _ -> :ok
+                end
+
+                Channel.close(cleanup_chan)
+                Connection.close(cleanup_conn)
+            end
+
+            # Also try to close original channel/connection if still open
+            try do
+              Channel.close(chan)
+              Connection.close(conn)
+            rescue
+              _ -> :ok
+            catch
+              :exit, _ -> :ok
+            end
           rescue
             _ -> :ok
           catch
@@ -290,6 +321,32 @@ defmodule Batcher.RabbitMQ.PublisherTest do
       new_queue = "new_queue_#{System.unique_integer([:positive])}"
       payload = %{message: "test"}
 
+      # Register cleanup for the queue we're about to create
+      on_exit(fn ->
+        try do
+          # Open a new connection for cleanup in case the original one was closed
+          case Connection.open(rabbitmq_url) do
+            {:ok, cleanup_conn} ->
+              {:ok, cleanup_chan} = Channel.open(cleanup_conn)
+
+              try do
+                Queue.delete(cleanup_chan, new_queue)
+              rescue
+                _ -> :ok
+              catch
+                :exit, _ -> :ok
+              end
+
+              Channel.close(cleanup_chan)
+              Connection.close(cleanup_conn)
+          end
+        rescue
+          _ -> :ok
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
       # First attempt - queue doesn't exist
       assert {:error, :queue_not_found} = Publisher.publish("", new_queue, payload)
 
@@ -299,9 +356,6 @@ defmodule Batcher.RabbitMQ.PublisherTest do
       # Clear cache and retry
       Publisher.clear_destination_cache("", new_queue)
       assert :ok = Publisher.publish("", new_queue, payload)
-
-      # Cleanup
-      Queue.delete(chan, new_queue)
     end
 
     test "clear_all_cache clears all destinations", context do

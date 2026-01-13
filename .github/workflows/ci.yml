@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+
+    env:
+      MIX_ENV: test
+      RABBITMQ_URL: amqp://guest:guest@localhost:5672
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18.2"
+          otp-version: "27.3.3"
+          version-type: strict
+
+      - name: Restore cached dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps/
+          key: deps-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Restore cached build artifacts
+        uses: actions/cache@v4
+        with:
+          path: _build/test/
+          key: build-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}-
+            build-${{ runner.os }}-
+
+      - name: Compile code
+        run: mix compile --warnings-as-errors
+
+      - name: Setup test database
+        run: mix ash.setup --quiet
+
+      - name: Run tests
+        run: mix test --include rabbitmq

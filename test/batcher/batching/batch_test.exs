@@ -514,6 +514,114 @@ defmodule Batcher.Batching.BatchTest do
       assert latest_transition.to == :failed
       assert latest_transition.transitioned_at
     end
+
+    test "marks all requests as failed when batch fails in openai_processing state" do
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: "batch_123"
+        )
+        |> generate()
+
+      # Create requests in different states that can be marked as failed
+      states = [:pending, :openai_processing, :openai_processed]
+
+      requests =
+        Enum.map(states, fn state ->
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: state
+          )
+          |> generate()
+        end)
+
+      # Mark batch as failed
+      error_msg = "Batch processing failed"
+
+      batch_after =
+        batch
+        |> Ash.Changeset.for_update(:failed, %{error_msg: error_msg})
+        |> Ash.update!()
+
+      assert batch_after.state == :failed
+
+      # Reload all requests and verify they are marked as failed
+      for req <- requests do
+        req_after = Ash.get!(Batcher.Batching.Request, req.id)
+        assert req_after.state == :failed
+        assert req_after.error_msg == "Batch failed"
+      end
+    end
+
+    test "does not mark requests as failed when batch fails but not in openai_processing state" do
+      batch =
+        seeded_batch(
+          state: :uploading,
+          openai_batch_id: nil
+        )
+        |> generate()
+
+      reqs =
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :pending
+        )
+        |> generate_many(2)
+
+      # Mark batch as failed (but it's not in openai_processing state)
+      error_msg = "Batch processing failed"
+
+      batch_after =
+        batch
+        |> Ash.Changeset.for_update(:failed, %{error_msg: error_msg})
+        |> Ash.update!()
+
+      assert batch_after.state == :failed
+
+      # Requests should remain in pending state (not marked as failed)
+      for req <- reqs do
+        req_after = Ash.get!(Batcher.Batching.Request, req.id)
+        assert req_after.state == :pending
+        assert req_after.error_msg == nil
+      end
+    end
+
+    test "does not mark requests as failed when batch fails without openai_batch_id" do
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: nil
+        )
+        |> generate()
+
+      req =
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :pending
+        )
+        |> generate()
+
+      # Mark batch as failed (but it has no openai_batch_id)
+      error_msg = "Batch processing failed"
+
+      batch_after =
+        batch
+        |> Ash.Changeset.for_update(:failed, %{error_msg: error_msg})
+        |> Ash.update!()
+
+      assert batch_after.state == :failed
+
+      # Request should remain in pending state (not marked as failed)
+      req_after = Ash.get!(Batcher.Batching.Request, req.id)
+      assert req_after.state == :pending
+      assert req_after.error_msg == nil
+    end
   end
 
   describe "Batcher.Batching.Batch.openai_processing_completed" do
@@ -642,7 +750,13 @@ defmodule Batcher.Batching.BatchTest do
         "object" => "batch"
       }
 
-      expect_json_response(server, :post, "/v1/batches/#{openai_batch_id}/cancel", cancel_response, 200)
+      expect_json_response(
+        server,
+        :post,
+        "/v1/batches/#{openai_batch_id}/cancel",
+        cancel_response,
+        200
+      )
 
       batch_after =
         batch_before
@@ -679,7 +793,13 @@ defmodule Batcher.Batching.BatchTest do
             "object" => "batch"
           }
 
-          expect_json_response(server, :post, "/v1/batches/#{openai_batch_id}/cancel", cancel_response, 200)
+          expect_json_response(
+            server,
+            :post,
+            "/v1/batches/#{openai_batch_id}/cancel",
+            cancel_response,
+            200
+          )
         end
 
         batch_after =
