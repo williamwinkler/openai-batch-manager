@@ -842,6 +842,14 @@ defmodule Batcher.Batching.BatchTest do
 
       expect_json_response(server, :post, "/v1/batches", new_batch_response, 200)
 
+      # Reload batch from database to ensure we have the correct state
+      # This is important because seeded_batch bypasses actions and the struct
+      # might not reflect the actual database state
+      batch = Ash.get!(Batching.Batch, batch.id)
+
+      # Verify the batch is in the expected state before transitioning
+      assert batch.state == :openai_processing
+
       {:ok, batch_after} =
         batch
         |> Ash.Changeset.for_update(:mark_expired, %{})
