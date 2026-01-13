@@ -178,7 +178,10 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
              "Expected transition from :expired to :openai_processing, got transitions: #{inspect(transitions)}"
 
       # Verify the expired transition happened before the resumed transition
-      assert DateTime.compare(expired_transition.transitioned_at, resumed_transition.transitioned_at) != :gt
+      assert DateTime.compare(
+               expired_transition.transitioned_at,
+               resumed_transition.transitioned_at
+             ) != :gt
     end
 
     test "updates last_checked_at without state change when status is pending", %{server: server} do
