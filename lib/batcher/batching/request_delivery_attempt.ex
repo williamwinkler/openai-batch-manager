@@ -2,7 +2,8 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Batching,
-    data_layer: AshSqlite.DataLayer
+    data_layer: AshSqlite.DataLayer,
+    notifiers: [Ash.Notifier.PubSub]
 
   alias Batcher.Batching
 
@@ -28,6 +29,27 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
       validate Batching.Validations.DeliveryConfig
       primary? true
     end
+
+    read :list_paginated do
+      description "List delivery attempts with pagination support"
+      argument :request_id, :integer, allow_nil?: false
+      argument :skip, :integer, allow_nil?: false, default: 0
+      argument :limit, :integer, allow_nil?: false, default: 25
+      filter expr(request_id == ^arg(:request_id))
+
+      prepare fn query, _ ->
+        Ash.Query.sort(query, attempted_at: :desc)
+      end
+
+      pagination offset?: true, countable: true
+    end
+  end
+
+  pub_sub do
+    module BatcherWeb.Endpoint
+
+    prefix "request_delivery_attempts"
+    publish :create, ["created", :request_id]
   end
 
   attributes do

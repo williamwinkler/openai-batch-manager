@@ -24,7 +24,9 @@ defmodule BatcherWeb.Router do
   scope "/", BatcherWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", BatchIndexLive, :index
+    live "/batches/:id", BatchShowLive, :show
+    live "/requests/:id", RequestShowLive, :show
   end
 
   # OpenApiSpex-based API

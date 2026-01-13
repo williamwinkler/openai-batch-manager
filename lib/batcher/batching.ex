@@ -10,6 +10,9 @@ defmodule Batcher.Batching do
       define :start_batch_upload, action: :start_upload
       define :read_batch_by_id, action: :read, get_by: :id
       define :list_batches, action: :read
+      define :list_batches_paginated,
+        action: :list_paginated,
+        args: [:skip, :limit, :query, :sort_by]
       define :cancel_batch, action: :cancel
       define :destroy_batch, action: :destroy
     end
@@ -22,12 +25,16 @@ defmodule Batcher.Batching do
         args: [:batch_id, :custom_id]
 
       define :list_requests_in_batch, action: :list_requests_in_batch, args: [:batch_id]
+      define :list_requests_paginated, action: :list_paginated, args: [:batch_id, :skip, :limit]
 
       define :deliver_request, action: :deliver
     end
 
     # Transition resources (internal only)
     resource Batcher.Batching.BatchTransition
-    resource Batcher.Batching.RequestDeliveryAttempt
+    
+    resource Batcher.Batching.RequestDeliveryAttempt do
+      define :list_delivery_attempts_paginated, action: :list_paginated, args: [:request_id, :skip, :limit]
+    end
   end
 end

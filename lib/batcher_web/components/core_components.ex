@@ -60,19 +60,18 @@ defmodule BatcherWeb.CoreComponents do
       {@rest}
     >
       <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
-        @kind == :info && "alert-info",
-        @kind == :error && "alert-error"
+        "alert shadow-lg border max-w-sm",
+        @kind == :info && "bg-base-200 border-base-300 text-base-content",
+        @kind == :error && "bg-error/10 border-error/20 text-error"
       ]}>
-        <.icon :if={@kind == :info} name="hero-information-circle" class="size-5 shrink-0" />
+        <.icon :if={@kind == :info} name="hero-check-circle" class="size-5 shrink-0 text-success" />
         <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-5 shrink-0" />
-        <div>
+        <div class="flex-1 text-sm">
           <p :if={@title} class="font-semibold">{@title}</p>
           <p>{msg}</p>
         </div>
-        <div class="flex-1" />
-        <button type="button" class="group self-start cursor-pointer" aria-label={gettext("close")}>
-          <.icon name="hero-x-mark" class="size-5 opacity-40 group-hover:opacity-70" />
+        <button type="button" class="btn btn-ghost btn-xs" aria-label={gettext("close")}>
+          <.icon name="hero-x-mark" class="size-4" />
         </button>
       </div>
     </div>
@@ -334,26 +333,28 @@ defmodule BatcherWeb.CoreComponents do
       end
 
     ~H"""
-    <table class="table table-zebra">
+    <table class="table w-full">
       <thead>
-        <tr>
-          <th :for={col <- @col}>{col[:label]}</th>
-          <th :if={@action != []}>
+        <tr class="border-b border-base-300">
+          <th :for={col <- @col} class="text-left font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4">
+            {col[:label]}
+          </th>
+          <th :if={@action != []} class="text-right py-3 px-4">
             <span class="sr-only">{gettext("Actions")}</span>
           </th>
         </tr>
       </thead>
       <tbody id={@id} phx-update={is_struct(@rows, Phoenix.LiveView.LiveStream) && "stream"}>
-        <tr :for={row <- @rows} id={@row_id && @row_id.(row)}>
+        <tr :for={row <- @rows} id={@row_id && @row_id.(row)} class="border-b border-base-300/50 hover:bg-base-200/50">
           <td
             :for={col <- @col}
             phx-click={@row_click && @row_click.(row)}
-            class={@row_click && "hover:cursor-pointer"}
+            class={["py-3 px-4", @row_click && "hover:cursor-pointer"]}
           >
             {render_slot(col, @row_item.(row))}
           </td>
-          <td :if={@action != []} class="w-0 font-semibold">
-            <div class="flex gap-4">
+          <td :if={@action != []} class="py-3 px-4 text-right">
+            <div class="flex justify-end gap-2">
               <%= for action <- @action do %>
                 {render_slot(action, @row_item.(row))}
               <% end %>
@@ -468,5 +469,181 @@ defmodule BatcherWeb.CoreComponents do
   """
   def translate_errors(errors, field) when is_list(errors) do
     for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
+  end
+
+  @doc """
+  Renders a status badge matching OpenAI platform style.
+
+  ## Examples
+
+      <.status_badge status={:done} />
+      <.status_badge status={:failed} />
+  """
+  attr :status, :atom, required: true, doc: "the status to display"
+
+  def status_badge(assigns) do
+    {bg_class, text_class, dot_class} =
+      case assigns.status do
+        # Terminal/success states - green
+        :done -> {"bg-success/15", "text-success", "bg-success"}
+        :delivered -> {"bg-success/15", "text-success", "bg-success"}
+        :openai_completed -> {"bg-success/15", "text-success", "bg-success"}
+        :ready_to_deliver -> {"bg-success/15", "text-success", "bg-success"}
+        :openai_processed -> {"bg-success/15", "text-success", "bg-success"}
+
+        # Error states - red
+        :failed -> {"bg-error/15", "text-error", "bg-error"}
+        :delivery_failed -> {"bg-error/15", "text-error", "bg-error"}
+
+        # Warning states - orange/yellow
+        :cancelled -> {"bg-warning/15", "text-warning", "bg-warning"}
+        :expired -> {"bg-warning/15", "text-warning", "bg-warning"}
+
+        # In progress states - blue
+        :uploading -> {"bg-info/15", "text-info", "bg-info"}
+        :uploaded -> {"bg-info/15", "text-info", "bg-info"}
+        :openai_processing -> {"bg-info/15", "text-info", "bg-info"}
+        :downloading -> {"bg-info/15", "text-info", "bg-info"}
+        :downloaded -> {"bg-info/15", "text-info", "bg-info"}
+        :delivering -> {"bg-info/15", "text-info", "bg-info"}
+
+        # Default/pending states - neutral gray
+        _ -> {"bg-base-300", "text-base-content/70", "bg-base-content/50"}
+      end
+
+    status_label =
+      assigns.status
+      |> to_string()
+      |> String.replace("_", " ")
+
+    assigns =
+      assigns
+      |> assign(:bg_class, bg_class)
+      |> assign(:text_class, text_class)
+      |> assign(:dot_class, dot_class)
+      |> assign(:status_label, status_label)
+
+    ~H"""
+    <span class={["inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium", @bg_class, @text_class]}>
+      <span class={["w-1.5 h-1.5 rounded-full", @dot_class]}></span>
+      {@status_label}
+    </span>
+    """
+  end
+
+  @doc """
+  Renders pagination controls.
+
+  ## Examples
+
+      <.pagination_controls
+        page={@page}
+        per_page={@per_page}
+        total_count={@total_count}
+        phx_click="paginate"
+      />
+  """
+  attr :page, :integer, required: true
+  attr :per_page, :integer, required: true
+  attr :total_count, :integer, required: true
+  attr :phx_click, :string, default: "paginate"
+  attr :query_text, :string, default: ""
+  attr :sort_by, :string, default: "-created_at"
+
+  def pagination_controls(assigns) do
+    total_pages = ceil(assigns.total_count / assigns.per_page)
+    has_prev = assigns.page > 1
+    has_next = assigns.page < total_pages
+
+    assigns = assign(assigns, :total_pages, total_pages)
+    assigns = assign(assigns, :has_prev, has_prev)
+    assigns = assign(assigns, :has_next, has_next)
+
+    ~H"""
+    <div class="flex items-center justify-between pt-4">
+      <div class="text-sm text-base-content/50">
+        {(@page - 1) * @per_page + 1}-{min(@page * @per_page, @total_count)} of {@total_count}
+      </div>
+      <div class="flex items-center gap-1">
+        <button
+          :if={@has_prev}
+          phx-click={@phx_click}
+          phx-value-page={@page - 1}
+          class="btn btn-sm btn-ghost text-base-content/70"
+        >
+          <.icon name="hero-chevron-left" class="w-4 h-4" />
+        </button>
+        <span class="px-3 text-sm text-base-content/60">
+          {@page} / {@total_pages}
+        </span>
+        <button
+          :if={@has_next}
+          phx-click={@phx_click}
+          phx-value-page={@page + 1}
+          class="btn btn-sm btn-ghost text-base-content/70"
+        >
+          <.icon name="hero-chevron-right" class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
+  Displays delivery configuration in a formatted way.
+
+  ## Examples
+
+      <.delivery_config_display config={@request.delivery_config} />
+  """
+  attr :config, :map, required: true
+
+  def delivery_config_display(assigns) do
+    delivery_type = Map.get(assigns.config, "type") || Map.get(assigns.config, :type)
+
+    assigns = assign(assigns, :delivery_type, delivery_type)
+
+    ~H"""
+    <div class="text-xs">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-base-300/50 text-base-content/70 font-medium">
+        <%= if @delivery_type == "webhook" do %>
+          <.icon name="hero-globe-alt" class="w-3 h-3" />
+          webhook
+        <% else %>
+          <.icon name="hero-arrow-path" class="w-3 h-3" />
+          rabbitmq
+        <% end %>
+      </span>
+    </div>
+    """
+  end
+
+  @doc """
+  Renders breadcrumb navigation.
+
+  ## Examples
+
+      <.breadcrumb items={[{"Batches", "/"}, {"Batch 123", "/batches/123"}]} />
+  """
+  attr :items, :list, required: true, doc: "list of {label, path} tuples"
+
+  def breadcrumb(assigns) do
+    ~H"""
+    <nav class="flex items-center gap-1.5 text-sm mb-6">
+      <%= for {item, index} <- Enum.with_index(@items) do %>
+        <%= if index > 0 do %>
+          <.icon name="hero-chevron-right" class="w-3.5 h-3.5 text-base-content/30" />
+        <% end %>
+        <% {label, path} = item %>
+        <%= if index == length(@items) - 1 do %>
+          <span class="text-base-content/60">{label}</span>
+        <% else %>
+          <.link navigate={path} class="text-base-content/60 hover:text-base-content">
+            {label}
+          </.link>
+        <% end %>
+      <% end %>
+    </nav>
+    """
   end
 end

@@ -3,7 +3,8 @@ defmodule Batcher.Batching.Request do
     otp_app: :batcher,
     domain: Batcher.Batching,
     data_layer: AshSqlite.DataLayer,
-    extensions: [AshStateMachine, AshOban]
+    extensions: [AshStateMachine, AshOban],
+    notifiers: [Ash.Notifier.PubSub]
 
   alias Batcher.Batching
 
@@ -92,6 +93,20 @@ defmodule Batcher.Batching.Request do
       filter expr(batch_id == ^arg(:batch_id))
     end
 
+    read :list_paginated do
+      description "List requests with pagination support"
+      argument :batch_id, :integer, allow_nil?: false
+      argument :skip, :integer, allow_nil?: false, default: 0
+      argument :limit, :integer, allow_nil?: false, default: 25
+      filter expr(batch_id == ^arg(:batch_id))
+
+      prepare fn query, _ ->
+        Ash.Query.sort(query, created_at: :desc)
+      end
+
+      pagination offset?: true, countable: true
+    end
+
     update :begin_processing do
       description "Mark the request as being processed by OpenAI"
       change transition_state(:openai_processing)
@@ -155,6 +170,18 @@ defmodule Batcher.Batching.Request do
       # Note: Delivery attempt creation is handled via Batching.Changes.CreateDeliveryAttempt
       # which is attached to :complete_delivery and :mark_delivery_failed actions
     end
+  end
+
+  pub_sub do
+    module BatcherWeb.Endpoint
+
+    prefix "requests"
+    publish :create, ["created", :id]
+    publish_all :create, ["created"]
+    publish_all :update, ["state_changed", :id],
+      filter: fn notification ->
+        Ash.Changeset.changing_attribute?(notification.changeset, :state)
+      end
   end
 
   attributes do

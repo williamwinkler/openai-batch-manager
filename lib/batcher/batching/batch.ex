@@ -166,6 +166,52 @@ defmodule Batcher.Batching.Batch do
       get? true
     end
 
+    read :list_paginated do
+      description "List batches with pagination support"
+      argument :skip, :integer, allow_nil?: false, default: 0
+      argument :limit, :integer, allow_nil?: false, default: 25
+      argument :query, :string, allow_nil?: true, default: ""
+      argument :sort_by, :string, allow_nil?: true, default: "-created_at"
+
+      prepare fn query, _context ->
+        # Apply search filter if query argument is provided
+        query =
+          case Ash.Query.get_argument(query, :query) do
+            {:ok, search_text} when is_binary(search_text) ->
+              search_text = String.trim(search_text)
+
+              if search_text != "" do
+                search_pattern = "%#{search_text}%"
+
+                Ash.Query.filter(
+                  query,
+                  expr(
+                    fragment("lower(?) LIKE lower(?)", model, ^search_pattern) or
+                      fragment("lower(?) LIKE lower(?)", url, ^search_pattern)
+                  )
+                )
+              else
+                query
+              end
+
+            _ ->
+              query
+          end
+
+        # Apply sorting
+        sort_by =
+          case Ash.Query.get_argument(query, :sort_by) do
+            {:ok, value} when is_binary(value) -> value
+            _ -> "-created_at"
+          end
+
+        query = apply_sorting(query, sort_by)
+        query
+      end
+
+      pagination offset?: true, countable: true
+    end
+
     update :start_upload do
       description "Start upload process for the batch"
       require_atomic? false
@@ -308,6 +354,8 @@ defmodule Batcher.Batching.Batch do
     module BatcherWeb.Endpoint
 
     prefix "batches"
+    publish :create, ["created", :id]
+    publish_all :create, ["created"]
     publish :start_upload, ["started_uploading", :id]
     publish :destroy, ["destroyed", :id]
 
@@ -403,4 +451,30 @@ defmodule Batcher.Batching.Batch do
               :integer,
               Batcher.Batching.Calculations.BatchRequestsTerminal
   end
+
+
+  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
+  defp apply_sorting(query, sort_by) when is_binary(sort_by) do
+    case parse_sort_by(sort_by) do
+      {field, direction} ->
+        Ash.Query.sort(query, [{field, direction}])
+
+      _ ->
+        Ash.Query.sort(query, created_at: :desc)
+    end
+  end
+
+  defp parse_sort_by("-created_at"), do: {:created_at, :desc}
+  defp parse_sort_by("created_at"), do: {:created_at, :asc}
+  defp parse_sort_by("-updated_at"), do: {:updated_at, :desc}
+  defp parse_sort_by("updated_at"), do: {:updated_at, :asc}
+  defp parse_sort_by("-state"), do: {:state, :desc}
+  defp parse_sort_by("state"), do: {:state, :asc}
+  defp parse_sort_by("-request_count"), do: {:request_count, :desc}
+  defp parse_sort_by("request_count"), do: {:request_count, :asc}
+  defp parse_sort_by("-model"), do: {:model, :desc}
+  defp parse_sort_by("model"), do: {:model, :asc}
+  defp parse_sort_by("-url"), do: {:url, :desc}
+  defp parse_sort_by("url"), do: {:url, :asc}
+  defp parse_sort_by(_), do: {:created_at, :desc}
 end
