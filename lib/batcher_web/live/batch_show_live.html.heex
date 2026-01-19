@@ -1,4 +1,4 @@
-<Layouts.app flash={@flash} current_path={@current_path} current_scope={@current_scope}>
+<Layouts.app flash={@flash}>
   <div class="space-y-6">
     <.breadcrumb items={[{"Batches", "/"}, {"Batch #{@batch.id}", ~p"/batches/#{@batch.id}"}]} />
 
@@ -37,7 +37,9 @@
 
           <div class="flex gap-2 pt-2">
             <button
-              :if={@batch.state != :cancelled and @batch.state != :done and @batch.state != :failed}
+              :if={
+                @batch.state != :cancelled and @batch.state != :done and @batch.state != :failed
+              }
               phx-click="cancel_batch"
               class="btn btn-sm btn-ghost text-warning"
               data-confirm="Are you sure you want to cancel this batch?"
@@ -103,7 +105,9 @@
       <%!-- Sidebar --%>
       <div class="w-full lg:w-72 space-y-4">
         <div class="border border-base-300/50 rounded-lg p-4 space-y-4">
-          <div class="text-sm font-medium text-base-content/50 uppercase tracking-wider">OpenAI</div>
+          <div class="text-sm font-medium text-base-content/50 uppercase tracking-wider">
+            OpenAI
+          </div>
           <div class="space-y-3 text-sm">
             <div>
               <div class="text-base-content/50">Batch ID</div>
@@ -111,17 +115,23 @@
             </div>
             <div>
               <div class="text-base-content/50">Input file</div>
-              <div class="font-mono text-xs break-all text-base-content/70">{@batch.openai_input_file_id || "—"}</div>
+              <div class="font-mono text-xs break-all text-base-content/70">
+                {@batch.openai_input_file_id || "—"}
+              </div>
             </div>
             <div>
               <div class="text-base-content/50">Output file</div>
-              <div class="font-mono text-xs break-all text-base-content/70">{@batch.openai_output_file_id || "—"}</div>
+              <div class="font-mono text-xs break-all text-base-content/70">
+                {@batch.openai_output_file_id || "—"}
+              </div>
             </div>
           </div>
         </div>
 
         <div class="border border-base-300/50 rounded-lg p-4 space-y-4">
-          <div class="text-sm font-medium text-base-content/50 uppercase tracking-wider">Token usage</div>
+          <div class="text-sm font-medium text-base-content/50 uppercase tracking-wider">
+            Token usage
+          </div>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span class="text-base-content/60">Input</span>
@@ -137,7 +147,9 @@
             </div>
             <div class="flex justify-between pt-2 border-t border-base-300/50 font-medium">
               <span>Total</span>
-              <span class="font-mono">{(@batch.input_tokens || 0) + (@batch.output_tokens || 0)}</span>
+              <span class="font-mono">
+                {(@batch.input_tokens || 0) + (@batch.output_tokens || 0)}
+              </span>
             </div>
           </div>
         </div>

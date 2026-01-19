@@ -1,0 +1,212 @@
+<Layouts.app flash={@flash}>
+  <div class="flex flex-col h-full overflow-y-auto pr-2 space-y-6">
+    <!-- Header -->
+    <div class="shrink-0">
+      <h1 class="text-2xl font-bold">Dashboard</h1>
+      <p class="text-sm text-base-content/60 mt-1">Real-time overview of your batch processing</p>
+    </div>
+    
+<!-- Summary Stats Row -->
+    <div class="stats stats-vertical lg:stats-horizontal shadow w-full bg-base-100">
+      <div class="stat">
+        <div class="stat-figure text-primary">
+          <.icon name="hero-rectangle-stack" class="w-8 h-8" />
+        </div>
+        <div class="stat-title">Total Batches</div>
+        <div class="stat-value text-primary">{@total_batches}</div>
+        <div class="stat-desc">All time</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-figure text-secondary">
+          <.icon name="hero-document-text" class="w-8 h-8" />
+        </div>
+        <div class="stat-title">Total Requests</div>
+        <div class="stat-value text-secondary">{@total_requests}</div>
+        <div class="stat-desc">Across all batches</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-figure text-warning">
+          <.icon name="hero-arrow-path" class="w-8 h-8" />
+        </div>
+        <div class="stat-title">Active</div>
+        <div class="stat-value text-warning">{@active_batches}</div>
+        <div class="stat-desc">Currently processing</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-figure text-success">
+          <.icon name="hero-check-circle" class="w-8 h-8" />
+        </div>
+        <div class="stat-title">Completed</div>
+        <div class="stat-value text-success">{@completed_batches}</div>
+        <div class="stat-desc">Successfully delivered</div>
+      </div>
+    </div>
+    
+<!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Batch Status Pie Chart -->
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-base">
+            <.icon name="hero-chart-pie" class="w-5 h-5" /> Batch Status Distribution
+          </h2>
+          <%= if @total_batches == 0 do %>
+            <div class="flex flex-col items-center justify-center py-12 text-base-content/40">
+              <.icon name="hero-chart-pie" class="w-16 h-16 mb-3 opacity-50" />
+              <p class="text-sm">No batches yet</p>
+            </div>
+          <% else %>
+            <div class="flex items-center gap-8 pt-4">
+              <div class="flex-shrink-0">
+                <.pie_chart segments={@batch_chart_segments} size={180} />
+              </div>
+              <div class="flex-1 space-y-2">
+                <%= for {label, count, color} <- @batch_chart_legend do %>
+                  <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                      <span class={"w-3 h-3 rounded-full #{color}"}></span>
+                      <span>{label}</span>
+                    </div>
+                    <span class="font-mono font-medium">{count}</span>
+                  </div>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+      
+<!-- Delivery Methods Pie Chart -->
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-base">
+            <.icon name="hero-paper-airplane" class="w-5 h-5" /> Delivery Methods
+          </h2>
+          <%= if @delivery_stats.total == 0 do %>
+            <div class="flex flex-col items-center justify-center py-12 text-base-content/40">
+              <.icon name="hero-inbox" class="w-16 h-16 mb-3 opacity-50" />
+              <p class="text-sm">No requests yet</p>
+            </div>
+          <% else %>
+            <div class="flex items-center gap-8 pt-4">
+              <div class="flex-shrink-0">
+                <.pie_chart segments={@delivery_chart_segments} size={180} />
+              </div>
+              <div class="flex-1 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-primary"></span>
+                    <.icon name="hero-globe-alt" class="w-4 h-4 text-base-content/60" />
+                    <span>Webhook</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-mono font-bold">{@delivery_stats.webhook}</span>
+                    <span class="text-xs text-base-content/60 ml-1">
+                      ({Float.round(percentage(@delivery_stats.webhook, @delivery_stats.total), 0)
+                      |> trunc}%)
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-secondary"></span>
+                    <.icon name="hero-queue-list" class="w-4 h-4 text-base-content/60" />
+                    <span>RabbitMQ</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-mono font-bold">{@delivery_stats.rabbitmq}</span>
+                    <span class="text-xs text-base-content/60 ml-1">
+                      ({Float.round(
+                        percentage(@delivery_stats.rabbitmq, @delivery_stats.total),
+                        0
+                      )
+                      |> trunc}%)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    
+<!-- Bottom Row: Models and Endpoints -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Models in Use -->
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-base">
+            <.icon name="hero-cpu-chip" class="w-5 h-5" /> Models in Use
+          </h2>
+          <%= if @model_stats == [] do %>
+            <div class="flex flex-col items-center justify-center py-8 text-base-content/40">
+              <.icon name="hero-cube-transparent" class="w-12 h-12 mb-2 opacity-50" />
+              <p class="text-sm">No models in use yet</p>
+            </div>
+          <% else %>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th class="text-right">Batches</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <%= for {model, count} <- @model_stats do %>
+                    <tr>
+                      <td class="font-mono text-sm">{model}</td>
+                      <td class="text-right">
+                        <span class="badge badge-primary badge-sm">{count}</span>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% end %>
+        </div>
+      </div>
+      
+<!-- Endpoints in Use -->
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-base">
+            <.icon name="hero-link" class="w-5 h-5" /> Endpoints in Use
+          </h2>
+          <%= if @endpoint_stats == [] do %>
+            <div class="flex flex-col items-center justify-center py-8 text-base-content/40">
+              <.icon name="hero-globe-alt" class="w-12 h-12 mb-2 opacity-50" />
+              <p class="text-sm">No endpoints in use yet</p>
+            </div>
+          <% else %>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Endpoint</th>
+                    <th class="text-right">Batches</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <%= for {endpoint, count} <- @endpoint_stats do %>
+                    <tr>
+                      <td class="font-mono text-sm text-base-content/70">{endpoint}</td>
+                      <td class="text-right">
+                        <span class="badge badge-secondary badge-sm">{count}</span>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layouts.app>

@@ -1,12 +1,10 @@
-<Layouts.app flash={@flash} current_path={@current_path} current_scope={@current_scope}>
+<Layouts.app flash={@flash}>
   <div class="space-y-6">
-    <.breadcrumb
-      items={[
-        {"Batches", "/"},
-        {"Batch #{@request.batch_id}", ~p"/batches/#{@request.batch_id}"},
-        {@request.custom_id, ~p"/requests/#{@request.id}"}
-      ]}
-    />
+    <.breadcrumb items={[
+      {"Batches", "/"},
+      {"Batch #{@request.batch_id}", ~p"/batches/#{@request.batch_id}"},
+      {@request.custom_id, ~p"/requests/#{@request.id}"}
+    ]} />
 
     <div class="flex flex-col lg:flex-row gap-6">
       <%!-- Main content --%>
@@ -21,7 +19,10 @@
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <div class="text-base-content/50 mb-1">Batch</div>
-              <.link navigate={~p"/batches/#{@request.batch_id}"} class="text-primary hover:underline">
+              <.link
+                navigate={~p"/batches/#{@request.batch_id}"}
+                class="text-primary hover:underline"
+              >
                 Batch {@request.batch_id}
               </.link>
             </div>
@@ -102,7 +103,10 @@
             <span class="font-medium">Request payload</span>
           </div>
           <div class="p-4">
-            <pre class="text-xs font-mono leading-relaxed overflow-x-auto max-h-[70vh] whitespace-pre-wrap break-all" phx-no-curly-interpolation>{Jason.encode!(@request.request_payload, pretty: true)}</pre>
+            <pre
+              class="text-xs font-mono leading-relaxed overflow-x-auto max-h-[70vh] whitespace-pre-wrap break-all"
+              phx-no-curly-interpolation
+            >{Jason.encode!(@request.request_payload, pretty: true)}</pre>
           </div>
         </div>
       </div>

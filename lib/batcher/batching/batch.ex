@@ -166,50 +166,28 @@ defmodule Batcher.Batching.Batch do
       get? true
     end
 
-    read :list_paginated do
-      description "List batches with pagination support"
-      argument :skip, :integer, allow_nil?: false, default: 0
-      argument :limit, :integer, allow_nil?: false, default: 25
-      argument :query, :string, allow_nil?: true, default: ""
-      argument :sort_by, :string, allow_nil?: true, default: "-created_at"
+    read :search do
+      description "Search for batches by model and url"
 
-      prepare fn query, _context ->
-        # Apply search filter if query argument is provided
-        query =
-          case Ash.Query.get_argument(query, :query) do
-            {:ok, search_text} when is_binary(search_text) ->
-              search_text = String.trim(search_text)
-
-              if search_text != "" do
-                search_pattern = "%#{search_text}%"
-
-                Ash.Query.filter(
-                  query,
-                  expr(
-                    fragment("lower(?) LIKE lower(?)", model, ^search_pattern) or
-                      fragment("lower(?) LIKE lower(?)", url, ^search_pattern)
-                  )
-                )
-              else
-                query
-              end
-
-            _ ->
-              query
-          end
-
-        # Apply sorting
-        sort_by =
-          case Ash.Query.get_argument(query, :sort_by) do
-            {:ok, value} when is_binary(value) -> value
-            _ -> "-created_at"
-          end
-
-        query = apply_sorting(query, sort_by)
-        query
+      argument :query, :ci_string do
+        description "Filter batches by model and url"
+        constraints allow_empty?: true
+        default ""
       end
 
-      pagination offset?: true, countable: true
+      argument :sort_input, :string do
+        description "Sort field with optional - prefix for descending"
+        default "-created_at"
+      end
+
+      filter expr(contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
+
+      prepare fn query, _context ->
+        sort_input = Ash.Query.get_argument(query, :sort_input)
+        apply_sorting(query, sort_input)
+      end
+
+      pagination offset?: true, default_limit: 12, countable: true
     end
 
     update :start_upload do
@@ -381,6 +359,7 @@ defmodule Batcher.Batching.Batch do
       description "Current state of the batch"
       allow_nil? false
       default :building
+      public? true
     end
 
     attribute :openai_input_file_id, :string do
@@ -428,8 +407,8 @@ defmodule Batcher.Batching.Batch do
       description "The datetime of when the batch will expire and be deleted"
     end
 
-    create_timestamp :created_at
-    update_timestamp :updated_at
+    create_timestamp :created_at, public?: true
+    update_timestamp :updated_at, public?: true
   end
 
   relationships do
@@ -452,8 +431,8 @@ defmodule Batcher.Batching.Batch do
               Batcher.Batching.Calculations.BatchRequestsTerminal
   end
 
-
   defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
+
   defp apply_sorting(query, sort_by) when is_binary(sort_by) do
     case parse_sort_by(sort_by) do
       {field, direction} ->

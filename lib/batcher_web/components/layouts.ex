@@ -26,11 +26,6 @@ defmodule BatcherWeb.Layouts do
 
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
-  attr :current_path, :string, default: "/", doc: "current path for active navigation"
-
-  attr :current_scope, :map,
-    default: nil,
-    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
   slot :inner_block, required: true
 
@@ -49,9 +44,18 @@ defmodule BatcherWeb.Layouts do
           <div class="space-y-0.5">
             <.sidebar_link
               href="/"
-              active={@current_path == "/"}
+              icon="hero-chart-bar-square"
+              label="Dashboard"
+            />
+            <.sidebar_link
+              href="/batches"
               icon="hero-queue-list"
               label="Batches"
+            />
+            <.sidebar_link
+              href="/requests"
+              icon="hero-document-text"
+              label="Requests"
             />
           </div>
         </nav>
@@ -59,13 +63,11 @@ defmodule BatcherWeb.Layouts do
           <.theme_toggle />
         </div>
       </aside>
-
-      <!-- Main Content -->
+      
+    <!-- Main Content -->
       <div class="flex-1 flex flex-col overflow-hidden">
-        <main class="flex-1 overflow-y-auto">
-          <div class="p-6 max-w-7xl">
-            {render_slot(@inner_block)}
-          </div>
+        <main class="flex-1 flex flex-col overflow-hidden p-6">
+          {render_slot(@inner_block)}
         </main>
       </div>
     </div>
@@ -75,7 +77,6 @@ defmodule BatcherWeb.Layouts do
   end
 
   attr :href, :string, required: true
-  attr :active, :boolean, default: false
   attr :icon, :string, required: true
   attr :label, :string, required: true
 
@@ -83,13 +84,7 @@ defmodule BatcherWeb.Layouts do
     ~H"""
     <.link
       navigate={@href}
-      class={[
-        "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-        if(@active,
-          do: "bg-base-300 text-base-content font-medium",
-          else: "text-base-content/60 hover:bg-base-300/50 hover:text-base-content"
-        )
-      ]}
+      class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-base-content/60 hover:bg-base-300/50 hover:text-base-content"
     >
       <.icon name={@icon} class="w-4 h-4" />
       <span>{@label}</span>

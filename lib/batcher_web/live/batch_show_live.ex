@@ -18,11 +18,6 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.get_batch_by_id(batch_id) do
       {:ok, batch} ->
-        socket =
-          socket
-          |> assign(:current_path, ~p"/batches/#{batch_id}")
-          |> assign(:current_scope, nil)
-
         {:ok, load_batch_data(socket, batch, 1)}
 
       {:error, _} ->
@@ -37,7 +32,6 @@ defmodule BatcherWeb.BatchShowLive do
   def handle_params(params, _url, socket) do
     page = String.to_integer(params["page"] || "1")
     batch = socket.assigns.batch
-    socket = assign(socket, :current_path, ~p"/batches/#{batch.id}")
     {:noreply, load_requests(socket, batch.id, page)}
   end
 
@@ -81,7 +75,10 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
-  def handle_info(%{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}}, socket) do
+  def handle_info(
+        %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}},
+        socket
+      ) do
     {:noreply, assign(socket, :batch, batch)}
   end
 

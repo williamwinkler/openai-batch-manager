@@ -18,11 +18,6 @@ defmodule BatcherWeb.RequestShowLive do
       {:ok, request} ->
         request = Ash.load!(request, :batch)
 
-        socket =
-          socket
-          |> assign(:current_path, ~p"/requests/#{request_id}")
-          |> assign(:current_scope, nil)
-
         {:ok, load_request_data(socket, request, 1)}
 
       {:error, _} ->
@@ -37,7 +32,6 @@ defmodule BatcherWeb.RequestShowLive do
   def handle_params(params, _url, socket) do
     page = String.to_integer(params["page"] || "1")
     request = socket.assigns.request
-    socket = assign(socket, :current_path, ~p"/requests/#{request.id}")
     {:noreply, load_delivery_attempts(socket, request.id, page)}
   end
 

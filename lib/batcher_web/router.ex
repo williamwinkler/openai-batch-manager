@@ -24,8 +24,10 @@ defmodule BatcherWeb.Router do
   scope "/", BatcherWeb do
     pipe_through :browser
 
-    live "/", BatchIndexLive, :index
+    live "/", DashboardLive, :index
+    live "/batches", BatchIndexLive, :index
     live "/batches/:id", BatchShowLive, :show
+    live "/requests", RequestIndexLive, :index
     live "/requests/:id", RequestShowLive, :show
   end
 

@@ -336,7 +336,10 @@ defmodule BatcherWeb.CoreComponents do
     <table class="table w-full">
       <thead>
         <tr class="border-b border-base-300">
-          <th :for={col <- @col} class="text-left font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4">
+          <th
+            :for={col <- @col}
+            class="text-left font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4"
+          >
             {col[:label]}
           </th>
           <th :if={@action != []} class="text-right py-3 px-4">
@@ -345,7 +348,11 @@ defmodule BatcherWeb.CoreComponents do
         </tr>
       </thead>
       <tbody id={@id} phx-update={is_struct(@rows, Phoenix.LiveView.LiveStream) && "stream"}>
-        <tr :for={row <- @rows} id={@row_id && @row_id.(row)} class="border-b border-base-300/50 hover:bg-base-200/50">
+        <tr
+          :for={row <- @rows}
+          id={@row_id && @row_id.(row)}
+          class="border-b border-base-300/50 hover:bg-base-200/50"
+        >
           <td
             :for={col <- @col}
             phx-click={@row_click && @row_click.(row)}
@@ -490,15 +497,12 @@ defmodule BatcherWeb.CoreComponents do
         :openai_completed -> {"bg-success/15", "text-success", "bg-success"}
         :ready_to_deliver -> {"bg-success/15", "text-success", "bg-success"}
         :openai_processed -> {"bg-success/15", "text-success", "bg-success"}
-
         # Error states - red
         :failed -> {"bg-error/15", "text-error", "bg-error"}
         :delivery_failed -> {"bg-error/15", "text-error", "bg-error"}
-
         # Warning states - orange/yellow
         :cancelled -> {"bg-warning/15", "text-warning", "bg-warning"}
         :expired -> {"bg-warning/15", "text-warning", "bg-warning"}
-
         # In progress states - blue
         :uploading -> {"bg-info/15", "text-info", "bg-info"}
         :uploaded -> {"bg-info/15", "text-info", "bg-info"}
@@ -506,7 +510,6 @@ defmodule BatcherWeb.CoreComponents do
         :downloading -> {"bg-info/15", "text-info", "bg-info"}
         :downloaded -> {"bg-info/15", "text-info", "bg-info"}
         :delivering -> {"bg-info/15", "text-info", "bg-info"}
-
         # Default/pending states - neutral gray
         _ -> {"bg-base-300", "text-base-content/70", "bg-base-content/50"}
       end
@@ -524,7 +527,11 @@ defmodule BatcherWeb.CoreComponents do
       |> assign(:status_label, status_label)
 
     ~H"""
-    <span class={["inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium", @bg_class, @text_class]}>
+    <span class={[
+      "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium",
+      @bg_class,
+      @text_class
+    ]}>
       <span class={["w-1.5 h-1.5 rounded-full", @dot_class]}></span>
       {@status_label}
     </span>
@@ -607,11 +614,9 @@ defmodule BatcherWeb.CoreComponents do
     <div class="text-xs">
       <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-base-300/50 text-base-content/70 font-medium">
         <%= if @delivery_type == "webhook" do %>
-          <.icon name="hero-globe-alt" class="w-3 h-3" />
-          webhook
+          <.icon name="hero-globe-alt" class="w-3 h-3" /> webhook
         <% else %>
-          <.icon name="hero-arrow-path" class="w-3 h-3" />
-          rabbitmq
+          <.icon name="hero-arrow-path" class="w-3 h-3" /> rabbitmq
         <% end %>
       </span>
     </div>

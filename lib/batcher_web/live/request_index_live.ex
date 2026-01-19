@@ -1,18 +1,18 @@
-defmodule BatcherWeb.BatchIndexLive do
+defmodule BatcherWeb.RequestIndexLive do
   use BatcherWeb, :live_view
 
   alias Batcher.Batching
 
   @impl true
   def mount(_params, _session, socket) do
-    # Subscribe to batch creation events
+    # Subscribe to request creation events
     if connected?(socket) do
-      BatcherWeb.Endpoint.subscribe("batches:created")
+      BatcherWeb.Endpoint.subscribe("requests:created")
     end
 
     socket =
       socket
-      |> assign(:page_title, "Batches")
+      |> assign(:page_title, "Requests")
 
     {:ok, socket}
   end
@@ -23,16 +23,15 @@ defmodule BatcherWeb.BatchIndexLive do
     sort_by = Map.get(params, "sort_by") |> validate_sort_by()
 
     page =
-      Batching.search_batches!(query_text,
+      Batching.search_requests!(query_text,
         page: AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 15),
         query: [sort_input: sort_by]
       )
 
-    # Subscribe to state changes for batches on current page
+    # Subscribe to state changes for requests on current page
     if connected?(socket) do
-      Enum.each(page.results, fn batch ->
-        BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
-        BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch.id}")
+      Enum.each(page.results, fn request ->
+        BatcherWeb.Endpoint.subscribe("requests:state_changed:#{request.id}")
       end)
     end
 
@@ -54,7 +53,7 @@ defmodule BatcherWeb.BatchIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/batches?#{params}")}
+    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
   end
 
   @impl true
@@ -69,102 +68,21 @@ defmodule BatcherWeb.BatchIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/batches?#{params}")}
+    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
   end
 
   @impl true
-  def handle_event("upload_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        if batch.state == :building do
-          case Batcher.BatchBuilder.upload_batch(batch.url, batch.model) do
-            :ok ->
-              {:noreply, put_flash(socket, :info, "Batch upload initiated successfully")}
-
-            {:error, reason} ->
-              error_msg =
-                case reason do
-                  :noproc -> "BatchBuilder not found. The batch may have already been uploaded."
-                  other -> "Failed to upload batch: #{inspect(other)}"
-                end
-
-              {:noreply, put_flash(socket, :error, error_msg)}
-          end
-        else
-          {:noreply, put_flash(socket, :error, "Batch is not in building state")}
-        end
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
-    end
-  end
-
-  @impl true
-  def handle_event("cancel_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        case Batching.cancel_batch(batch) do
-          {:ok, _} ->
-            {:noreply, put_flash(socket, :info, "Batch cancelled successfully")}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Failed to cancel batch")}
-        end
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
-    end
-  end
-
-  @impl true
-  def handle_event("delete_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        case Batching.destroy_batch(batch) do
-          {:ok, _} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Batch deleted successfully")
-             |> reload_page()}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Failed to delete batch")}
-        end
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
-    end
+  def handle_info(%{topic: "requests:created", payload: %{data: _request}}, socket) do
+    # Reload requests to include the new one (respects current filters/sort)
+    {:noreply, reload_page(socket)}
   end
 
   @impl true
   def handle_info(
-        %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: _batch}},
+        %{topic: "requests:state_changed:" <> _request_id, payload: %{data: _request}},
         socket
       ) do
     # Reload the page to reflect state changes
-    {:noreply, reload_page(socket)}
-  end
-
-  @impl true
-  def handle_info(%{topic: "batches:created", payload: %{data: _batch}}, socket) do
-    # Reload batches to include the new one (respects current filters/sort)
-    {:noreply, reload_page(socket)}
-  end
-
-  @impl true
-  def handle_info(%{topic: "batches:created:" <> _batch_id, payload: %{data: _batch}}, socket) do
-    # Also handle individual batch creation events
-    {:noreply, reload_page(socket)}
-  end
-
-  @impl true
-  def handle_info(%{topic: "batches:destroyed:" <> _batch_id, payload: %{data: _batch}}, socket) do
     {:noreply, reload_page(socket)}
   end
 
@@ -178,7 +96,7 @@ defmodule BatcherWeb.BatchIndexLive do
     sort_by = socket.assigns[:sort_by] || "-created_at"
 
     page =
-      Batching.search_batches!(query_text,
+      Batching.search_requests!(query_text,
         page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit],
         query: [sort_input: sort_by]
       )
@@ -190,12 +108,16 @@ defmodule BatcherWeb.BatchIndexLive do
     [
       {"Newest first", "-created_at"},
       {"Oldest first", "created_at"},
+      {"Recently updated", "-updated_at"},
+      {"Least recently updated", "updated_at"},
       {"State (A-Z)", "state"},
       {"State (Z-A)", "-state"},
+      {"Custom ID (A-Z)", "custom_id"},
+      {"Custom ID (Z-A)", "-custom_id"},
       {"Model (A-Z)", "model"},
       {"Model (Z-A)", "-model"},
-      {"Endpoint (A-Z)", "url"},
-      {"Endpoint (Z-A)", "-url"}
+      {"Batch ID (High)", "-batch_id"},
+      {"Batch ID (Low)", "batch_id"}
     ]
   end
 
@@ -205,7 +127,7 @@ defmodule BatcherWeb.BatchIndexLive do
     if key in valid_keys do
       key
     else
-      List.first(valid_keys)
+      "-created_at"
     end
   end
 
@@ -236,13 +158,13 @@ defmodule BatcherWeb.BatchIndexLive do
     <div class="flex items-center justify-center gap-4 py-3 px-4 bg-base-200/50 border-t border-base-300/50 shrink-0">
       <div class="join">
         <.link
-          patch={~p"/batches?#{query_string(@page, @query_text, @sort_by, "prev")}"}
+          patch={~p"/requests?#{query_string(@page, @query_text, @sort_by, "prev")}"}
           class={["join-item btn btn-sm", !AshPhoenix.LiveView.prev_page?(@page) && "btn-disabled"]}
         >
           <.icon name="hero-chevron-left" class="w-4 h-4" /> Previous
         </.link>
         <.link
-          patch={~p"/batches?#{query_string(@page, @query_text, @sort_by, "next")}"}
+          patch={~p"/requests?#{query_string(@page, @query_text, @sort_by, "next")}"}
           class={["join-item btn btn-sm", !AshPhoenix.LiveView.next_page?(@page) && "btn-disabled"]}
         >
           Next <.icon name="hero-chevron-right" class="w-4 h-4" />
@@ -264,7 +186,7 @@ defmodule BatcherWeb.BatchIndexLive do
         name="sort_by"
         options={@options}
         value={@selected}
-        class="!w-auto !min-w-[180px] text-sm"
+        class="!w-auto !min-w-[200px] text-sm"
       />
     </form>
     """
@@ -283,7 +205,7 @@ defmodule BatcherWeb.BatchIndexLive do
         name="query"
         id="search-query"
         value={@query}
-        placeholder="Search model or endpoint..."
+        placeholder="Search custom ID or model..."
         class="!pl-10 !w-64 text-sm"
       />
     </form>

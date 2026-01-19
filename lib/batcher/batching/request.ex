@@ -107,6 +107,30 @@ defmodule Batcher.Batching.Request do
       pagination offset?: true, countable: true
     end
 
+    read :search do
+      description "Search for requests by custom_id or model"
+
+      argument :query, :ci_string do
+        description "Filter requests by custom_id or model"
+        constraints allow_empty?: true
+        default ""
+      end
+
+      argument :sort_input, :string do
+        description "Sort field with optional - prefix for descending"
+        default "-created_at"
+      end
+
+      filter expr(contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)))
+
+      prepare fn query, _context ->
+        sort_input = Ash.Query.get_argument(query, :sort_input)
+        apply_sorting(query, sort_input)
+      end
+
+      pagination offset?: true, default_limit: 15, countable: true
+    end
+
     update :begin_processing do
       description "Mark the request as being processed by OpenAI"
       change transition_state(:openai_processing)
@@ -178,6 +202,7 @@ defmodule Batcher.Batching.Request do
     prefix "requests"
     publish :create, ["created", :id]
     publish_all :create, ["created"]
+
     publish_all :update, ["state_changed", :id],
       filter: fn notification ->
         Ash.Changeset.changing_attribute?(notification.changeset, :state)
@@ -242,8 +267,8 @@ defmodule Batcher.Batching.Request do
       description "Error message if processing or delivery failed"
     end
 
-    create_timestamp :created_at
-    update_timestamp :updated_at
+    create_timestamp :created_at, public?: true
+    update_timestamp :updated_at, public?: true
   end
 
   relationships do
@@ -264,4 +289,30 @@ defmodule Batcher.Batching.Request do
               :integer,
               Batcher.Batching.Calculations.RequestDeliveryAttemptCount
   end
+
+  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
+
+  defp apply_sorting(query, sort_by) when is_binary(sort_by) do
+    case parse_sort_by(sort_by) do
+      {field, direction} ->
+        Ash.Query.sort(query, [{field, direction}])
+
+      _ ->
+        Ash.Query.sort(query, created_at: :desc)
+    end
+  end
+
+  defp parse_sort_by("-created_at"), do: {:created_at, :desc}
+  defp parse_sort_by("created_at"), do: {:created_at, :asc}
+  defp parse_sort_by("-updated_at"), do: {:updated_at, :desc}
+  defp parse_sort_by("updated_at"), do: {:updated_at, :asc}
+  defp parse_sort_by("-state"), do: {:state, :desc}
+  defp parse_sort_by("state"), do: {:state, :asc}
+  defp parse_sort_by("-custom_id"), do: {:custom_id, :desc}
+  defp parse_sort_by("custom_id"), do: {:custom_id, :asc}
+  defp parse_sort_by("-model"), do: {:model, :desc}
+  defp parse_sort_by("model"), do: {:model, :asc}
+  defp parse_sort_by("-batch_id"), do: {:batch_id, :desc}
+  defp parse_sort_by("batch_id"), do: {:batch_id, :asc}
+  defp parse_sort_by(_), do: {:created_at, :desc}
 end
