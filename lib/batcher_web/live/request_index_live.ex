@@ -2,6 +2,7 @@ defmodule BatcherWeb.RequestIndexLive do
   use BatcherWeb, :live_view
 
   alias Batcher.Batching
+  alias Batcher.Utils.Format
 
   @impl true
   def mount(_params, _session, socket) do
@@ -24,7 +25,7 @@ defmodule BatcherWeb.RequestIndexLive do
 
     page =
       Batching.search_requests!(query_text,
-        page: AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 15),
+        page: AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 25),
         query: [sort_input: sort_by]
       )
 
@@ -179,34 +180,33 @@ defmodule BatcherWeb.RequestIndexLive do
 
     ~H"""
     <form phx-change="change-sort" class="flex items-center gap-2">
-      <label for="sort_by" class="text-sm text-base-content/70">Sort by:</label>
-      <.input
-        type="select"
+      <label for="sort_by" class="text-sm text-base-content/70 whitespace-nowrap">Sort by:</label>
+      <select
         id="sort_by"
         name="sort_by"
-        options={@options}
-        value={@selected}
-        class="!w-auto !min-w-[200px] text-sm"
-      />
+        class="select select-bordered w-auto min-w-[180px] text-sm bg-base-200 border-base-300"
+      >
+        {Phoenix.HTML.Form.options_for_select(@options, @selected)}
+      </select>
     </form>
     """
   end
 
   defp search_box(assigns) do
     ~H"""
-    <form class="relative" phx-change="search" phx-submit="search">
+    <form class="relative flex items-center" phx-change="search" phx-submit="search">
       <.icon
         name="hero-magnifying-glass"
-        class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50"
+        class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none z-10"
       />
       <label for="search-query" class="hidden">Search</label>
-      <.input
+      <input
         type="text"
         name="query"
         id="search-query"
         value={@query}
         placeholder="Search custom ID or model..."
-        class="!pl-10 !w-64 text-sm"
+        class="input pl-10 w-64 text-sm bg-base-200 border-base-300"
       />
     </form>
     """

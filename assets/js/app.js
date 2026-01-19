@@ -25,11 +25,68 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/batcher"
 import topbar from "../vendor/topbar"
 
+// Theme toggle hook
+const ThemeToggle = {
+  mounted() {
+    this.updateActiveButton()
+    // Listen for theme changes
+    window.addEventListener("phx:set-theme", () => {
+      setTimeout(() => this.updateActiveButton(), 10)
+    })
+    // Listen for storage changes (e.g., from another tab)
+    window.addEventListener("storage", (e) => {
+      if (e.key === "phx:theme") {
+        setTimeout(() => this.updateActiveButton(), 10)
+      }
+    })
+  },
+
+  updated() {
+    this.updateActiveButton()
+  },
+
+  updateActiveButton() {
+    const buttons = this.el.querySelectorAll(".theme-btn")
+    const hasDataTheme = document.documentElement.hasAttribute("data-theme")
+    const storedTheme = localStorage.getItem("phx:theme")
+    const currentTheme = hasDataTheme ? document.documentElement.getAttribute("data-theme") :
+                        (storedTheme || "system")
+
+    buttons.forEach(btn => {
+      const themeValue = btn.dataset.themeValue
+      const isSystem = !hasDataTheme && !storedTheme
+      const isActive = (themeValue === "system" && isSystem) ||
+                      (themeValue !== "system" && themeValue === currentTheme)
+
+      if (isActive) {
+        btn.classList.add("bg-primary", "text-primary-content")
+        btn.classList.remove("hover:bg-base-200")
+        const icon = btn.querySelector("span")
+        if (icon) {
+          icon.classList.remove("text-base-content/60")
+          icon.classList.add("text-primary-content")
+        }
+      } else {
+        btn.classList.remove("bg-primary", "text-primary-content")
+        btn.classList.add("hover:bg-base-200")
+        const icon = btn.querySelector("span")
+        if (icon) {
+          icon.classList.add("text-base-content/60")
+          icon.classList.remove("text-primary-content")
+        }
+      }
+    })
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {
+    ...colocatedHooks,
+    ThemeToggle
+  },
 })
 
 // Show progress bar on live navigation and form submits
@@ -80,4 +137,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-

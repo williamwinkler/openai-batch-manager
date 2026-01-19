@@ -121,7 +121,7 @@ defmodule Batcher.Batching.Request do
         default "-created_at"
       end
 
-      filter expr(contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)))
+      filter expr(contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
 
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)

@@ -24,11 +24,13 @@ defmodule BatcherWeb.Router do
   scope "/", BatcherWeb do
     pipe_through :browser
 
-    live "/", DashboardLive, :index
-    live "/batches", BatchIndexLive, :index
-    live "/batches/:id", BatchShowLive, :show
-    live "/requests", RequestIndexLive, :index
-    live "/requests/:id", RequestShowLive, :show
+    live_session :default, on_mount: [{BatcherWeb.NavHooks, :default}] do
+      live "/", DashboardLive, :index
+      live "/batches", BatchIndexLive, :index
+      live "/batches/:id", BatchShowLive, :show
+      live "/requests", RequestIndexLive, :index
+      live "/requests/:id", RequestShowLive, :show
+    end
   end
 
   # OpenApiSpex-based API

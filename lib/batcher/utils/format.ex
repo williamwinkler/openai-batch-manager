@@ -42,4 +42,57 @@ defmodule Batcher.Utils.Format do
         "#{byte_count} bytes"
     end
   end
+
+  @doc """
+  Formats a datetime as a relative time string (e.g., "10s ago", "1h ago", "2d ago").
+
+  ## Examples
+
+      iex> Format.time_ago(DateTime.add(DateTime.utc_now(), -30, :second))
+      "30s ago"
+
+      iex> Format.time_ago(DateTime.add(DateTime.utc_now(), -90, :minute))
+      "1h ago"
+
+      iex> Format.time_ago(DateTime.add(DateTime.utc_now(), -2, :day))
+      "2d ago"
+  """
+  def time_ago(datetime) when is_nil(datetime), do: "—"
+
+  def time_ago(datetime) do
+    now = DateTime.utc_now()
+    diff = DateTime.diff(now, datetime, :second)
+
+    cond do
+      diff < 0 ->
+        "in the future"
+
+      diff < 60 ->
+        "#{diff}s ago"
+
+      diff < 3600 ->
+        minutes = div(diff, 60)
+        "#{minutes}m ago"
+
+      diff < 86400 ->
+        hours = div(diff, 3600)
+        "#{hours}h ago"
+
+      diff < 604800 ->
+        days = div(diff, 86400)
+        "#{days}d ago"
+
+      diff < 2592000 ->
+        weeks = div(diff, 604800)
+        "#{weeks}w ago"
+
+      diff < 31536000 ->
+        months = div(diff, 2592000)
+        "#{months}mo ago"
+
+      true ->
+        years = div(diff, 31536000)
+        "#{years}y ago"
+    end
+  end
 end

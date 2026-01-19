@@ -1,15 +1,17 @@
-<Layouts.app flash={@flash}>
+<Layouts.app flash={@flash} current_path={@current_path}>
   <div class="flex flex-col h-full">
     <!-- Header - fixed height -->
     <div class="flex items-center justify-between pb-4 shrink-0">
       <h1 class="text-xl font-semibold">Batches</h1>
-      <div class="flex items-center gap-3">
-        <.sort_changer selected={@sort_by} />
+      <div class="flex-1 flex justify-center">
         <.search_box query={@query_text} />
       </div>
+      <div class="flex items-center gap-3">
+        <.sort_changer selected={@sort_by} />
+      </div>
     </div>
-    
-<!-- Table container - takes remaining space -->
+
+    <!-- Table container - takes remaining space -->
     <div class="flex-1 flex flex-col min-h-0">
       <div class="flex-1 min-h-0 border border-base-300/50 rounded-lg overflow-hidden">
         <%= if @page.results==[] do %>
@@ -19,73 +21,64 @@
               <div class="text-base-content/50">No batches found</div>
             </div>
           </div>
-        <% else %>
-          <!-- Scrollable table area -->
-          <div class="h-full overflow-y-auto">
-            <.table id="batches" rows={@page.results}>
-              <:col :let={batch} label="ID">
-                <.link
-                  navigate={~p"/batches/#{batch.id}"}
-                  class="font-mono text-sm text-primary hover:underline"
-                >
-                  {batch.id}
-                </.link>
-              </:col>
-              <:col :let={batch} label="Model">
-                <span class="font-mono text-xs">{batch.model}</span>
-              </:col>
-              <:col :let={batch} label="Endpoint">
-                <span class="font-mono text-xs text-base-content/60">{batch.url}</span>
-              </:col>
-              <:col :let={batch} label="Requests">
-                {batch.request_count || 0}
-              </:col>
-              <:col :let={batch} label="Status">
-                <.status_badge status={batch.state} />
-              </:col>
-              <:col :let={batch} label="Created">
-                <span class="text-sm text-base-content/50">
-                  {Calendar.strftime(batch.created_at, "%d/%m/%Y, %H:%M")}
-                </span>
-              </:col>
-              <:action :let={batch}>
-                <div class="flex items-center gap-2">
-                  <button
-                    :if={batch.state == :building and batch.request_count > 0}
-                    phx-click="upload_batch"
-                    phx-value-id={batch.id}
-                    class="btn btn-sm btn-primary"
-                  >
-                    <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
-                  </button>
-                  <button
-                    :if={batch.state not in [:done, :failed, :cancelled]}
-                    phx-click="cancel_batch"
-                    phx-value-id={batch.id}
-                    class="btn btn-sm btn-ghost hover:btn-warning"
-                    data-confirm="Cancel this batch?"
-                    title="Cancel batch"
-                  >
-                    <.icon name="hero-x-circle" class="w-4 h-4" />
-                  </button>
-                  <button
-                    :if={batch.state in [:done, :failed, :cancelled]}
-                    phx-click="delete_batch"
-                    phx-value-id={batch.id}
-                    class="btn btn-sm btn-ghost hover:btn-error"
-                    data-confirm="Delete this batch?"
-                    title="Delete batch"
-                  >
-                    <.icon name="hero-trash" class="w-4 h-4" />
-                  </button>
-                </div>
-              </:action>
-            </.table>
-          </div>
-        <% end %>
+          <% else %>
+            <!-- Scrollable table area -->
+            <div class="h-full overflow-y-auto">
+              <.table id="batches" rows={@page.results}>
+                <:col :let={batch} label="ID" width="w-20">
+                  <.link navigate={~p"/batches/#{batch.id}"} class="font-mono text-sm text-primary hover:underline">
+                    {batch.id}
+                  </.link>
+                </:col>
+                <:col :let={batch} label="Model" width="w-48">
+                  <span class="font-mono text-xs truncate block">{batch.model}</span>
+                </:col>
+                <:col :let={batch} label="Endpoint" width="w-64">
+                  <span class="font-mono text-xs truncate block">{batch.url}</span>
+                </:col>
+                <:col :let={batch} label="Requests" width="w-24">
+                  {batch.request_count || 0}
+                </:col>
+                <:col :let={batch} label="Status" width="w-32">
+                  <.status_badge status={batch.state} />
+                </:col>
+                <:col :let={batch} label="Created" width="w-40">
+                  <span class="text-sm text-base-content/50"
+                    title={Calendar.strftime(batch.created_at, "%d/%m/%Y, %H:%M" )}>
+                    {Format.time_ago(batch.created_at)}
+                  </span>
+                </:col>
+                <:action :let={batch}>
+                  <div class="flex items-center justify-end gap-1.5">
+                    <button :if={batch.state==:building and batch.request_count> 0}
+                      phx-click="upload_batch"
+                      phx-value-id={batch.id}
+                      class="btn btn-sm btn-primary"
+                      >
+                      <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
+                    </button>
+                    <div class="tooltip tooltip-left flex items-center" data-tip="Cancel batch">
+                      <button :if={batch.state not in [:done, :failed, :cancelled]} phx-click="cancel_batch"
+                        phx-value-id={batch.id} class="btn btn-sm btn-ghost hover:btn-warning"
+                        data-confirm="Cancel this batch?">
+                        <.icon name="hero-x-circle" class="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div class="tooltip tooltip-left flex items-center" data-tip="Delete batch">
+                      <button :if={batch.state in [:done, :failed, :cancelled]} phx-click="delete_batch"
+                        phx-value-id={batch.id} class="btn btn-sm btn-ghost hover:btn-error"
+                        data-confirm="Delete this batch?">
+                        <.icon name="hero-trash" class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </:action>
+              </.table>
+            </div>
+            <% end %>
       </div>
-      
-<!-- Pagination - always at bottom -->
+
+      <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
         <.pagination_links page={@page} query_text={@query_text} sort_by={@sort_by} />
       </div>

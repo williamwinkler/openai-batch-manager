@@ -322,6 +322,7 @@ defmodule BatcherWeb.CoreComponents do
 
   slot :col, required: true do
     attr :label, :string
+    attr :width, :string, doc: "Tailwind width class for the column (e.g., 'w-32')"
   end
 
   slot :action, doc: "the slot for showing user actions in the last table column"
@@ -333,16 +334,19 @@ defmodule BatcherWeb.CoreComponents do
       end
 
     ~H"""
-    <table class="table w-full">
+    <table class="table w-full table-fixed">
       <thead>
         <tr class="border-b border-base-300">
           <th
             :for={col <- @col}
-            class="text-left font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4"
+            class={[
+              "text-left font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4",
+              col[:width]
+            ]}
           >
             {col[:label]}
           </th>
-          <th :if={@action != []} class="text-right py-3 px-4">
+          <th :if={@action != []} class="text-right py-3 px-4 w-28">
             <span class="sr-only">{gettext("Actions")}</span>
           </th>
         </tr>
@@ -360,8 +364,8 @@ defmodule BatcherWeb.CoreComponents do
           >
             {render_slot(col, @row_item.(row))}
           </td>
-          <td :if={@action != []} class="py-3 px-4 text-right">
-            <div class="flex justify-end gap-2">
+          <td :if={@action != []} class="py-3 px-2 text-right">
+            <div class="flex justify-end items-center">
               <%= for action <- @action do %>
                 {render_slot(action, @row_item.(row))}
               <% end %>

@@ -26,47 +26,50 @@ defmodule BatcherWeb.Layouts do
 
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
+  attr :current_path, :string, default: nil, doc: "the current request path for nav highlighting"
 
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <div class="flex h-screen bg-base-100">
-      <!-- Sidebar -->
-      <aside class="w-56 bg-base-200 border-r border-base-300/50 flex flex-col">
-        <div class="h-14 px-4 flex items-center border-b border-base-300/50">
-          <a href="/" class="flex items-center gap-2.5">
-            <img src={~p"/images/logo.svg"} width="28" class="opacity-90" />
-            <span class="text-sm font-semibold tracking-tight">Batch Manager</span>
-          </a>
-        </div>
-        <nav class="flex-1 overflow-y-auto p-3">
-          <div class="space-y-0.5">
-            <.sidebar_link
-              href="/"
-              icon="hero-chart-bar-square"
-              label="Dashboard"
-            />
-            <.sidebar_link
-              href="/batches"
-              icon="hero-queue-list"
-              label="Batches"
-            />
-            <.sidebar_link
-              href="/requests"
-              icon="hero-document-text"
-              label="Requests"
-            />
+    <div class="flex flex-col h-screen bg-base-100">
+      <!-- Top Navbar -->
+      <header class="bg-base-200 border-b border-base-300/50">
+        <div class="flex items-center justify-between h-16 px-6">
+          <div class="flex items-center gap-8">
+            <a href="/" class="flex items-center gap-2.5">
+              <span class="text-lg font-semibold tracking-tight">OpenAI Batch Manager</span>
+            </a>
+            <nav class="flex items-center gap-1">
+              <.nav_link
+                href="/"
+                icon="hero-chart-bar-square"
+                label="Dashboard"
+                active={@current_path == "/"}
+              />
+              <.nav_link
+                href="/batches"
+                icon="hero-rectangle-stack"
+                label="Batches"
+                active={@current_path && String.starts_with?(@current_path, "/batches")}
+              />
+              <.nav_link
+                href="/requests"
+                icon="hero-chat-bubble-bottom-center-text"
+                label="Requests"
+                active={@current_path && String.starts_with?(@current_path, "/requests")}
+              />
+            </nav>
           </div>
-        </nav>
-        <div class="p-3 border-t border-base-300/50">
-          <.theme_toggle />
+          <div class="flex items-center">
+            <.theme_toggle />
+          </div>
         </div>
-      </aside>
-      
+      </header>
+
     <!-- Main Content -->
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <main class="flex-1 flex flex-col overflow-hidden p-6">
+      <div class="flex-1 overflow-hidden">
+        <main class="h-full overflow-auto p-6">
           {render_slot(@inner_block)}
         </main>
       </div>
@@ -79,14 +82,19 @@ defmodule BatcherWeb.Layouts do
   attr :href, :string, required: true
   attr :icon, :string, required: true
   attr :label, :string, required: true
+  attr :active, :boolean, default: false
 
-  defp sidebar_link(assigns) do
+  defp nav_link(assigns) do
     ~H"""
     <.link
       navigate={@href}
-      class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-base-content/60 hover:bg-base-300/50 hover:text-base-content"
+      class={[
+        "flex items-center gap-2 px-3 py-2 rounded-md transition-colors",
+        @active && "bg-primary/10 text-primary font-medium",
+        !@active && "text-base-content/60 hover:bg-base-300/50 hover:text-base-content"
+      ]}
     >
-      <.icon name={@icon} class="w-4 h-4" />
+      <.icon name={@icon} class="w-5 h-5" />
       <span>{@label}</span>
     </.link>
     """
@@ -144,27 +152,34 @@ defmodule BatcherWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="flex items-center gap-1 p-1 bg-base-300/50 rounded-lg">
+    <div
+      class="flex items-center justify-center gap-1 p-1 bg-base-300/50 rounded-lg"
+      phx-hook="ThemeToggle"
+      id="theme-toggle"
+    >
       <button
-        class="p-1.5 rounded hover:bg-base-200 transition-colors"
+        class="p-1.5 rounded hover:bg-base-200 transition-colors theme-btn"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
+        data-theme-value="system"
         title="System theme"
       >
         <.icon name="hero-computer-desktop" class="size-4 text-base-content/60" />
       </button>
       <button
-        class="p-1.5 rounded hover:bg-base-200 transition-colors"
+        class="p-1.5 rounded hover:bg-base-200 transition-colors theme-btn"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        data-theme-value="light"
         title="Light theme"
       >
         <.icon name="hero-sun" class="size-4 text-base-content/60" />
       </button>
       <button
-        class="p-1.5 rounded hover:bg-base-200 transition-colors"
+        class="p-1.5 rounded hover:bg-base-200 transition-colors theme-btn"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        data-theme-value="dark"
         title="Dark theme"
       >
         <.icon name="hero-moon" class="size-4 text-base-content/60" />
