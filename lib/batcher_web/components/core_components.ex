@@ -316,6 +316,10 @@ defmodule BatcherWeb.CoreComponents do
   attr :row_id, :any, default: nil, doc: "the function for generating the row id"
   attr :row_click, :any, default: nil, doc: "the function for handling phx-click on each row"
 
+  attr :row_navigate, :any,
+    default: nil,
+    doc: "function that returns a path to navigate to when clicking the row"
+
   attr :row_item, :any,
     default: &Function.identity/1,
     doc: "the function for mapping each row before calling the :col and :action slots"
@@ -329,8 +333,16 @@ defmodule BatcherWeb.CoreComponents do
 
   def table(assigns) do
     assigns =
-      with %{rows: %Phoenix.LiveView.LiveStream{}} <- assigns do
-        assign(assigns, row_id: assigns.row_id || fn {id, _item} -> id end)
+      cond do
+        is_struct(assigns.rows, Phoenix.LiveView.LiveStream) ->
+          assign(assigns, row_id: assigns.row_id || fn {id, _item} -> id end)
+
+        assigns.row_navigate && is_nil(assigns.row_id) ->
+          # Generate row IDs when row_navigate is used (hooks require IDs)
+          assign(assigns, row_id: fn row -> "#{assigns.id}-row-#{row.id}" end)
+
+        true ->
+          assigns
       end
 
     ~H"""
@@ -355,7 +367,12 @@ defmodule BatcherWeb.CoreComponents do
         <tr
           :for={row <- @rows}
           id={@row_id && @row_id.(row)}
-          class="border-b border-base-300/50 hover:bg-base-200/50"
+          phx-hook={@row_navigate && "ClickableRow"}
+          data-navigate-path={@row_navigate && @row_navigate.(@row_item.(row))}
+          class={[
+            "border-b border-base-300/50 hover:bg-base-200/50",
+            @row_navigate && "cursor-pointer"
+          ]}
         >
           <td
             :for={col <- @col}
@@ -625,6 +642,137 @@ defmodule BatcherWeb.CoreComponents do
       </span>
     </div>
     """
+  end
+
+  @doc """
+  Renders numbered pagination with ellipsis.
+
+  ## Examples
+
+      <.numbered_pagination
+        page={@page}
+        base_path="/batches"
+        extra_params={[q: @query_text, sort_by: @sort_by]}
+      />
+  """
+  attr :page, :map, required: true, doc: "the Ash page object with offset, limit, count, etc."
+  attr :base_path, :string, required: true, doc: "the base URL path for pagination links"
+  attr :extra_params, :list, default: [], doc: "additional query params to preserve"
+
+  def numbered_pagination(assigns) do
+    count = assigns.page.count || 0
+    limit = assigns.page.limit || 20
+    offset = assigns.page.offset || 0
+
+    total_pages = if count > 0, do: ceil(count / limit), else: 1
+    current_page = div(offset, limit) + 1
+
+    # Generate page numbers with ellipsis
+    page_numbers = generate_page_numbers(current_page, total_pages)
+
+    assigns =
+      assigns
+      |> assign(:count, count)
+      |> assign(:limit, limit)
+      |> assign(:offset, offset)
+      |> assign(:total_pages, total_pages)
+      |> assign(:current_page, current_page)
+      |> assign(:page_numbers, page_numbers)
+      |> assign(:has_prev, current_page > 1)
+      |> assign(:has_next, current_page < total_pages)
+      |> assign(:start_item, if(count > 0, do: offset + 1, else: 0))
+      |> assign(:end_item, min(offset + limit, count))
+
+    ~H"""
+    <div class="flex items-center justify-between py-3 px-4 bg-base-200/50 border border-base-300/50 rounded-box shrink-0">
+      <div class="text-sm text-base-content/50">
+        <%= if @count > 0 do %>
+          {@start_item}-{@end_item} of {@count}
+        <% else %>
+          0 items
+        <% end %>
+      </div>
+      <div class="join">
+        <.link
+          :if={@total_pages > 1}
+          patch={build_pagination_url(@base_path, @extra_params, 0, @limit)}
+          class={["join-item btn btn-sm", !@has_prev && "btn-disabled"]}
+        >
+          <.icon name="hero-chevron-double-left" class="w-4 h-4" />
+        </.link>
+        <.link
+          :if={@total_pages > 1}
+          patch={build_pagination_url(@base_path, @extra_params, max(0, (@current_page - 2) * @limit), @limit)}
+          class={["join-item btn btn-sm", !@has_prev && "btn-disabled"]}
+        >
+          <.icon name="hero-chevron-left" class="w-4 h-4" />
+        </.link>
+
+        <%= for item <- @page_numbers do %>
+          <%= case item do %>
+            <% :ellipsis -> %>
+              <span class="join-item btn btn-sm btn-disabled">...</span>
+            <% page_num -> %>
+              <.link
+                patch={build_pagination_url(@base_path, @extra_params, (page_num - 1) * @limit, @limit)}
+                class={["join-item btn btn-sm", page_num == @current_page && "btn-primary"]}
+              >
+                {page_num}
+              </.link>
+          <% end %>
+        <% end %>
+
+        <.link
+          :if={@total_pages > 1}
+          patch={build_pagination_url(@base_path, @extra_params, @current_page * @limit, @limit)}
+          class={["join-item btn btn-sm", !@has_next && "btn-disabled"]}
+        >
+          <.icon name="hero-chevron-right" class="w-4 h-4" />
+        </.link>
+        <.link
+          :if={@total_pages > 1}
+          patch={build_pagination_url(@base_path, @extra_params, (@total_pages - 1) * @limit, @limit)}
+          class={["join-item btn btn-sm", !@has_next && "btn-disabled"]}
+        >
+          <.icon name="hero-chevron-double-right" class="w-4 h-4" />
+        </.link>
+      </div>
+    </div>
+    """
+  end
+
+  # Generate page numbers with ellipsis for large page counts
+  # Shows: 1 2 3 ... 8 or 1 ... 5 6 7 8 or 1 2 3 4 5 6 7 8
+  defp generate_page_numbers(_current_page, total_pages) when total_pages <= 7 do
+    Enum.to_list(1..total_pages)
+  end
+
+  defp generate_page_numbers(current_page, total_pages) do
+    cond do
+      # Near the beginning: 1 2 3 4 5 ... last
+      current_page <= 4 ->
+        Enum.to_list(1..5) ++ [:ellipsis, total_pages]
+
+      # Near the end: 1 ... last-4 last-3 last-2 last-1 last
+      current_page >= total_pages - 3 ->
+        [1, :ellipsis] ++ Enum.to_list((total_pages - 4)..total_pages)
+
+      # In the middle: 1 ... current-1 current current+1 ... last
+      true ->
+        [1, :ellipsis] ++
+          Enum.to_list((current_page - 1)..(current_page + 1)) ++
+          [:ellipsis, total_pages]
+    end
+  end
+
+  defp build_pagination_url(base_path, extra_params, offset, limit) do
+    params =
+      extra_params
+      |> Keyword.put(:offset, offset)
+      |> Keyword.put(:limit, limit)
+      |> Enum.filter(fn {_k, v} -> v != nil and v != "" end)
+
+    "#{base_path}?#{URI.encode_query(params)}"
   end
 
   @doc """

@@ -34,8 +34,14 @@ defmodule Batcher.Batching.Types.BatchStatus do
       # Delivering results to client
       :delivering,
 
-      # All prompt results have been delivered
-      :done,
+      # All requests delivered successfully
+      :delivered,
+
+      # Some requests delivered, some failed
+      :partially_delivered,
+
+      # All requests failed to deliver
+      :delivery_failed,
 
       # Batch failed for some reason
       :failed,

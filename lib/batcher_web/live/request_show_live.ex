@@ -14,11 +14,19 @@ defmodule BatcherWeb.RequestShowLive do
       BatcherWeb.Endpoint.subscribe("request_delivery_attempts:created:#{request_id}")
     end
 
-    case Ash.read_one(Batching.Request, id: request_id) do
+    case Batching.get_request_by_id(request_id) do
       {:ok, request} ->
         request = Ash.load!(request, :batch)
 
-        {:ok, load_request_data(socket, request, 1)}
+        socket =
+          socket
+          |> load_request_data(request, 1)
+          |> assign(:show_payload_modal, false)
+          |> assign(:payload_modal_title, "")
+          |> assign(:payload_modal_content, "")
+          |> assign(:payload_modal_is_json, false)
+
+        {:ok, socket}
 
       {:error, _} ->
         {:ok,
@@ -40,6 +48,54 @@ defmodule BatcherWeb.RequestShowLive do
     page = String.to_integer(page)
     request_id = socket.assigns.request.id
     {:noreply, push_patch(socket, to: ~p"/requests/#{request_id}?page=#{page}")}
+  end
+
+  @impl true
+  def handle_event("show_request_payload", _params, socket) do
+    content = format_json(socket.assigns.request.request_payload)
+
+    socket =
+      socket
+      |> assign(:show_payload_modal, true)
+      |> assign(:payload_modal_title, "Request Payload")
+      |> assign(:payload_modal_content, content)
+      |> assign(:payload_modal_is_json, true)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_response_payload", _params, socket) do
+    content = format_json(socket.assigns.request.response_payload)
+
+    socket =
+      socket
+      |> assign(:show_payload_modal, true)
+      |> assign(:payload_modal_title, "Response Payload")
+      |> assign(:payload_modal_content, content)
+      |> assign(:payload_modal_is_json, true)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_error_msg", _params, socket) do
+    error_msg = socket.assigns.request.error_msg
+    {content, is_json} = format_content_with_type(error_msg)
+
+    socket =
+      socket
+      |> assign(:show_payload_modal, true)
+      |> assign(:payload_modal_title, "Error Message")
+      |> assign(:payload_modal_content, content)
+      |> assign(:payload_modal_is_json, is_json)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("close_payload_modal", _params, socket) do
+    {:noreply, assign(socket, :show_payload_modal, false)}
   end
 
   @impl true
@@ -99,4 +155,61 @@ defmodule BatcherWeb.RequestShowLive do
         |> assign(:total_count, 0)
     end
   end
+
+  @doc """
+  Format a JSON string or map for display with pretty printing.
+  """
+  def format_json(nil), do: ""
+
+  def format_json(payload) when is_binary(payload) do
+    case Jason.decode(payload) do
+      {:ok, decoded} -> Jason.encode!(decoded, pretty: true)
+      {:error, _} -> payload
+    end
+  end
+
+  def format_json(payload) when is_map(payload) do
+    Jason.encode!(payload, pretty: true)
+  end
+
+  def format_json(payload), do: inspect(payload)
+
+  # Format content and return both the formatted content and whether it's JSON.
+  # Returns {content, is_json}
+  defp format_content_with_type(nil), do: {"", false}
+
+  defp format_content_with_type(content) when is_binary(content) do
+    case Jason.decode(content) do
+      {:ok, decoded} -> {Jason.encode!(decoded, pretty: true), true}
+      {:error, _} -> {content, false}
+    end
+  end
+
+  defp format_content_with_type(content) when is_map(content) do
+    {Jason.encode!(content, pretty: true), true}
+  end
+
+  defp format_content_with_type(content), do: {inspect(content), false}
+
+  defp delivery_type(nil), do: "—"
+
+  defp delivery_type(config) when is_map(config) do
+    cond do
+      Map.has_key?(config, "webhook_url") or Map.has_key?(config, :webhook_url) -> "Webhook"
+      Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) -> "RabbitMQ"
+      true -> "Unknown"
+    end
+  end
+
+  defp delivery_type(_), do: "—"
+
+  defp delivery_destination(nil), do: "—"
+
+  defp delivery_destination(config) when is_map(config) do
+    config["webhook_url"] || config[:webhook_url] ||
+      config["rabbitmq_queue"] || config[:rabbitmq_queue] ||
+      "—"
+  end
+
+  defp delivery_destination(_), do: "—"
 end

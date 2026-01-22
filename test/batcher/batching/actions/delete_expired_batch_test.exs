@@ -13,7 +13,7 @@ defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
 
       batch =
         seeded_batch(
-          state: :done,
+          state: :delivered,
           expires_at: expires_at
         )
         |> generate()
@@ -40,7 +40,7 @@ defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
 
       batch =
         seeded_batch(
-          state: :done,
+          state: :delivered,
           expires_at: expires_at
         )
         |> generate()
@@ -157,7 +157,7 @@ defmodule Batcher.Batching.Actions.DeleteExpiredBatchTest do
 
       batch =
         seeded_batch(
-          state: :done,
+          state: :delivered,
           expires_at: expires_at
         )
         |> generate()

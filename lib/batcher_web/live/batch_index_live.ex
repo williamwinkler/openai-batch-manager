@@ -24,9 +24,13 @@ defmodule BatcherWeb.BatchIndexLive do
     query_text = Map.get(params, "q", "")
     sort_by = Map.get(params, "sort_by") |> validate_sort_by()
 
+    page_opts =
+      AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 20)
+      |> Keyword.put(:count, true)
+
     page =
       Batching.search_batches!(query_text,
-        page: AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 20),
+        page: page_opts,
         query: [sort_input: sort_by]
       )
 
@@ -129,7 +133,7 @@ defmodule BatcherWeb.BatchIndexLive do
     case Batching.get_batch_by_id(id) do
       {:ok, batch} ->
         case Batching.destroy_batch(batch) do
-          {:ok, _} ->
+          :ok ->
             {:noreply,
              socket
              |> put_flash(:info, "Batch deleted successfully")
@@ -212,7 +216,7 @@ defmodule BatcherWeb.BatchIndexLive do
 
     page =
       Batching.search_batches!(query_text,
-        page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit],
+        page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit, count: true],
         query: [sort_input: sort_by]
       )
 
@@ -252,37 +256,6 @@ defmodule BatcherWeb.BatchIndexLive do
         _ -> true
       end
     end)
-  end
-
-  defp query_string(page, query_text, sort_by, which) do
-    case AshPhoenix.LiveView.page_link_params(page, which) do
-      :invalid -> []
-      list -> list
-    end
-    |> Keyword.put(:q, query_text)
-    |> Keyword.put(:sort_by, sort_by)
-    |> remove_empty()
-  end
-
-  defp pagination_links(assigns) do
-    ~H"""
-    <div class="flex items-center justify-center gap-4 py-3 px-4 bg-base-200/50 border-t border-base-300/50 shrink-0">
-      <div class="join">
-        <.link
-          patch={~p"/batches?#{query_string(@page, @query_text, @sort_by, "prev")}"}
-          class={["join-item btn btn-sm", !AshPhoenix.LiveView.prev_page?(@page) && "btn-disabled"]}
-        >
-          <.icon name="hero-chevron-left" class="w-4 h-4" /> Previous
-        </.link>
-        <.link
-          patch={~p"/batches?#{query_string(@page, @query_text, @sort_by, "next")}"}
-          class={["join-item btn btn-sm", !AshPhoenix.LiveView.next_page?(@page) && "btn-disabled"]}
-        >
-          Next <.icon name="hero-chevron-right" class="w-4 h-4" />
-        </.link>
-      </div>
-    </div>
-    """
   end
 
   defp sort_changer(assigns) do

@@ -22,6 +22,7 @@ defmodule Batcher.Batching do
 
     resource Batcher.Batching.Request do
       define :create_request, action: :create
+      define :get_request_by_id, action: :read, get_by: :id
 
       define :get_request_by_custom_id,
         action: :get_request_by_custom_id,

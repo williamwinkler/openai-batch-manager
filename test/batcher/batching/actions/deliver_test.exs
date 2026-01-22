@@ -691,13 +691,13 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       # Reload batch to check state
       batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      assert batch_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
     end
 
-    test "transitions batch to done when all RabbitMQ requests are delivered or delivery_failed" do
+    test "transitions batch to partially_delivered when some RabbitMQ requests succeed and some fail" do
       # Start fake publisher with mixed responses
       {:ok, _pid} =
         FakePublisher.start_link(
@@ -756,7 +756,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       # Reload batch to check state
       batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      assert batch_after.state == :partially_delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -963,10 +963,10 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       # Reload batch to check state
       batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      assert batch_after.state == :delivered
     end
 
-    test "transitions batch to done when all requests are delivered or delivery_failed", %{
+    test "transitions batch to partially_delivered when some requests succeed and some fail", %{
       server: server
     } do
       webhook_url = TestServer.url(server) <> "/webhook"
@@ -1021,7 +1021,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       # Reload batch to check state
       batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      assert batch_after.state == :partially_delivered
     end
 
     test "delivery_attempt_count reflects number of attempts", %{server: server} do
@@ -1292,7 +1292,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       # Batch already in delivering state (not ready_to_deliver)
-      # Create a batch with multiple requests so it doesn't transition to :done
+      # Create a batch with multiple requests so it doesn't transition to a terminal state
       batch =
         seeded_batch(state: :delivering)
         |> generate()
@@ -1331,7 +1331,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       # Batch should remain in delivering state (start_delivering only runs if state is ready_to_deliver)
-      # and won't transition to :done because request2 is still pending
+      # and won't transition to a terminal state because request2 is still pending
       batch_after = Batching.get_batch_by_id!(batch.id)
       assert batch_after.state == :delivering
     end

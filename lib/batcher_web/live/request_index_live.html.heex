@@ -2,12 +2,15 @@
   <div class="flex flex-col h-full">
     <!-- Header - fixed height -->
     <div class="flex items-center justify-between pb-4 shrink-0">
-      <h1 class="text-xl font-semibold">Requests</h1>
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-semibold">Requests</h1>
+        <.batch_filter_badge :if={@batch_id} batch_id={@batch_id} />
+      </div>
       <div class="flex-1 flex justify-center">
         <.search_box query={@query_text} />
       </div>
       <div class="flex items-center gap-3">
-        <.sort_changer selected={@sort_by} />
+        <.sort_changer selected={@sort_by} batch_id={@batch_id} />
       </div>
     </div>
 
@@ -24,11 +27,9 @@
           <% else %>
             <!-- Scrollable table area -->
             <div class="h-full overflow-y-auto">
-              <.table id="requests" rows={@page.results}>
+              <.table id="requests" rows={@page.results} row_navigate={fn request -> ~p"/requests/#{request.id}" end}>
                 <:col :let={request} label="ID" width="w-20">
-                  <.link navigate={~p"/requests/#{request.id}"} class="font-mono text-sm text-primary hover:underline">
-                    {request.id}
-                  </.link>
+                  <span class="font-mono text-sm">{request.id}</span>
                 </:col>
                 <:col :let={request} label="Custom ID" width="w-48">
                   <span class="font-mono text-sm truncate block">{request.custom_id}</span>
@@ -64,7 +65,11 @@
 
       <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
-        <.pagination_links page={@page} query_text={@query_text} sort_by={@sort_by} />
+        <.numbered_pagination
+          page={@page}
+          base_path="/requests"
+          extra_params={[q: @query_text, sort_by: @sort_by, batch_id: @batch_id]}
+        />
       </div>
     </div>
   </div>

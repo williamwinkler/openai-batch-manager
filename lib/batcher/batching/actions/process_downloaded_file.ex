@@ -64,9 +64,10 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
 
         # Check if all requests are already in terminal states (e.g., all failed at OpenAI)
         # If so, we need to determine the final batch state:
-        # - If ALL requests failed → batch goes to :failed
-        # - If at least some succeeded (delivered/delivery_failed) → batch goes to :done
-        updated_batch = Ash.load!(updated_batch, [:requests_terminal_count, :request_count])
+        # - If ALL requests failed at OpenAI processing → batch goes to :failed
+        # - If at least some succeeded → use delivery_stats to determine final state
+        updated_batch =
+          Ash.load!(updated_batch, [:requests_terminal_count, :request_count, :delivery_stats])
 
         if updated_batch.requests_terminal_count do
           # Count total requests and requests in "success" states
@@ -83,31 +84,50 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
 
           cond do
             total_count == 0 ->
-              # Edge case: batch has no requests - just mark as done
-              Logger.info("Batch #{batch.id} has no requests, marking as done")
+              # Edge case: batch has no requests - mark as delivered
+              Logger.info("Batch #{batch.id} has no requests, marking as delivered")
 
               updated_batch
               |> Ash.Changeset.for_update(:start_delivering)
               |> Ash.update!()
-              |> Ash.Changeset.for_update(:done)
+              |> Ash.Changeset.for_update(:mark_delivered)
               |> Ash.update()
 
             success_count > 0 ->
-              # At least some requests succeeded - batch is done
+              # At least some requests succeeded - determine final state from delivery_stats
+              %{delivered: delivered_count, failed: failed_count} = updated_batch.delivery_stats
+
+              {action, state_name} =
+                cond do
+                  delivered_count > 0 and failed_count == 0 ->
+                    {:mark_delivered, "delivered"}
+
+                  delivered_count == 0 and failed_count > 0 ->
+                    {:mark_delivery_failed, "delivery_failed"}
+
+                  delivered_count > 0 and failed_count > 0 ->
+                    {:mark_partially_delivered, "partially_delivered"}
+
+                  true ->
+                    # Default case (e.g., all in :openai_processed but none delivered yet)
+                    # This shouldn't happen in practice but handle it gracefully
+                    {:mark_delivered, "delivered"}
+                end
+
               Logger.info(
-                "Batch #{batch.id} has all requests in terminal states with #{success_count} successes, marking as done"
+                "Batch #{batch.id} has all requests in terminal states, marking as #{state_name}"
               )
 
               updated_batch
               |> Ash.Changeset.for_update(:start_delivering)
               |> Ash.update!()
-              |> Ash.Changeset.for_update(:done)
+              |> Ash.Changeset.for_update(action)
               |> Ash.update()
 
             true ->
-              # All requests failed - batch should be marked as failed
+              # All requests failed at OpenAI - batch should be marked as failed
               Logger.info(
-                "Batch #{batch.id} has all requests in terminal states but all failed, marking as failed"
+                "Batch #{batch.id} has all requests in terminal states but all failed at OpenAI, marking as failed"
               )
 
               updated_batch

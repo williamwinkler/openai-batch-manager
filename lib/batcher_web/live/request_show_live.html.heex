@@ -1,114 +1,187 @@
 <Layouts.app flash={@flash} current_path={@current_path}>
   <div class="space-y-6">
     <.breadcrumb items={[
-      {"Batches", "/"},
-      {"Batch #{@request.batch_id}", ~p"/batches/#{@request.batch_id}"},
+      {"Requests", ~p"/requests"},
       {@request.custom_id, ~p"/requests/#{@request.id}"}
     ]} />
 
-    <div class="flex flex-col lg:flex-row gap-6">
-      <%!-- Main content --%>
-      <div class="flex-1 space-y-6">
-        <%!-- Request info --%>
-        <div class="space-y-4">
-          <div class="flex items-center gap-3">
-            <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
-            <.status_badge status={@request.state} />
-          </div>
+    <%!-- Request info --%>
+    <div class="space-y-4">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
+        <.status_badge status={@request.state} />
+      </div>
 
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <div class="text-base-content/50 mb-1">Batch</div>
-              <.link
-                navigate={~p"/batches/#{@request.batch_id}"}
-                class="text-primary hover:underline"
-              >
-                Batch {@request.batch_id}
-              </.link>
-            </div>
-            <div>
-              <div class="text-base-content/50 mb-1">Model</div>
-              <div class="font-mono">{@request.model}</div>
-            </div>
-            <div>
-              <div class="text-base-content/50 mb-1">Endpoint</div>
-              <div class="font-mono text-base-content/70">{@request.url}</div>
-            </div>
-            <div>
-              <div class="text-base-content/50 mb-1">Created</div>
-              <div>{Calendar.strftime(@request.created_at, "%d %b %Y, %H:%M")}</div>
-            </div>
-          </div>
-
-          <div :if={@request.error_msg} class="text-sm text-error bg-error/10 px-3 py-2 rounded">
-            {@request.error_msg}
-          </div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <div class="text-base-content/50 mb-1">Batch</div>
+          <.link
+            navigate={~p"/batches/#{@request.batch_id}"}
+            class="text-primary hover:underline"
+          >
+            Batch {@request.batch_id}
+          </.link>
         </div>
-
-        <%!-- Delivery attempts --%>
-        <div class="border border-base-300/50 rounded-lg overflow-hidden">
-          <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
-            <span class="font-medium">Delivery attempts</span>
-            <span class="text-sm text-base-content/50">{@total_count}</span>
+        <div>
+          <div class="text-base-content/50 mb-1">Model</div>
+          <div class="font-mono">{@request.model}</div>
+        </div>
+        <div>
+          <div class="text-base-content/50 mb-1">Endpoint</div>
+          <div class="font-mono">{@request.url}</div>
+        </div>
+        <div>
+          <div class="text-base-content/50 mb-1">Created</div>
+          <div>{Calendar.strftime(@request.created_at, "%d %b %Y, %H:%M")}</div>
+        </div>
+        <div :if={@request.delivery_config}>
+          <div class="text-base-content/50 mb-1">Delivery type</div>
+          <div class="font-mono">{delivery_type(@request.delivery_config)}</div>
+        </div>
+        <div :if={@request.delivery_config}>
+          <div class="text-base-content/50 mb-1">Delivery destination</div>
+          <div class="font-mono truncate" title={delivery_destination(@request.delivery_config)}>
+            {delivery_destination(@request.delivery_config)}
           </div>
-
-          <%= if @total_count == 0 do %>
-            <div class="p-8 text-center text-base-content/50">
-              No delivery attempts yet
-            </div>
-          <% else %>
-            <.table id="delivery_attempts" rows={@streams.delivery_attempts}>
-              <:col :let={{_id, attempt}} label="ID">
-                <span class="font-mono text-xs text-base-content/50">{attempt.id}</span>
-              </:col>
-              <:col :let={{_id, attempt}} label="Outcome">
-                <%= if attempt.outcome == :success do %>
-                  <.status_badge status={:delivered} />
-                <% else %>
-                  <.status_badge status={:delivery_failed} />
-                <% end %>
-              </:col>
-              <:col :let={{_id, attempt}} label="Error">
-                <div class="max-w-xs truncate text-xs text-error" title={attempt.error_msg}>
-                  {attempt.error_msg || "—"}
-                </div>
-              </:col>
-              <:col :let={{_id, attempt}} label="Time">
-                <span class="text-xs text-base-content/50">
-                  <%= if attempt.attempted_at do %>
-                    {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
-                  <% else %>
-                    —
-                  <% end %>
-                </span>
-              </:col>
-            </.table>
-
-            <div class="px-4 py-3 border-t border-base-300/50">
-              <.pagination_controls
-                page={@page}
-                per_page={@per_page}
-                total_count={@total_count}
-                phx_click="paginate_attempts"
-              />
-            </div>
-          <% end %>
         </div>
       </div>
 
-      <%!-- Sidebar with payload --%>
-      <div class="w-full lg:w-96">
-        <div class="border border-base-300/50 rounded-lg overflow-hidden sticky top-6">
-          <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
-            <span class="font-medium">Request payload</span>
-          </div>
-          <div class="p-4">
-            <pre
-              class="text-xs font-mono leading-relaxed overflow-x-auto max-h-[70vh] whitespace-pre-wrap break-all"
-              phx-no-curly-interpolation
-            >{Jason.encode!(@request.request_payload, pretty: true)}</pre>
-          </div>
+      <div
+        :if={@request.error_msg}
+        class="text-sm text-error bg-error/10 px-3 py-2 rounded cursor-pointer hover:bg-error/20 transition-colors flex items-center gap-2"
+        phx-click="show_error_msg"
+      >
+        <span class="truncate flex-1">{@request.error_msg}</span>
+        <.icon name="hero-arrows-pointing-out" class="w-4 h-4 shrink-0 opacity-50" />
+      </div>
+    </div>
+
+    <%!-- Payloads - horizontally aligned --%>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <%!-- Request Payload Card --%>
+      <div
+        class="border border-base-300/50 rounded-lg overflow-hidden cursor-pointer hover:border-primary/50 transition-colors"
+        phx-click="show_request_payload"
+      >
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
+          <span class="font-medium">Request payload</span>
+          <.icon name="hero-arrows-pointing-out" class="w-4 h-4 text-base-content/50" />
         </div>
+        <div class="p-4">
+          <pre
+            id="request-payload-preview"
+            class="text-xs font-mono leading-relaxed overflow-hidden max-h-48 whitespace-pre-wrap break-all json-syntax"
+            phx-hook="JsonSyntaxHighlight"
+          >{format_json(@request.request_payload)}</pre>
+          <div class="mt-2 text-xs text-primary">Click to expand</div>
+        </div>
+      </div>
+
+      <%!-- Response Payload Card (if available) --%>
+      <div
+        :if={@request.response_payload}
+        class="border border-base-300/50 rounded-lg overflow-hidden cursor-pointer hover:border-primary/50 transition-colors"
+        phx-click="show_response_payload"
+      >
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
+          <span class="font-medium">Response payload</span>
+          <.icon name="hero-arrows-pointing-out" class="w-4 h-4 text-base-content/50" />
+        </div>
+        <div class="p-4">
+          <pre
+            id="response-payload-preview"
+            class="text-xs font-mono leading-relaxed overflow-hidden max-h-48 whitespace-pre-wrap break-all json-syntax"
+            phx-hook="JsonSyntaxHighlight"
+          >{format_json(@request.response_payload)}</pre>
+          <div class="mt-2 text-xs text-primary">Click to expand</div>
+        </div>
+      </div>
+    </div>
+
+    <%!-- Delivery attempts --%>
+    <div class="border border-base-300/50 rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
+        <span class="font-medium">Delivery attempts</span>
+        <span class="text-sm text-base-content/50">{@total_count}</span>
+      </div>
+
+      <%= if @total_count == 0 do %>
+        <div class="p-8 text-center text-base-content/50">
+          No delivery attempts yet
+        </div>
+      <% else %>
+        <.table id="delivery_attempts" rows={@streams.delivery_attempts}>
+          <:col :let={{_id, attempt}} label="ID">
+            <span class="font-mono text-xs text-base-content/50">{attempt.id}</span>
+          </:col>
+          <:col :let={{_id, attempt}} label="Outcome">
+            <%= if attempt.outcome == :success do %>
+              <.status_badge status={:delivered} />
+            <% else %>
+              <.status_badge status={:delivery_failed} />
+            <% end %>
+          </:col>
+          <:col :let={{_id, attempt}} label="Error">
+            <div class="max-w-xs truncate text-xs text-error" title={attempt.error_msg}>
+              {attempt.error_msg || "—"}
+            </div>
+          </:col>
+          <:col :let={{_id, attempt}} label="Time">
+            <span class="text-xs text-base-content/50">
+              <%= if attempt.attempted_at do %>
+                {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
+              <% else %>
+                —
+              <% end %>
+            </span>
+          </:col>
+        </.table>
+
+        <div class="px-4 py-3 border-t border-base-300/50">
+          <.pagination_controls
+            page={@page}
+            per_page={@per_page}
+            total_count={@total_count}
+            phx_click="paginate_attempts"
+          />
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%!-- Payload Modal --%>
+  <div
+    :if={@show_payload_modal}
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+  >
+    <%!-- Backdrop - only this closes the modal --%>
+    <div class="absolute inset-0 bg-black/50" phx-click="close_payload_modal"></div>
+
+    <%!-- Modal Content - clicks here don't close --%>
+    <div class="relative bg-base-100 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <%!-- Header --%>
+      <div class="px-6 py-4 border-b border-base-300 flex items-center justify-between shrink-0">
+        <h3 class="text-lg font-semibold">{@payload_modal_title}</h3>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-circle"
+          phx-click="close_payload_modal"
+        >
+          <.icon name="hero-x-mark" class="w-5 h-5" />
+        </button>
+      </div>
+
+      <%!-- Body --%>
+      <div class="p-6 overflow-auto flex-1">
+        <%= if @payload_modal_is_json do %>
+          <pre
+            id={"payload-modal-#{@payload_modal_title}"}
+            class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
+            phx-hook="JsonSyntaxHighlight"
+          >{@payload_modal_content}</pre>
+        <% else %>
+          <pre class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all">{@payload_modal_content}</pre>
+        <% end %>
       </div>
     </div>
   </div>

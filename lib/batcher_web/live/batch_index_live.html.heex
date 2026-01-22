@@ -24,11 +24,9 @@
           <% else %>
             <!-- Scrollable table area -->
             <div class="h-full overflow-y-auto">
-              <.table id="batches" rows={@page.results}>
+              <.table id="batches" rows={@page.results} row_navigate={fn batch -> ~p"/batches/#{batch.id}" end}>
                 <:col :let={batch} label="ID" width="w-20">
-                  <.link navigate={~p"/batches/#{batch.id}"} class="font-mono text-sm text-primary hover:underline">
-                    {batch.id}
-                  </.link>
+                  <span class="font-mono text-sm">{batch.id}</span>
                 </:col>
                 <:col :let={batch} label="Model" width="w-48">
                   <span class="font-mono text-xs truncate block">{batch.model}</span>
@@ -80,7 +78,11 @@
 
       <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
-        <.pagination_links page={@page} query_text={@query_text} sort_by={@sort_by} />
+        <.numbered_pagination
+          page={@page}
+          base_path="/batches"
+          extra_params={[q: @query_text, sort_by: @sort_by]}
+        />
       </div>
     </div>
   </div>

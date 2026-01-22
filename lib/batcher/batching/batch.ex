@@ -29,7 +29,9 @@ defmodule Batcher.Batching.Batch do
       transition :start_downloading, from: :openai_completed, to: :downloading
       transition :finalize_processing, from: :downloading, to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
-      transition :done, from: :delivering, to: :done
+      transition :mark_delivered, from: :delivering, to: :delivered
+      transition :mark_partially_delivered, from: :delivering, to: :partially_delivered
+      transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
 
       transition :failed,
         from: [
@@ -278,9 +280,22 @@ defmodule Batcher.Batching.Batch do
       change transition_state(:delivering)
     end
 
-    update :done do
-      change transition_state(:done)
+    update :mark_delivered do
+      description "Mark batch as delivered - all requests delivered successfully"
       require_atomic? false
+      change transition_state(:delivered)
+    end
+
+    update :mark_partially_delivered do
+      description "Mark batch as partially delivered - some requests delivered, some failed"
+      require_atomic? false
+      change transition_state(:partially_delivered)
+    end
+
+    update :mark_delivery_failed do
+      description "Mark batch as delivery failed - all requests failed to deliver"
+      require_atomic? false
+      change transition_state(:delivery_failed)
     end
 
     update :cancel do
@@ -307,7 +322,7 @@ defmodule Batcher.Batching.Batch do
     end
 
     action :check_delivery_completion, :struct do
-      description "Check if all requests are delivered and transition to done"
+      description "Check if all requests are in terminal states and transition to appropriate delivery state"
       constraints instance_of: __MODULE__
       transaction? false
       run Batching.Actions.CheckDeliveryCompletion
@@ -429,6 +444,8 @@ defmodule Batcher.Batching.Batch do
     calculate :requests_terminal_count,
               :integer,
               Batcher.Batching.Calculations.BatchRequestsTerminal
+
+    calculate :delivery_stats, :map, Batcher.Batching.Calculations.BatchDeliveryStats
   end
 
   defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)

@@ -6,6 +6,8 @@ defmodule Batcher.Batching.Request do
     extensions: [AshStateMachine, AshOban],
     notifiers: [Ash.Notifier.PubSub]
 
+  require Ash.Query
+
   alias Batcher.Batching
 
   sqlite do
@@ -116,6 +118,10 @@ defmodule Batcher.Batching.Request do
         default ""
       end
 
+      argument :batch_id, :integer do
+        description "Filter requests by batch ID"
+      end
+
       argument :sort_input, :string do
         description "Sort field with optional - prefix for descending"
         default "-created_at"
@@ -125,7 +131,17 @@ defmodule Batcher.Batching.Request do
 
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)
-        apply_sorting(query, sort_input)
+        batch_id = Ash.Query.get_argument(query, :batch_id)
+
+        query =
+          query
+          |> apply_sorting(sort_input)
+
+        if batch_id do
+          Ash.Query.filter(query, batch_id == ^batch_id)
+        else
+          query
+        end
       end
 
       pagination offset?: true, default_limit: 15, countable: true
@@ -301,6 +317,7 @@ defmodule Batcher.Batching.Request do
         Ash.Query.sort(query, created_at: :desc)
     end
   end
+
 
   defp parse_sort_by("-created_at"), do: {:created_at, :desc}
   defp parse_sort_by("created_at"), do: {:created_at, :asc}

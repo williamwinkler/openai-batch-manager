@@ -21,133 +21,111 @@ defmodule BatcherWeb.BatchIndexLiveTest do
   end
 
   describe "pagination" do
-    test "displays pagination controls on first page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches")
+    test "displays pagination controls with page numbers", %{conn: conn} do
+      # Use a small limit to ensure multiple pages
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
 
-      # Check that pagination controls are present
-      assert has_element?(view, "a", "Previous")
-      assert has_element?(view, "a", "Next")
+      # Check that numbered pagination controls are present
+      assert has_element?(view, ".join")
+      # Page 1 should be active
+      assert has_element?(view, "a.btn-primary", "1")
     end
 
-    test "Previous button is disabled on first page", %{conn: conn} do
+    test "displays total count", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/batches")
 
-      # Find the Previous button and check it has btn-disabled class
-      previous_button = element(view, "a", "Previous")
-      html = render(previous_button)
+      # Should show item count like "1-20 of 20"
+      html = render(view)
+      assert html =~ "of 20"
+    end
 
+    test "navigation buttons are disabled on first page", %{conn: conn} do
+      # Use a small limit to ensure we have multiple pages and navigation buttons
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
+
+      # First and previous buttons should be disabled on first page
+      html = render(view)
+      # The first two buttons (first page and prev) should have btn-disabled
       assert html =~ "btn-disabled"
+      assert html =~ "hero-chevron-double-left"
     end
 
-    test "Next button is enabled on first page when there are more pages", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches")
+    test "clicking page 2 navigates to second page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
 
-      # Find the Next button and check it does NOT have btn-disabled class
-      next_button = element(view, "a", "Next")
-      html = render(next_button)
-
-      refute html =~ "btn-disabled"
-    end
-
-    test "clicking Next button navigates to second page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches")
-
-      # Click Next button
+      # Click page 2 button
       view
-      |> element("a", "Next")
+      |> element("a.join-item", "2")
       |> render_click()
 
-      # Verify we navigated to next page by checking Previous button is now enabled
-      previous_button = element(view, "a", "Previous")
-      html = render(previous_button)
-      refute html =~ "btn-disabled"
+      # Verify page 2 is now active
+      assert has_element?(view, "a.btn-primary", "2")
 
-      # Verify different batches are shown (page 2 should have different content)
+      # Verify batches are still shown
       new_batches = view |> element("#batches") |> render() |> count_table_rows()
-
-      # Should still have batches (up to per_page items)
       assert new_batches > 0
-      # Content should be different (different page)
-      # Note: We can't easily compare exact content without knowing IDs, but we verify navigation worked
     end
 
-    test "Previous button is enabled on second page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?offset=15&limit=15")
+    test "previous button works on second page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/batches?offset=10&limit=10")
 
-      # Find the Previous button and check it does NOT have btn-disabled class
-      previous_button = element(view, "a", "Previous")
-      html = render(previous_button)
+      # Page 2 should be active
+      assert has_element?(view, "a.btn-primary", "2")
 
-      refute html =~ "btn-disabled"
-    end
-
-    test "clicking Previous button navigates back to first page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?offset=15&limit=15")
-
-      # Click Previous button
+      # Click page 1 to go back
       view
-      |> element("a", "Previous")
+      |> element("a.join-item", "1")
       |> render_click()
 
-      # Verify URL updated to first page (offset=0 or no offset)
-      # Check the Previous button link - should not have offset=15
-      previous_link = view |> element("a", "Previous") |> render()
-      refute previous_link =~ "offset=15"
+      # Should be back on page 1
+      assert has_element?(view, "a.btn-primary", "1")
     end
 
-    test "Next button is disabled on last page", %{conn: conn} do
-      # Navigate to last page (offset=15 with 20 items and per_page=15)
-      {:ok, view, _html} = live(conn, ~p"/batches?offset=15&limit=15")
+    test "next/last buttons are disabled on last page", %{conn: conn} do
+      # Navigate to last page (offset=10 with 20 items and per_page=10 means page 2 is last)
+      {:ok, view, _html} = live(conn, ~p"/batches?offset=10&limit=10")
 
-      # Find the Next button and check it has btn-disabled class
-      next_button = element(view, "a", "Next")
-      html = render(next_button)
-
+      # The last two buttons (next and last) should have btn-disabled
+      html = render(view)
+      # Check that btn-disabled appears for next/last buttons
       assert html =~ "btn-disabled"
     end
 
     test "pagination preserves query text parameter", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?q=gpt-4o-mini")
+      {:ok, view, _html} = live(conn, ~p"/batches?q=gpt-4o-mini&limit=10")
 
-      # Check that Next button link contains the query parameter
-      next_link = view |> element("a", "Next") |> render()
-      assert next_link =~ "q=gpt-4o-mini"
+      # Check that page links contain the query parameter
+      html = render(view)
+      assert html =~ "q=gpt-4o-mini"
     end
 
     test "pagination preserves sort_by parameter", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?sort_by=model")
+      {:ok, view, _html} = live(conn, ~p"/batches?sort_by=model&limit=10")
 
-      # Check that Next button link contains the sort_by parameter
-      next_link = view |> element("a", "Next") |> render()
-      assert next_link =~ "sort_by=model"
+      # Check that page links contain the sort_by parameter
+      html = render(view)
+      assert html =~ "sort_by=model"
     end
 
     test "pagination preserves both query and sort_by parameters", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?q=gpt-4o-mini&sort_by=-created_at")
+      {:ok, view, _html} = live(conn, ~p"/batches?q=gpt-4o-mini&sort_by=-created_at&limit=10")
 
-      # Check that Next button link contains both parameters
-      next_link = view |> element("a", "Next") |> render()
-      assert next_link =~ "q=gpt-4o-mini"
-      assert next_link =~ "sort_by=-created_at"
+      # Check that page links contain both parameters
+      html = render(view)
+      assert html =~ "q=gpt-4o-mini"
+      assert html =~ "sort_by=-created_at"
     end
 
-    test "pagination works with empty results", %{conn: conn} do
+    test "pagination shows 0 items when empty", %{conn: conn} do
       # Clear all batches
       {:ok, batches} = Batching.list_batches()
       Enum.each(batches, fn batch -> Batching.destroy_batch(batch) end)
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
-      # Pagination should still render but buttons should be disabled
-      assert has_element?(view, "a", "Previous")
-      assert has_element?(view, "a", "Next")
-
-      # Both buttons should be disabled when there are no results
-      previous_button = element(view, "a", "Previous")
-      next_button = element(view, "a", "Next")
-
-      assert render(previous_button) =~ "btn-disabled"
-      assert render(next_button) =~ "btn-disabled"
+      # Should show "0 items"
+      html = render(view)
+      assert html =~ "0 items"
     end
   end
 

@@ -110,3 +110,37 @@
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 100ms;
 }
+
+/* JSON Syntax Highlighting */
+.json-syntax .json-key {
+  color: oklch(70% 0.15 220);
+}
+.json-syntax .json-string {
+  color: oklch(70% 0.15 150);
+}
+.json-syntax .json-number {
+  color: oklch(70% 0.15 50);
+}
+.json-syntax .json-boolean {
+  color: oklch(70% 0.2 300);
+}
+.json-syntax .json-null {
+  color: oklch(60% 0 0);
+}
+
+/* Light theme overrides for JSON highlighting */
+[data-theme="light"] .json-syntax .json-key {
+  color: oklch(45% 0.2 220);
+}
+[data-theme="light"] .json-syntax .json-string {
+  color: oklch(45% 0.2 150);
+}
+[data-theme="light"] .json-syntax .json-number {
+  color: oklch(50% 0.2 50);
+}
+[data-theme="light"] .json-syntax .json-boolean {
+  color: oklch(50% 0.25 300);
+}
+[data-theme="light"] .json-syntax .json-null {
+  color: oklch(50% 0 0);
+}

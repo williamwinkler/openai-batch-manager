@@ -708,8 +708,8 @@ defmodule Batcher.Batching.BatchTest do
     end
   end
 
-  describe "Batcher.Batching.Batch.done" do
-    test "transitions batch from delivering to done" do
+  describe "Batcher.Batching.Batch.mark_delivered" do
+    test "transitions batch from delivering to delivered" do
       batch_before =
         seeded_batch(
           state: :delivering,
@@ -719,15 +719,63 @@ defmodule Batcher.Batching.BatchTest do
 
       batch_after =
         batch_before
-        |> Ash.Changeset.for_update(:done)
+        |> Ash.Changeset.for_update(:mark_delivered)
         |> Ash.update!(load: [:transitions])
 
-      assert batch_after.state == :done
+      assert batch_after.state == :delivered
 
       # Verify transition record
       latest_transition = List.last(batch_after.transitions)
       assert latest_transition.from == :delivering
-      assert latest_transition.to == :done
+      assert latest_transition.to == :delivered
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.mark_partially_delivered" do
+    test "transitions batch from delivering to partially_delivered" do
+      batch_before =
+        seeded_batch(
+          state: :delivering,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:mark_partially_delivered)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :partially_delivered
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :delivering
+      assert latest_transition.to == :partially_delivered
+      assert latest_transition.transitioned_at
+    end
+  end
+
+  describe "Batcher.Batching.Batch.mark_delivery_failed" do
+    test "transitions batch from delivering to delivery_failed" do
+      batch_before =
+        seeded_batch(
+          state: :delivering,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:mark_delivery_failed)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :delivery_failed
+
+      # Verify transition record
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :delivering
+      assert latest_transition.to == :delivery_failed
       assert latest_transition.transitioned_at
     end
   end

@@ -25,6 +25,76 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/batcher"
 import topbar from "../vendor/topbar"
 
+// JSON Syntax Highlighting hook
+const JsonSyntaxHighlight = {
+  mounted() {
+    this.highlight()
+  },
+  updated() {
+    this.highlight()
+  },
+  highlight() {
+    const content = this.el.textContent
+    if (!content) return
+
+    // Apply syntax highlighting
+    const highlighted = this.syntaxHighlight(content)
+    this.el.innerHTML = highlighted
+  },
+  syntaxHighlight(json) {
+    // Escape HTML entities first
+    const escaped = json
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+
+    // Apply syntax highlighting with regex
+    return escaped.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      (match) => {
+        let cls = 'json-number' // number
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key' // key
+          } else {
+            cls = 'json-string' // string
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'json-boolean' // boolean
+        } else if (/null/.test(match)) {
+          cls = 'json-null' // null
+        }
+        return '<span class="' + cls + '">' + match + '</span>'
+      }
+    )
+  }
+}
+
+// Clickable table row hook
+const ClickableRow = {
+  mounted() {
+    this.el.addEventListener("click", (e) => {
+      // Don't navigate if clicking on interactive elements
+      const interactive = e.target.closest("a, button, input, select, textarea, [phx-click]")
+      if (interactive && interactive !== this.el) {
+        return
+      }
+
+      const path = this.el.dataset.navigatePath
+      if (path) {
+        // Use LiveView's native link handling by creating a temporary link
+        const link = document.createElement("a")
+        link.href = path
+        link.setAttribute("data-phx-link", "patch")
+        link.setAttribute("data-phx-link-state", "push")
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+      }
+    })
+  }
+}
+
 // Theme toggle hook
 const ThemeToggle = {
   mounted() {
@@ -85,7 +155,9 @@ const liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
   hooks: {
     ...colocatedHooks,
-    ThemeToggle
+    ClickableRow,
+    ThemeToggle,
+    JsonSyntaxHighlight
   },
 })
 

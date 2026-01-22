@@ -321,14 +321,34 @@ defmodule Batcher.Batching.Actions.Deliver do
   defp check_batch_completion(batch) do
     # Efficiently check if all requests are in terminal states using calculation
     # This avoids loading all 50k requests into memory
-    batch = Ash.load!(batch, :requests_terminal_count)
+    batch = Ash.load!(batch, [:requests_terminal_count, :delivery_stats])
 
     if batch.requests_terminal_count and batch.state == :delivering do
+      %{delivered: delivered_count, failed: failed_count} = batch.delivery_stats
+
+      {action, state_name} =
+        cond do
+          delivered_count > 0 and failed_count == 0 ->
+            {:mark_delivered, "delivered"}
+
+          delivered_count == 0 and failed_count > 0 ->
+            {:mark_delivery_failed, "delivery_failed"}
+
+          delivered_count > 0 and failed_count > 0 ->
+            {:mark_partially_delivered, "partially_delivered"}
+
+          true ->
+            # Empty batch edge case
+            {:mark_delivered, "delivered"}
+        end
+
       batch
-      |> Ash.Changeset.for_update(:done)
+      |> Ash.Changeset.for_update(action)
       |> Ash.update!()
 
-      Logger.info("Batch #{batch.id} delivery complete - all requests delivered or failed")
+      Logger.info(
+        "Batch #{batch.id} delivery complete - state: #{state_name} (#{delivered_count} delivered, #{failed_count} failed)"
+      )
     end
   end
 
