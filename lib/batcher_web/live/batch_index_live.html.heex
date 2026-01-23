@@ -29,10 +29,10 @@
                   <span class="font-mono text-sm">{batch.id}</span>
                 </:col>
                 <:col :let={batch} label="Model" width="w-48">
-                  <span class="font-mono text-xs truncate block">{batch.model}</span>
+                  <span class="font-mono text-sm truncate block">{batch.model}</span>
                 </:col>
                 <:col :let={batch} label="Endpoint" width="w-64">
-                  <span class="font-mono text-xs truncate block">{batch.url}</span>
+                  <span class="font-mono text-sm truncate block">{batch.url}</span>
                 </:col>
                 <:col :let={batch} label="Requests" width="w-24">
                   {batch.request_count || 0}
@@ -56,7 +56,7 @@
                       <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
                     </button>
                     <div class="tooltip tooltip-left flex items-center" data-tip="Cancel batch">
-                      <button :if={batch.state not in [:done, :failed, :cancelled]} phx-click="cancel_batch"
+                      <button :if={batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled]} phx-click="cancel_batch"
                         phx-value-id={batch.id} class="btn btn-sm btn-ghost hover:btn-warning"
                         data-confirm="Cancel this batch?">
                         <.icon name="hero-x-circle" class="w-5 h-5" />

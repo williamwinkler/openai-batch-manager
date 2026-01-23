@@ -33,7 +33,8 @@ defmodule BatcherWeb.RequestIndexLive do
         true -> validate_sort_by(sort_by_param)
       end
 
-    sort_input = if sort_by == "batch_filter" and is_nil(batch_id), do: "-created_at", else: sort_by
+    sort_input =
+      if sort_by == "batch_filter" and is_nil(batch_id), do: "-created_at", else: sort_by
 
     page_opts =
       AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 25)
@@ -157,7 +158,8 @@ defmodule BatcherWeb.RequestIndexLive do
     batch_id = socket.assigns[:batch_id]
 
     # If batch_filter is selected but no batch_id, use default sort
-    sort_input = if sort_by == "batch_filter" and is_nil(batch_id), do: "-created_at", else: sort_by
+    sort_input =
+      if sort_by == "batch_filter" and is_nil(batch_id), do: "-created_at", else: sort_by
 
     query =
       Batching.Request

@@ -48,7 +48,7 @@
         </.link>
         <button
           :if={
-            @batch.state != :cancelled and @batch.state != :done and @batch.state != :failed
+            @batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled]
           }
           phx-click="cancel_batch"
           class="btn btn-sm btn-ghost text-warning"

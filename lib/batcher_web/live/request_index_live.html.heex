@@ -31,10 +31,10 @@
                 <:col :let={request} label="ID" width="w-20">
                   <span class="font-mono text-sm">{request.id}</span>
                 </:col>
-                <:col :let={request} label="Custom ID" width="w-48">
+                <:col :let={request} label="Custom ID" width="w-72">
                   <span class="font-mono text-sm truncate block">{request.custom_id}</span>
                 </:col>
-                <:col :let={request} label="Batch" width="w-24">
+                <:col :let={request} label="Batch" width="w-20">
                   <.link navigate={~p"/batches/#{request.batch_id}"}
                     class="font-mono text-sm text-primary hover:underline">
                     #{request.batch_id}
@@ -43,7 +43,7 @@
                 <:col :let={request} label="Model" width="w-48">
                   <span class="font-mono text-sm truncate block">{request.model}</span>
                 </:col>
-                <:col :let={request} label="Endpoint" width="w-64">
+                <:col :let={request} label="Endpoint" width="w-48">
                   <span class="font-mono text-sm truncate block">{request.url}</span>
                 </:col>
                 <:col :let={request} label="Status" width="w-32">
@@ -52,7 +52,7 @@
                 <:col :let={request} label="Delivery" width="w-40">
                   <.delivery_config_display config={request.delivery_config} />
                 </:col>
-                <:col :let={request} label="Created" width="w-40">
+                <:col :let={request} label="Created" width="w-32">
                   <span class="text-sm text-base-content/50"
                     title={Calendar.strftime(request.created_at, "%d/%m/%Y, %H:%M" )}>
                     {Format.time_ago(request.created_at)}

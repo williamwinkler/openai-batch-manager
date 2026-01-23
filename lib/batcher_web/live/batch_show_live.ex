@@ -43,8 +43,27 @@ defmodule BatcherWeb.BatchShowLive do
          |> assign(:batch, updated_batch)
          |> put_flash(:info, "Batch cancelled successfully")}
 
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to cancel batch")}
+      {:error, error} ->
+        error_msg =
+          case error do
+            %Ash.Error.Invalid{errors: errors} ->
+              Enum.map_join(errors, ", ", fn e ->
+                # Handle NoMatchingTransition errors specifically
+                case e do
+                  %AshStateMachine.Errors.NoMatchingTransition{old_state: old_state, target: target} ->
+                    "Cannot transition batch from #{old_state} to #{target} state"
+
+                  _ ->
+                    # Use Exception.message for other error types
+                    Exception.message(e)
+                end
+              end)
+
+            other ->
+              "Failed to cancel batch: #{Exception.message(other)}"
+          end
+
+        {:noreply, put_flash(socket, :error, error_msg)}
     end
   end
 

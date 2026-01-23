@@ -46,6 +46,9 @@ defmodule Batcher.Batching.Request do
       # :mark_delivery_failed = Webhook delivery failed (delivery error, not a request error)
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
 
+      # Retry delivery after failure
+      transition :retry_delivery, from: :delivery_failed, to: :openai_processed
+
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
       transition :cancel, from: :pending, to: :cancelled
     end
@@ -200,6 +203,20 @@ defmodule Batcher.Batching.Request do
     update :cancel do
       require_atomic? false
       change transition_state(:cancelled)
+    end
+
+    update :update_delivery_config do
+      description "Update the delivery configuration for a request"
+      accept [:delivery_config]
+      require_atomic? false
+      validate Batching.Validations.DeliveryConfig
+    end
+
+    update :retry_delivery do
+      description "Retry delivery of a request that failed"
+      require_atomic? false
+      change transition_state(:openai_processed)
+      change run_oban_trigger(:deliver)
     end
 
     action :deliver, :struct do
