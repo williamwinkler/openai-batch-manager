@@ -31,11 +31,14 @@
                 <:col :let={batch} label="Model" width="w-48">
                   <span class="font-mono text-sm truncate block">{batch.model}</span>
                 </:col>
-                <:col :let={batch} label="Endpoint" width="w-64">
+                <:col :let={batch} label="Endpoint" width="w-44">
                   <span class="font-mono text-sm truncate block">{batch.url}</span>
                 </:col>
                 <:col :let={batch} label="Requests" width="w-24">
                   {batch.request_count || 0}
+                </:col>
+                <:col :let={batch} label="Size" width="w-24">
+                  {Format.bytes(batch.size_bytes)}
                 </:col>
                 <:col :let={batch} label="Status" width="w-32">
                   <.status_badge status={batch.state} />
@@ -47,28 +50,33 @@
                   </span>
                 </:col>
                 <:action :let={batch}>
-                  <div class="flex items-center justify-end gap-1.5">
-                    <button :if={batch.state==:building and batch.request_count> 0}
+                  <div class="flex items-center justify-end gap-2">
+                    <button
+                      :if={batch.state == :building and batch.request_count > 0}
                       phx-click="upload_batch"
                       phx-value-id={batch.id}
                       class="btn btn-sm btn-primary"
-                      >
+                    >
                       <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
                     </button>
-                    <div class="tooltip tooltip-left flex items-center" data-tip="Cancel batch">
-                      <button :if={batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled]} phx-click="cancel_batch"
-                        phx-value-id={batch.id} class="btn btn-sm btn-ghost hover:btn-warning"
-                        data-confirm="Cancel this batch?">
-                        <.icon name="hero-x-circle" class="w-5 h-5" />
-                      </button>
-                    </div>
-                    <div class="tooltip tooltip-left flex items-center" data-tip="Delete batch">
-                      <button :if={batch.state in [:done, :failed, :cancelled]} phx-click="delete_batch"
-                        phx-value-id={batch.id} class="btn btn-sm btn-ghost hover:btn-error"
-                        data-confirm="Delete this batch?">
-                        <.icon name="hero-trash" class="w-4 h-4" />
-                      </button>
-                    </div>
+                    <button
+                      :if={batch.state not in [:done, :failed, :cancelled]}
+                      phx-click="cancel_batch"
+                      phx-value-id={batch.id}
+                      class="btn btn-sm btn-soft btn-warning"
+                      data-confirm="Cancel this batch?"
+                    >
+                      <.icon name="hero-x-circle" class="w-4 h-4" /> Cancel
+                    </button>
+                    <button
+                      :if={batch.state in [:done, :failed, :cancelled]}
+                      phx-click="delete_batch"
+                      phx-value-id={batch.id}
+                      class="btn btn-sm btn-soft btn-error"
+                      data-confirm="Delete this batch?"
+                    >
+                      <.icon name="hero-trash" class="w-4 h-4" /> Delete
+                    </button>
                   </div>
                 </:action>
               </.table>

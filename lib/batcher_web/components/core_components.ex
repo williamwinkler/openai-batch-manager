@@ -358,8 +358,8 @@ defmodule BatcherWeb.CoreComponents do
           >
             {col[:label]}
           </th>
-          <th :if={@action != []} class="text-right py-3 px-4 w-28">
-            <span class="sr-only">{gettext("Actions")}</span>
+          <th :if={@action != []} class="text-right font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4 w-32">
+            {gettext("Actions")}
           </th>
         </tr>
       </thead>
@@ -508,6 +508,7 @@ defmodule BatcherWeb.CoreComponents do
       <.status_badge status={:failed} />
   """
   attr :status, :atom, required: true, doc: "the status to display"
+  attr :type, :atom, default: :batch, doc: "the type of status (:batch or :request)"
 
   def status_badge(assigns) do
     {bg_class, text_class, dot_class} =
@@ -524,6 +525,7 @@ defmodule BatcherWeb.CoreComponents do
         # Warning states - orange/yellow
         :cancelled -> {"bg-warning/15", "text-warning", "bg-warning"}
         :expired -> {"bg-warning/15", "text-warning", "bg-warning"}
+        :partially_delivered -> {"bg-warning/15", "text-warning", "bg-warning"}
         # In progress states - blue
         :uploading -> {"bg-info/15", "text-info", "bg-info"}
         :uploaded -> {"bg-info/15", "text-info", "bg-info"}
@@ -535,10 +537,7 @@ defmodule BatcherWeb.CoreComponents do
         _ -> {"bg-base-300", "text-base-content/70", "bg-base-content/50"}
       end
 
-    status_label =
-      assigns.status
-      |> to_string()
-      |> String.replace("_", " ")
+    {status_label, description} = get_status_info(assigns.status, assigns.type)
 
     assigns =
       assigns
@@ -546,17 +545,59 @@ defmodule BatcherWeb.CoreComponents do
       |> assign(:text_class, text_class)
       |> assign(:dot_class, dot_class)
       |> assign(:status_label, status_label)
+      |> assign(:description, description)
 
     ~H"""
-    <span class={[
-      "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium",
-      @bg_class,
-      @text_class
-    ]}>
+    <span
+      class={[
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium cursor-default",
+        @bg_class,
+        @text_class
+      ]}
+      title={@description}
+    >
       <span class={["w-1.5 h-1.5 rounded-full", @dot_class]}></span>
       {@status_label}
     </span>
     """
+  end
+
+  defp get_status_info(status, :batch) do
+    alias Batcher.Batching.Types.BatchStatus
+
+    case BatchStatus.match(status) do
+      {:ok, _} ->
+        label = BatchStatus.label(status) || format_status(status)
+        description = BatchStatus.description(status)
+        {label, description}
+
+      :error ->
+        {format_status(status), nil}
+    end
+  end
+
+  defp get_status_info(status, :request) do
+    alias Batcher.Batching.Types.RequestStatus
+
+    case RequestStatus.match(status) do
+      {:ok, _} ->
+        label = RequestStatus.label(status) || format_status(status)
+        description = RequestStatus.description(status)
+        {label, description}
+
+      :error ->
+        {format_status(status), nil}
+    end
+  end
+
+  defp get_status_info(status, _type) do
+    {format_status(status), nil}
+  end
+
+  defp format_status(status) do
+    status
+    |> to_string()
+    |> String.replace("_", " ")
   end
 
   @doc """

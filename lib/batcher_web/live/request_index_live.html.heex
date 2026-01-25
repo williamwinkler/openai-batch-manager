@@ -45,7 +45,7 @@
                   <span class="font-mono text-sm truncate block">{request.url}</span>
                 </:col>
                 <:col :let={request} label="Status" width="w-32">
-                  <.status_badge status={request.state} />
+                  <.status_badge status={request.state} type={:request} />
                 </:col>
                 <:col :let={request} label="Delivery" width="w-32">
                   <.delivery_config_display config={request.delivery_config} />

@@ -257,6 +257,8 @@
               is_completed = is_error_state or transition != nil or (current_index != nil and index < current_index)
               is_future = not is_error_state and current_index != nil and index > current_index
               is_last_shown = index == length(states_to_show) - 1
+              state_label = Batcher.Batching.Types.BatchStatus.label(state) || (state |> to_string() |> String.replace("_", " "))
+              state_description = Batcher.Batching.Types.BatchStatus.description(state)
             %>
             <li>
               <%= if index > 0 do %>
@@ -278,8 +280,8 @@
                   </svg>
                 <% end %>
               </div>
-              <div class={["timeline-end timeline-box text-xs", if(is_future, do: "opacity-40")]}>
-                {state |> to_string() |> String.replace("_", " ")}
+              <div class={["timeline-end timeline-box text-xs cursor-default", if(is_future, do: "opacity-40")]} title={state_description}>
+                {state_label}
               </div>
               <%= if is_error_state and is_last_shown do %>
                 <hr class="bg-error" />
@@ -294,6 +296,8 @@
           <%= if is_error_state do %>
             <%
               error_transition = Map.get(completed_states, current_state)
+              error_label = Batcher.Batching.Types.BatchStatus.label(current_state) || (current_state |> to_string() |> String.replace("_", " "))
+              error_description = Batcher.Batching.Types.BatchStatus.description(current_state)
             %>
             <li>
               <hr class="bg-error" />
@@ -307,8 +311,8 @@
                   <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
                 </svg>
               </div>
-              <div class="timeline-end timeline-box text-xs text-error">
-                {current_state |> to_string() |> String.replace("_", " ")}
+              <div class="timeline-end timeline-box text-xs text-error cursor-default" title={error_description}>
+                {error_label}
               </div>
             </li>
           <% end %>

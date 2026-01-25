@@ -8,7 +8,7 @@
     <%!-- Page header --%>
     <div class="flex items-center gap-3">
       <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
-      <.status_badge status={@request.state} />
+      <.status_badge status={@request.state} type={:request} />
     </div>
 
     <%!-- Request info --%>
@@ -202,9 +202,9 @@
           </:col>
           <:col :let={{_id, attempt}} label="Outcome" width="w-2/12">
             <%= if attempt.outcome == :success do %>
-              <.status_badge status={:delivered} />
+              <.status_badge status={:delivered} type={:request} />
             <% else %>
-              <.status_badge status={:delivery_failed} />
+              <.status_badge status={:delivery_failed} type={:request} />
             <% end %>
           </:col>
           <:col :let={{_id, attempt}} label="Error" width="w-5/12">
