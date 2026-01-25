@@ -678,7 +678,7 @@ defmodule BatcherWeb.CoreComponents do
         <%= if @delivery_type == "webhook" do %>
           <.icon name="hero-globe-alt" class="w-3 h-3" /> webhook
         <% else %>
-          <.icon name="hero-arrow-path" class="w-3 h-3" /> rabbitmq
+          <img src="/images/rabbitmq.svg" class="w-3 h-3 inline-block" alt="RabbitMQ" /> rabbitmq
         <% end %>
       </span>
     </div>

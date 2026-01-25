@@ -27,7 +27,7 @@ defmodule BatcherWeb.RequestShowLive do
           |> assign(:payload_modal_content, "")
           |> assign(:payload_modal_is_json, false)
           |> assign(:editing_delivery_config, false)
-          |> assign(:delivery_types, DeliveryType.options())
+          |> assign(:delivery_types, Enum.map(DeliveryType.values(), &{DeliveryType.label(&1), to_string(&1)}))
           |> assign_delivery_config_form_values(request.delivery_config)
           |> assign_delivery_config_form(request)
 
