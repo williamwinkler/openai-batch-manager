@@ -3,9 +3,39 @@
     <.breadcrumb items={[{"Batches", "/"}, {"Batch #{@batch.id}", ~p"/batches/#{@batch.id}"}]} />
 
     <%!-- Page header --%>
-    <div class="flex items-center gap-3">
-      <h1 class="text-xl font-semibold">Batch {@batch.id}</h1>
-      <.status_badge status={@batch.state} />
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-semibold">Batch {@batch.id}</h1>
+        <.status_badge status={@batch.state} />
+      </div>
+      <div class="flex gap-2">
+        <button
+          :if={@batch.state == :building}
+          phx-click="upload_batch"
+          class="btn btn-sm btn-primary"
+        >
+          <.icon name="hero-arrow-up-tray" class="w-4 h-4" />
+          Upload Batch
+        </button>
+        <button
+          :if={
+            @batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled, :done]
+          }
+          phx-click="cancel_batch"
+          class="btn btn-sm btn-ghost text-warning"
+          data-confirm="Are you sure you want to cancel this batch?"
+        >
+          Cancel Batch
+        </button>
+        <button
+          :if={@batch.state == :cancelled or @batch.state == :done or @batch.state == :failed}
+          phx-click="delete_batch"
+          class="btn btn-sm btn-ghost text-error"
+          data-confirm="Are you sure you want to delete this batch?"
+        >
+          Delete Batch
+        </button>
+      </div>
     </div>
 
     <%!-- Batch info --%>
@@ -62,8 +92,8 @@
       </div>
     </div>
 
-    <%!-- OpenAI and Token Usage --%>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <%!-- OpenAI, Token Usage, and Delivery Stats --%>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <%!-- OpenAI Section --%>
       <div class="border border-base-300/50 rounded-lg overflow-hidden">
         <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
@@ -119,28 +149,172 @@
           </div>
         </div>
       </div>
+
+      <%!-- Delivery Stats Section --%>
+      <%
+        total = @batch.request_count || 0
+        delivered = @batch.delivery_stats[:delivered] || 0
+        delivering = @batch.delivery_stats[:delivering] || 0
+        failed = @batch.delivery_stats[:failed] || 0
+
+        # Calculate percentages for the stacked bar
+        {delivered_pct, delivering_pct, failed_pct} =
+          if total > 0 do
+            {delivered / total * 100, delivering / total * 100, failed / total * 100}
+          else
+            {0, 0, 0}
+          end
+      %>
+      <div class="border border-base-300/50 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
+          <span class="font-medium">Delivery</span>
+        </div>
+        <div class="p-4">
+          <div class="space-y-3 text-sm">
+            <%!-- Stacked progress bar --%>
+            <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
+              <div class="bg-success h-full" style={"width: #{delivered_pct}%"}></div>
+              <div class="bg-info h-full" style={"width: #{delivering_pct}%"}></div>
+              <div class="bg-error h-full" style={"width: #{failed_pct}%"}></div>
+            </div>
+
+            <%!-- Stats with x/total format --%>
+            <div class="flex justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-success"></span>
+                <span class="text-base-content/50">Delivered</span>
+              </span>
+              <span class="font-mono">{delivered}/{total}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-info"></span>
+                <span class="text-base-content/50">Delivering</span>
+              </span>
+              <span class="font-mono">{delivering}/{total}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-error"></span>
+                <span class="text-base-content/50">Failed</span>
+              </span>
+              <span class="font-mono">{failed}/{total}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <%!-- Actions --%>
-    <div class="flex gap-2">
-      <button
-        :if={
-          @batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled, :done]
-        }
-        phx-click="cancel_batch"
-        class="btn btn-sm btn-ghost text-warning"
-        data-confirm="Are you sure you want to cancel this batch?"
-      >
-        Cancel Batch
-      </button>
-      <button
-        :if={@batch.state == :cancelled or @batch.state == :done or @batch.state == :failed}
-        phx-click="delete_batch"
-        class="btn btn-sm btn-ghost text-error"
-        data-confirm="Are you sure you want to delete this batch?"
-      >
-        Delete Batch
-      </button>
+    <%!-- Transition Timeline --%>
+    <%
+      # Define the happy path states in order
+      happy_path = [:building, :uploading, :uploaded, :openai_processing, :openai_completed, :downloading, :ready_to_deliver, :delivering, :done]
+
+      # Build a map of state => transition for completed states
+      completed_states = Map.new(@transitions, fn t -> {t.to, t} end)
+
+      # Find current state's position in happy path
+      current_state = @batch.state
+      current_index = Enum.find_index(happy_path, &(&1 == current_state))
+
+      # Check if we're in a terminal error state
+      is_error_state = current_state in [:failed, :cancelled, :partially_delivered, :delivery_failed]
+
+      # When in error state, find the last completed happy path index based on transitions
+      last_completed_index =
+        if is_error_state do
+          happy_path
+          |> Enum.with_index()
+          |> Enum.filter(fn {state, _idx} -> Map.has_key?(completed_states, state) end)
+          |> Enum.map(fn {_state, idx} -> idx end)
+          |> Enum.max(fn -> -1 end)
+        else
+          nil
+        end
+
+      # Determine which states to show:
+      # - If in error state, only show states up to last_completed_index
+      # - Otherwise show all states
+      states_to_show =
+        if is_error_state and last_completed_index != nil do
+          Enum.take(happy_path, last_completed_index + 1)
+        else
+          happy_path
+        end
+    %>
+    <div class="border border-base-300/50 rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
+        <span class="font-medium">Timeline</span>
+      </div>
+      <div class="p-4 overflow-x-auto flex justify-center">
+        <ul class="timeline timeline-horizontal">
+          <%= for {state, index} <- Enum.with_index(states_to_show) do %>
+            <%
+              transition = Map.get(completed_states, state)
+              is_current = state == current_state
+              # When in error state, all shown states are completed (we passed through them)
+              # When in normal flow, state is completed if before current, current if matching
+              is_completed = is_error_state or transition != nil or (current_index != nil and index < current_index)
+              is_future = not is_error_state and current_index != nil and index > current_index
+              is_last_shown = index == length(states_to_show) - 1
+            %>
+            <li>
+              <%= if index > 0 do %>
+                <hr class={if is_completed or is_current, do: "bg-primary", else: "bg-base-300"} />
+              <% end %>
+              <div class="timeline-start text-xs text-base-content/50 min-h-5">
+                <%= if transition do %>
+                  {Calendar.strftime(transition.transitioned_at, "%d %b %H:%M")}
+                <% end %>
+              </div>
+              <div class="timeline-middle">
+                <%= if is_completed do %>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-primary">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+                  </svg>
+                <% else %>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class={["w-5 h-5", if(is_current, do: "text-primary animate-pulse", else: "text-base-300")]}>
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16z" clip-rule="evenodd" />
+                  </svg>
+                <% end %>
+              </div>
+              <div class={["timeline-end timeline-box text-xs", if(is_future, do: "opacity-40")]}>
+                {state |> to_string() |> String.replace("_", " ")}
+              </div>
+              <%= if is_error_state and is_last_shown do %>
+                <hr class="bg-error" />
+              <% else %>
+                <%= if not is_last_shown do %>
+                  <hr class={if is_completed, do: "bg-primary", else: "bg-base-300"} />
+                <% end %>
+              <% end %>
+            </li>
+          <% end %>
+          <%!-- Show error state at the end if applicable --%>
+          <%= if is_error_state do %>
+            <%
+              error_transition = Map.get(completed_states, current_state)
+            %>
+            <li>
+              <hr class="bg-error" />
+              <div class="timeline-start text-xs text-base-content/50 min-h-5">
+                <%= if error_transition do %>
+                  {Calendar.strftime(error_transition.transitioned_at, "%d %b %H:%M")}
+                <% end %>
+              </div>
+              <div class="timeline-middle">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-error">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="timeline-end timeline-box text-xs text-error">
+                {current_state |> to_string() |> String.replace("_", " ")}
+              </div>
+            </li>
+          <% end %>
+        </ul>
+      </div>
     </div>
+
   </div>
 </Layouts.app>

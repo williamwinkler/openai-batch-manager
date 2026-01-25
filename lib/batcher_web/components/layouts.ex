@@ -35,33 +35,33 @@ defmodule BatcherWeb.Layouts do
     <div class="flex flex-col h-screen bg-base-100">
       <!-- Top Navbar -->
       <header class="bg-base-200 border-b border-base-300/50">
-        <div class="flex items-center justify-between h-16 px-6">
-          <div class="flex items-center gap-8">
+        <div class="flex items-center h-16 px-6">
+          <div class="flex-1 flex items-center">
             <a href="/" class="flex items-center gap-2.5">
               <span class="text-lg font-semibold tracking-tight">OpenAI Batch Manager</span>
             </a>
-            <nav class="flex items-center gap-1">
-              <.nav_link
-                href="/"
-                icon="hero-chart-bar-square"
-                label="Dashboard"
-                active={@current_path == "/"}
-              />
-              <.nav_link
-                href="/batches"
-                icon="hero-rectangle-stack"
-                label="Batches"
-                active={@current_path && String.starts_with?(@current_path, "/batches")}
-              />
-              <.nav_link
-                href="/requests"
-                icon="hero-chat-bubble-bottom-center-text"
-                label="Requests"
-                active={@current_path && String.starts_with?(@current_path, "/requests")}
-              />
-            </nav>
           </div>
-          <div class="flex items-center">
+          <nav class="flex items-center gap-1">
+            <.nav_link
+              href="/"
+              icon="hero-chart-bar-square"
+              label="Dashboard"
+              active={@current_path == "/"}
+            />
+            <.nav_link
+              href="/batches"
+              icon="hero-rectangle-stack"
+              label="Batches"
+              active={@current_path && String.starts_with?(@current_path, "/batches")}
+            />
+            <.nav_link
+              href="/requests"
+              icon="hero-chat-bubble-bottom-center-text"
+              label="Requests"
+              active={@current_path && String.starts_with?(@current_path, "/requests")}
+            />
+          </nav>
+          <div class="flex-1 flex items-center justify-end">
             <.theme_toggle />
           </div>
         </div>

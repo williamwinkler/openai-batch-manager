@@ -13,9 +13,10 @@ defmodule BatcherWeb.BatchShowLive do
       BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch_id}")
     end
 
-    case Batching.get_batch_by_id(batch_id, load: [:request_count, :size_bytes]) do
+    case Batching.get_batch_by_id(batch_id, load: [:request_count, :size_bytes, :transitions, :delivery_stats]) do
       {:ok, batch} ->
-        {:ok, assign(socket, :batch, batch)}
+        transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
+        {:ok, assign(socket, batch: batch, transitions: transitions)}
 
       {:error, _} ->
         {:ok,
@@ -31,16 +32,45 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
+  def handle_event("upload_batch", _params, socket) do
+    batch = socket.assigns.batch
+
+    case Batching.start_batch_upload(batch) do
+      {:ok, updated_batch} ->
+        updated_batch = Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+        transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
+
+        {:noreply,
+         socket
+         |> assign(batch: updated_batch, transitions: transitions)
+         |> put_flash(:info, "Batch upload started")}
+
+      {:error, error} ->
+        error_msg =
+          case error do
+            %Ash.Error.Invalid{errors: errors} ->
+              Enum.map_join(errors, ", ", &Exception.message/1)
+
+            other ->
+              "Failed to start upload: #{Exception.message(other)}"
+          end
+
+        {:noreply, put_flash(socket, :error, error_msg)}
+    end
+  end
+
+  @impl true
   def handle_event("cancel_batch", _params, socket) do
     batch = socket.assigns.batch
 
     case Batching.cancel_batch(batch) do
       {:ok, updated_batch} ->
-        updated_batch = Ash.load!(updated_batch, [:request_count, :size_bytes])
+        updated_batch = Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+        transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
         {:noreply,
          socket
-         |> assign(:batch, updated_batch)
+         |> assign(batch: updated_batch, transitions: transitions)
          |> put_flash(:info, "Batch cancelled successfully")}
 
       {:error, error} ->
@@ -88,8 +118,9 @@ defmodule BatcherWeb.BatchShowLive do
         %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}},
         socket
       ) do
-    batch = Ash.load!(batch, [:request_count, :size_bytes])
-    {:noreply, assign(socket, :batch, batch)}
+    batch = Ash.load!(batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+    transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
+    {:noreply, assign(socket, batch: batch, transitions: transitions)}
   end
 
   @impl true
