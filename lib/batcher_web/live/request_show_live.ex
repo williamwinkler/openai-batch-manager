@@ -298,6 +298,14 @@ defmodule BatcherWeb.RequestShowLive do
 
   def format_json(payload), do: inspect(payload)
 
+  @doc """
+  Format bytes into a human-readable string.
+  """
+  def format_bytes(nil), do: "—"
+  def format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"
+  def format_bytes(bytes) when bytes < 1024 * 1024, do: "#{Float.round(bytes / 1024, 1)} KB"
+  def format_bytes(bytes), do: "#{Float.round(bytes / (1024 * 1024), 2)} MB"
+
   # Format content and return both the formatted content and whether it's JSON.
   # Returns {content, is_json}
   defp format_content_with_type(nil), do: {"", false}
