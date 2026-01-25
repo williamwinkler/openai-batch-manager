@@ -4,7 +4,7 @@ defmodule BatcherWeb.RequestShowLive do
   alias Batcher.Batching
   alias Batcher.Batching.Types.DeliveryType
 
-  @per_page 25
+  @per_page 5
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -21,7 +21,7 @@ defmodule BatcherWeb.RequestShowLive do
 
         socket =
           socket
-          |> load_request_data(request, 1)
+          |> load_request_data(request, 0)
           |> assign(:show_payload_modal, false)
           |> assign(:payload_modal_title, "")
           |> assign(:payload_modal_content, "")
@@ -43,16 +43,9 @@ defmodule BatcherWeb.RequestShowLive do
 
   @impl true
   def handle_params(params, _url, socket) do
-    page = String.to_integer(params["page"] || "1")
+    offset = String.to_integer(params["offset"] || "0")
     request = socket.assigns.request
-    {:noreply, load_delivery_attempts(socket, request.id, page)}
-  end
-
-  @impl true
-  def handle_event("paginate_attempts", %{"page" => page}, socket) do
-    page = String.to_integer(page)
-    request_id = socket.assigns.request.id
-    {:noreply, push_patch(socket, to: ~p"/requests/#{request_id}?page=#{page}")}
+    {:noreply, load_delivery_attempts(socket, request.id, offset)}
   end
 
   @impl true
@@ -92,6 +85,35 @@ defmodule BatcherWeb.RequestShowLive do
       socket
       |> assign(:show_payload_modal, true)
       |> assign(:payload_modal_title, "Error Message")
+      |> assign(:payload_modal_content, content)
+      |> assign(:payload_modal_is_json, is_json)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_attempt_delivery_config", %{"config" => config_json}, socket) do
+    config = Jason.decode!(config_json)
+    content = Jason.encode!(config, pretty: true)
+
+    socket =
+      socket
+      |> assign(:show_payload_modal, true)
+      |> assign(:payload_modal_title, "Delivery Configuration")
+      |> assign(:payload_modal_content, content)
+      |> assign(:payload_modal_is_json, true)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_attempt_error", %{"error" => error_msg}, socket) do
+    {content, is_json} = format_content_with_type(error_msg)
+
+    socket =
+      socket
+      |> assign(:show_payload_modal, true)
+      |> assign(:payload_modal_title, "Delivery Error")
       |> assign(:payload_modal_content, content)
       |> assign(:payload_modal_is_json, is_json)
 
@@ -226,9 +248,10 @@ defmodule BatcherWeb.RequestShowLive do
         %{topic: "request_delivery_attempts:created:" <> _request_id, payload: %{data: attempt}},
         socket
       ) do
-    # Only add if it belongs to this request
+    # Only reload if it belongs to this request
     if attempt.request_id == socket.assigns.request.id do
-      {:noreply, stream(socket, :delivery_attempts, [attempt], reset: false)}
+      # Reload from offset 0 to show the newest attempt at the top with proper pagination
+      {:noreply, load_delivery_attempts(socket, socket.assigns.request.id, 0)}
     else
       {:noreply, socket}
     end
@@ -239,34 +262,22 @@ defmodule BatcherWeb.RequestShowLive do
     {:noreply, socket}
   end
 
-  defp load_request_data(socket, request, page) do
+  defp load_request_data(socket, request, offset) do
     socket
     |> assign(:request, request)
-    |> load_delivery_attempts(request.id, page)
+    |> load_delivery_attempts(request.id, offset)
   end
 
-  defp load_delivery_attempts(socket, request_id, page) do
-    skip = (page - 1) * @per_page
-
+  defp load_delivery_attempts(socket, request_id, offset) do
     query =
       Batching.RequestDeliveryAttempt
-      |> Ash.Query.for_read(:list_paginated, request_id: request_id, skip: skip, limit: @per_page)
+      |> Ash.Query.for_read(:list_paginated, request_id: request_id, skip: offset, limit: @per_page)
 
-    case Ash.read!(query, page: [offset: skip, limit: @per_page, count: true]) do
-      %Ash.Page.Offset{results: attempts, count: total_count, more?: _more} ->
-        socket
-        |> stream(:delivery_attempts, attempts, reset: true)
-        |> assign(:page, page)
-        |> assign(:per_page, @per_page)
-        |> assign(:total_count, total_count || 0)
+    page = Ash.read!(query, page: [offset: offset, limit: @per_page, count: true])
 
-      _ ->
-        socket
-        |> stream(:delivery_attempts, [], reset: true)
-        |> assign(:page, page)
-        |> assign(:per_page, @per_page)
-        |> assign(:total_count, 0)
-    end
+    socket
+    |> stream(:delivery_attempts, page.results, reset: true)
+    |> assign(:delivery_attempts_page, page)
   end
 
   @doc """

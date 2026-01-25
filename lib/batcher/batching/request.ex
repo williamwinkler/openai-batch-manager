@@ -46,8 +46,10 @@ defmodule Batcher.Batching.Request do
       # :mark_delivery_failed = Webhook delivery failed (delivery error, not a request error)
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
 
-      # Retry delivery after failure
-      transition :retry_delivery, from: :delivery_failed, to: :openai_processed
+      # Redeliver - allows redelivery from any state that has a response
+      transition :retry_delivery,
+        from: [:openai_processed, :delivered, :delivery_failed],
+        to: :openai_processed
 
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
       transition :cancel, from: :pending, to: :cancelled

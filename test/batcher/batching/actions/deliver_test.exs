@@ -354,7 +354,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       GenServer.stop(Batcher.RabbitMQ.Publisher)
     end
 
-    test "rabbitmq_routing_key takes priority over rabbitmq_queue for routing" do
+    test "delivers to custom exchange with routing_key" do
       # Start fake publisher that returns :ok for all publishes
       {:ok, _pid} = FakePublisher.start_link()
 
@@ -364,7 +364,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       response_payload = %{"output" => "test response", "status" => "success"}
 
-      # Both rabbitmq_routing_key and rabbitmq_queue provided - routing_key should be used
+      # Custom exchange mode: exchange + routing_key (no queue)
       request =
         seeded_request(
           batch_id: batch.id,
@@ -372,8 +372,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           delivery_config: %{
             "type" => "rabbitmq",
             "rabbitmq_exchange" => "test_exchange",
-            "rabbitmq_routing_key" => "priority.routing.key",
-            "rabbitmq_queue" => "fallback_queue"
+            "rabbitmq_routing_key" => "priority.routing.key"
           },
           response_payload: response_payload
         )
@@ -798,6 +797,9 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     end
 
     test "raises error when queue is missing for RabbitMQ delivery" do
+      # Start fake publisher so we get past the "not configured" check
+      {:ok, _pid} = FakePublisher.start_link()
+
       batch =
         seeded_batch(state: :ready_to_deliver)
         |> generate()
@@ -820,6 +822,45 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       assert {:error, %Ash.Error.Invalid{}} = result
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "fails delivery when RabbitMQ publisher is not configured" do
+      # Do NOT start fake publisher - simulating RabbitMQ not configured
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue"
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      assert request_after.error_msg == nil
+
+      # Error details are stored on delivery_attempt
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :rabbitmq_not_configured
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "RabbitMQ is not configured"
     end
 
     test "raises error when webhook_url is missing" do

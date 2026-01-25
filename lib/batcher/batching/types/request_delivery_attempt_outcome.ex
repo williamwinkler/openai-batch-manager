@@ -32,6 +32,10 @@ defmodule Batcher.Batching.Types.RequestDeliveryAttemptOutcome do
         label: "Queue not found",
         description: "The RabbitMQ queue was not found"
       ],
+      rabbitmq_not_configured: [
+        label: "RabbitMQ not configured",
+        description: "RabbitMQ is not configured on the server"
+      ],
       other: [
         label: "Other",
         description: "The delivery attempt failed for an unknown reason"

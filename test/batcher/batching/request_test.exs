@@ -567,10 +567,10 @@ defmodule Batcher.Batching.RequestTest do
       assert request.delivery_config["rabbitmq_routing_key"] == "results.completed"
     end
 
-    test "can create request with rabbitmq exchange, routing_key and optional queue" do
+    test "rejects request with both rabbitmq exchange and queue" do
       batch = generate(batch())
 
-      {:ok, request} =
+      result =
         Batching.create_request(%{
           batch_id: batch.id,
           custom_id: "req_rabbitmq_full",
@@ -590,10 +590,7 @@ defmodule Batcher.Batching.RequestTest do
           }
         })
 
-      assert request.delivery_config["type"] == "rabbitmq"
-      assert request.delivery_config["rabbitmq_exchange"] == "my_exchange"
-      assert request.delivery_config["rabbitmq_routing_key"] == "results.completed"
-      assert request.delivery_config["rabbitmq_queue"] == "results_queue"
+      assert {:error, %Ash.Error.Invalid{}} = result
     end
 
     test "can create request with rabbitmq queue only (default exchange mode)" do

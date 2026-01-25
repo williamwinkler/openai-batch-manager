@@ -1,5 +1,5 @@
 <Layouts.app flash={@flash} current_path={@current_path}>
-  <div class="space-y-6">
+  <div class="max-w-6xl mx-auto space-y-6">
     <.breadcrumb items={[
       {"Requests", ~p"/requests"},
       {@request.custom_id, ~p"/requests/#{@request.id}"}
@@ -10,25 +10,6 @@
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
         <.status_badge status={@request.state} />
-        <button
-          :if={@request.state == :delivery_failed}
-          type="button"
-          class="btn btn-sm btn-primary"
-          phx-click="retry_delivery"
-          phx-disable-with="Retrying..."
-        >
-          <.icon name="hero-arrow-path" class="w-4 h-4" />
-          Retry Delivery
-        </button>
-        <button
-          :if={@request.state in [:openai_processed, :delivering]}
-          type="button"
-          class="btn btn-sm btn-primary btn-disabled"
-          disabled
-        >
-          <span class="loading loading-spinner loading-xs"></span>
-          Delivering...
-        </button>
       </div>
 
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -150,32 +131,82 @@
     <%!-- Delivery attempts --%>
     <div class="border border-base-300/50 rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
-        <span class="font-medium">Delivery attempts</span>
-        <span class="text-sm text-base-content/50">{@total_count}</span>
+        <div class="flex items-center gap-2">
+          <span class="font-medium">Delivery attempts</span>
+          <span class="text-sm text-base-content/50">{@delivery_attempts_page.count || 0}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            :if={@request.state == :delivering}
+            type="button"
+            class="btn btn-sm btn-primary btn-disabled"
+            disabled
+          >
+            <span class="loading loading-spinner loading-xs"></span>
+            Delivering...
+          </button>
+          <div
+            :if={@request.state in [:openai_processed, :delivered, :delivery_failed]}
+            class="tooltip tooltip-left"
+            data-tip="Redeliver with current delivery config"
+          >
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              phx-click="retry_delivery"
+              phx-disable-with="Redelivering..."
+            >
+              <.icon name="hero-arrow-path" class="w-4 h-4" />
+              Redeliver
+            </button>
+          </div>
+        </div>
       </div>
 
-      <%= if @total_count == 0 do %>
+      <%= if (@delivery_attempts_page.count || 0) == 0 do %>
         <div class="p-8 text-center text-base-content/50">
           No delivery attempts yet
         </div>
       <% else %>
         <.table id="delivery_attempts" rows={@streams.delivery_attempts}>
-          <:col :let={{_id, attempt}} label="ID">
+          <:col :let={{_id, attempt}} label="ID" width="w-1/12">
             <span class="font-mono text-xs text-base-content/50">{attempt.id}</span>
           </:col>
-          <:col :let={{_id, attempt}} label="Outcome">
+          <:col :let={{_id, attempt}} label="Delivery" width="w-2/12">
+            <button
+              type="button"
+              class="hover:opacity-80 transition-opacity cursor-pointer"
+              phx-click="show_attempt_delivery_config"
+              phx-value-config={Jason.encode!(attempt.delivery_config)}
+              title="Click to view delivery config"
+            >
+              <.delivery_config_display config={attempt.delivery_config} />
+            </button>
+          </:col>
+          <:col :let={{_id, attempt}} label="Outcome" width="w-2/12">
             <%= if attempt.outcome == :success do %>
               <.status_badge status={:delivered} />
             <% else %>
               <.status_badge status={:delivery_failed} />
             <% end %>
           </:col>
-          <:col :let={{_id, attempt}} label="Error">
-            <div class="max-w-xs truncate text-xs text-error" title={attempt.error_msg}>
-              {attempt.error_msg || "—"}
-            </div>
+          <:col :let={{_id, attempt}} label="Error" width="w-5/12">
+            <%= if attempt.error_msg do %>
+              <button
+                type="button"
+                class="text-xs text-error hover:text-error/80 transition-colors cursor-pointer flex items-center gap-1 w-full"
+                phx-click="show_attempt_error"
+                phx-value-error={attempt.error_msg}
+                title="Click to view full error"
+              >
+                <span class="truncate">{attempt.error_msg}</span>
+                <.icon name="hero-arrows-pointing-out" class="w-3 h-3 shrink-0 opacity-50" />
+              </button>
+            <% else %>
+              <span class="text-xs text-base-content/50">—</span>
+            <% end %>
           </:col>
-          <:col :let={{_id, attempt}} label="Time">
+          <:col :let={{_id, attempt}} label="Time" width="w-1/12">
             <span class="text-xs text-base-content/50">
               <%= if attempt.attempted_at do %>
                 {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
@@ -185,17 +216,15 @@
             </span>
           </:col>
         </.table>
-
-        <div class="px-4 py-3 border-t border-base-300/50">
-          <.pagination_controls
-            page={@page}
-            per_page={@per_page}
-            total_count={@total_count}
-            phx_click="paginate_attempts"
-          />
-        </div>
       <% end %>
     </div>
+
+    <%!-- Delivery attempts pagination --%>
+    <.numbered_pagination
+      page={@delivery_attempts_page}
+      base_path={~p"/requests/#{@request.id}"}
+      extra_params={[]}
+    />
   </div>
 
   <%!-- Payload Modal --%>

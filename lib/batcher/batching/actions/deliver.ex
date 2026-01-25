@@ -149,6 +149,19 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.update!()
     end
 
+    # Check if RabbitMQ Publisher is running before attempting to publish
+    case GenServer.whereis(Batcher.RabbitMQ.Publisher) do
+      nil ->
+        error_msg = "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
+        Logger.error("Delivery failed for request #{request_updated.id}: #{error_msg}")
+        handle_delivery_failure(request_updated, batch, :rabbitmq_not_configured, error_msg)
+
+      _pid ->
+        do_rabbitmq_publish(request_updated, batch, exchange, routing_key)
+    end
+  end
+
+  defp do_rabbitmq_publish(request_updated, batch, exchange, routing_key) do
     # Perform RabbitMQ publish
     case Batcher.RabbitMQ.Publisher.publish(
            exchange,
