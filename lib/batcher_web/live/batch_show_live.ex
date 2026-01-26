@@ -102,7 +102,7 @@ defmodule BatcherWeb.BatchShowLive do
     batch = socket.assigns.batch
 
     case Batching.destroy_batch(batch) do
-      {:ok, _} ->
+      :ok ->
         {:noreply,
          socket
          |> put_flash(:info, "Batch deleted successfully")

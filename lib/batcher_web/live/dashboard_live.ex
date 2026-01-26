@@ -85,7 +85,7 @@ defmodule BatcherWeb.DashboardLive do
     active_batches =
       Enum.reduce(active_states, 0, fn state, acc -> acc + Map.get(batch_stats, state, 0) end)
 
-    completed_batches = Map.get(batch_stats, :done, 0)
+    completed_batches = Map.get(batch_stats, :delivered, 0)
 
     # Prepare chart data
     batch_chart_data = prepare_batch_chart_data(batch_stats, total_batches)
@@ -113,7 +113,7 @@ defmodule BatcherWeb.DashboardLive do
       {"Processing", [:openai_processing, :openai_completed, :downloading, :downloaded],
        "#fbbf24", "bg-warning"},
       {"Delivering", [:ready_to_deliver, :delivering], "#a78bfa", "bg-accent"},
-      {"Completed", [:done], "#4ade80", "bg-success"},
+      {"Completed", [:delivered], "#4ade80", "bg-success"},
       {"Failed", [:failed, :expired], "#f87171", "bg-error"},
       {"Cancelled", [:cancelled], "#9ca3af", "bg-neutral"}
     ]

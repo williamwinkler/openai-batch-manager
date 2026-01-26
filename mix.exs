@@ -43,7 +43,14 @@ defmodule Batcher.MixProject do
           Batcher.Batching.Changes.CheckOpenaiBatchStatus,
           # Unused change module (not used in actual codebase)
           Batcher.Batching.Changes.AssignToBatch,
-          Batcher.RabbitMQ.FakePublisher
+          Batcher.RabbitMQ.FakePublisher,
+          # RabbitMQ modules require running RabbitMQ server (integration tests)
+          Batcher.RabbitMQ.Consumer,
+          Batcher.RabbitMQ.Publisher,
+          # Dead code - not routed
+          BatcherWeb.PageController,
+          # Macro-generated code (Ash.Type.Enum)
+          Batcher.Batching.Types.DeliveryType
         ]
       ]
     ]

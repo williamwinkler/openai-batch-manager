@@ -504,7 +504,7 @@ defmodule BatcherWeb.CoreComponents do
 
   ## Examples
 
-      <.status_badge status={:done} />
+      <.status_badge status={:delivered} />
       <.status_badge status={:failed} />
   """
   attr :status, :atom, required: true, doc: "the status to display"
@@ -514,7 +514,6 @@ defmodule BatcherWeb.CoreComponents do
     {bg_class, text_class, dot_class} =
       case assigns.status do
         # Terminal/success states - green
-        :done -> {"bg-success/15", "text-success", "bg-success"}
         :delivered -> {"bg-success/15", "text-success", "bg-success"}
         :openai_completed -> {"bg-success/15", "text-success", "bg-success"}
         :ready_to_deliver -> {"bg-success/15", "text-success", "bg-success"}

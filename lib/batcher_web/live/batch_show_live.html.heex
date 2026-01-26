@@ -19,7 +19,7 @@
         </button>
         <button
           :if={
-            @batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled, :done]
+            @batch.state not in [:delivered, :partially_delivered, :delivery_failed, :failed, :cancelled]
           }
           phx-click="cancel_batch"
           class="btn btn-sm btn-ghost text-warning"
@@ -28,7 +28,7 @@
           Cancel Batch
         </button>
         <button
-          :if={@batch.state == :cancelled or @batch.state == :done or @batch.state == :failed}
+          :if={@batch.state in [:cancelled, :delivered, :failed]}
           phx-click="delete_batch"
           class="btn btn-sm btn-ghost text-error"
           data-confirm="Are you sure you want to delete this batch?"
@@ -208,7 +208,7 @@
     <%!-- Transition Timeline --%>
     <%
       # Define the happy path states in order
-      happy_path = [:building, :uploading, :uploaded, :openai_processing, :openai_completed, :downloading, :ready_to_deliver, :delivering, :done]
+      happy_path = [:building, :uploading, :uploaded, :openai_processing, :openai_completed, :downloading, :ready_to_deliver, :delivering, :delivered]
 
       # Build a map of state => transition for completed states
       completed_states = Map.new(@transitions, fn t -> {t.to, t} end)

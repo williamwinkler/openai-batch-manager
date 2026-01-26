@@ -5,7 +5,7 @@ defmodule Batcher.Batching.RequestPaginationSimpleTest do
 
   import Batcher.Generator
 
-  describe "Batcher.Batching.Request.list_all_paginated - simple tests" do
+  describe "Batcher.Batching.Request.search - simple tests" do
     test "can query requests with pagination" do
       # Clean start - create fresh batch and requests
       batch = generate(batch())
@@ -13,11 +13,11 @@ defmodule Batcher.Batching.RequestPaginationSimpleTest do
       {:ok, _req1} =
         Batching.create_request(%{
           batch_id: batch.id,
-          custom_id: "test_1",
+          custom_id: "test_search_1",
           url: batch.url,
           model: batch.model,
           request_payload: %{
-            custom_id: "test_1",
+            custom_id: "test_search_1",
             body: %{input: "test1", model: batch.model},
             method: "POST",
             url: batch.url
@@ -30,10 +30,7 @@ defmodule Batcher.Batching.RequestPaginationSimpleTest do
 
       query =
         Batching.Request
-        |> Ash.Query.for_read(:list_all_paginated,
-          skip: 0,
-          limit: 25
-        )
+        |> Ash.Query.for_read(:search, query: "test_search_1")
 
       result = Ash.read!(query, page: [offset: 0, limit: 25, count: true])
 
@@ -65,11 +62,7 @@ defmodule Batcher.Batching.RequestPaginationSimpleTest do
       # Search for unique ID
       query =
         Batching.Request
-        |> Ash.Query.for_read(:list_all_paginated,
-          skip: 0,
-          limit: 25,
-          query: "findme_unique"
-        )
+        |> Ash.Query.for_read(:search, query: "findme_unique")
 
       result = Ash.read!(query, page: [offset: 0, limit: 25, count: true])
 
@@ -110,13 +103,13 @@ defmodule Batcher.Batching.RequestPaginationSimpleTest do
           delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"}
         })
 
-      # Sort ascending
+      # Sort ascending by custom_id and filter by batch_id
       query =
         Batching.Request
-        |> Ash.Query.for_read(:list_all_paginated,
-          skip: 0,
-          limit: 100,
-          sort_by: "custom_id"
+        |> Ash.Query.for_read(:search,
+          query: "",
+          batch_id: batch.id,
+          sort_input: "custom_id"
         )
 
       result = Ash.read!(query, page: [offset: 0, limit: 100, count: true])

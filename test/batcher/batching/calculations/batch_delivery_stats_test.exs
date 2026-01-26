@@ -17,7 +17,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 2, failed: 0}
+      assert batch.delivery_stats == %{delivered: 2, delivering: 0, failed: 0}
     end
 
     test "returns correct counts when batch has only failed requests" do
@@ -38,7 +38,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 0, failed: 2}
+      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 2}
     end
 
     test "returns correct counts when batch has mixed delivered and failed requests" do
@@ -77,7 +77,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 2, failed: 4}
+      assert batch.delivery_stats == %{delivered: 2, delivering: 0, failed: 4}
     end
 
     test "returns zeros when batch has no requests" do
@@ -85,7 +85,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 0, failed: 0}
+      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 0}
     end
 
     test "does not count non-terminal requests" do
@@ -125,9 +125,9 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      # Only counts :delivered (1) and failed states (0)
-      # Non-terminal states (pending, openai_processing, openai_processed, delivering) are not counted
-      assert batch.delivery_stats == %{delivered: 1, failed: 0}
+      # Only counts :delivered (1), :delivering (1) and failed states (0)
+      # Non-terminal states (pending, openai_processing, openai_processed) are not counted
+      assert batch.delivery_stats == %{delivered: 1, delivering: 1, failed: 0}
     end
 
     test "counts all failure states correctly" do
@@ -158,7 +158,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
       batch = Ash.load!(batch, :delivery_stats)
 
       # All 4 failure states should be counted
-      assert batch.delivery_stats == %{delivered: 0, failed: 4}
+      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 4}
     end
   end
 end
