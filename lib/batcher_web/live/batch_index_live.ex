@@ -171,6 +171,31 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   @impl true
+  def handle_event("redeliver_batch", %{"id" => id}, socket) do
+    id = String.to_integer(id)
+
+    case Batching.redeliver_batch(id) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Redelivery initiated for failed requests")
+         |> reload_page()}
+
+      {:error, error} ->
+        error_msg =
+          case error do
+            %Ash.Error.Invalid{errors: errors} ->
+              Enum.map_join(errors, ", ", &Exception.message/1)
+
+            other ->
+              "Failed to redeliver: #{Exception.message(other)}"
+          end
+
+        {:noreply, put_flash(socket, :error, error_msg)}
+    end
+  end
+
+  @impl true
   def handle_info(
         %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: _batch}},
         socket

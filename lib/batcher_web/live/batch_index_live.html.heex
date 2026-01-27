@@ -23,8 +23,8 @@
           </div>
           <% else %>
             <!-- Scrollable table area -->
-            <div class="h-full overflow-y-auto">
-              <.table id="batches" rows={@page.results} row_navigate={fn batch -> ~p"/batches/#{batch.id}" end}>
+            <div class="h-full overflow-auto">
+              <.table id="batches" rows={@page.results} row_navigate={fn batch -> ~p"/batches/#{batch.id}" end} class="min-w-[1450px]">
                 <:col :let={batch} label="ID" width="w-20">
                   <span class="font-mono text-sm">{batch.id}</span>
                 </:col>
@@ -59,8 +59,22 @@
                     >
                       <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
                     </button>
+                    <div
+                      :if={batch.state in [:partially_delivered, :delivery_failed]}
+                      class="tooltip tooltip-left"
+                      data-tip="Redeliver all failed requests"
+                    >
+                      <button
+                        phx-click="redeliver_batch"
+                        phx-value-id={batch.id}
+                        class="btn btn-sm btn-primary"
+                        data-confirm="Redeliver all failed requests in this batch?"
+                      >
+                        <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
+                      </button>
+                    </div>
                     <button
-                      :if={batch.state not in [:done, :failed, :cancelled]}
+                      :if={batch.state not in [:done, :failed, :cancelled, :delivered, :partially_delivered, :delivery_failed]}
                       phx-click="cancel_batch"
                       phx-value-id={batch.id}
                       class="btn btn-sm btn-soft btn-warning"
@@ -69,7 +83,7 @@
                       <.icon name="hero-x-circle" class="w-4 h-4" /> Cancel
                     </button>
                     <button
-                      :if={batch.state in [:done, :failed, :cancelled]}
+                      :if={batch.state in [:done, :failed, :cancelled, :delivered, :partially_delivered, :delivery_failed]}
                       phx-click="delete_batch"
                       phx-value-id={batch.id}
                       class="btn btn-sm btn-soft btn-error"

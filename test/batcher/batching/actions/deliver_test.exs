@@ -97,8 +97,8 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.delivery_config["type"] == "webhook"
       assert attempt.error_msg == nil
 
-      # Verify batch transitioned to delivering
-      assert request_after.batch.state == :delivering
+      # Verify batch transitioned to delivered (all 1 request is now delivered)
+      assert request_after.batch.state == :delivered
     end
 
     test "successfully delivers webhook with 201 status", %{server: server} do
@@ -307,8 +307,8 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.delivery_config["type"] == "rabbitmq"
       assert attempt.error_msg == nil
 
-      # Verify batch transitioned to delivering
-      assert request_after.batch.state == :delivering
+      # Verify batch transitioned to delivered (all 1 request is now delivered)
+      assert request_after.batch.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -348,7 +348,8 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert request_after.state == :delivered
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.outcome == :success
-      assert request_after.batch.state == :delivering
+      # Batch transitions to delivered since all 1 request is now delivered
+      assert request_after.batch.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -936,6 +937,20 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         )
         |> generate()
 
+      # Add a second request still waiting for delivery
+      # This ensures the batch stays in :delivering after first request completes
+      _pending_request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
       expect_json_response(server, :post, "/webhook", %{received: true}, 200)
 
       {:ok, _request_after} =
@@ -944,7 +959,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request)
         |> Ash.run_action()
 
-      # Reload batch to check state
+      # Reload batch to check state - should stay in delivering since second request is pending
       batch_after = Batching.get_batch_by_id!(batch.id)
       assert batch_after.state == :delivering
     end

@@ -18,6 +18,7 @@ defmodule Batcher.Batching do
 
       define :cancel_batch, action: :cancel
       define :destroy_batch, action: :destroy
+      define :redeliver_batch, action: :redeliver, args: [:id]
     end
 
     resource Batcher.Batching.Request do

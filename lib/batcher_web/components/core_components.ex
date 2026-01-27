@@ -324,6 +324,8 @@ defmodule BatcherWeb.CoreComponents do
     default: &Function.identity/1,
     doc: "the function for mapping each row before calling the :col and :action slots"
 
+  attr :class, :string, default: nil, doc: "additional classes for the table element"
+
   slot :col, required: true do
     attr :label, :string
     attr :width, :string, doc: "Tailwind width class for the column (e.g., 'w-32')"
@@ -346,7 +348,7 @@ defmodule BatcherWeb.CoreComponents do
       end
 
     ~H"""
-    <table class="table w-full table-fixed">
+    <table class={["table w-full table-fixed", @class]}>
       <thead>
         <tr class="border-b border-base-300">
           <th
@@ -445,6 +447,50 @@ defmodule BatcherWeb.CoreComponents do
   def icon(%{name: "hero-" <> _} = assigns) do
     ~H"""
     <span class={[@name, @class]} />
+    """
+  end
+
+  @doc """
+  Renders a timeline status icon.
+
+  ## Examples
+
+      <.timeline_icon type={:completed} />
+      <.timeline_icon type={:error} />
+      <.timeline_icon type={:current} />
+      <.timeline_icon type={:future} />
+  """
+  attr :type, :atom, required: true, values: [:completed, :error, :current, :future]
+
+  def timeline_icon(%{type: :completed} = assigns) do
+    ~H"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-primary">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+    </svg>
+    """
+  end
+
+  def timeline_icon(%{type: :error} = assigns) do
+    ~H"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-error">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+    </svg>
+    """
+  end
+
+  def timeline_icon(%{type: :current} = assigns) do
+    ~H"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-primary animate-pulse">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16z" clip-rule="evenodd" />
+    </svg>
+    """
+  end
+
+  def timeline_icon(%{type: :future} = assigns) do
+    ~H"""
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-base-300">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16z" clip-rule="evenodd" />
+    </svg>
     """
   end
 

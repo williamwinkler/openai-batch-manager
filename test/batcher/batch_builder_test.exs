@@ -307,9 +307,16 @@ defmodule Batcher.BatchBuilderTest do
 
       {:ok, request} = BatchBuilder.add_request(url, model, request_data)
 
+      # Get pid before destroying so we can monitor it
+      pid = GenServer.whereis({:via, Registry, {Batcher.BatchRegistry, {url, model}}})
+      ref = Process.monitor(pid)
+
       # Delete the batch directly from DB - this will terminate the BatchBuilder
       {:ok, batch} = Batching.get_batch_by_id(request.batch_id)
       Ash.destroy!(batch)
+
+      # Wait for the BatchBuilder process to actually terminate
+      assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 1000
 
       # BatchBuilder should be terminated, so upload_batch will fail
       # because there's no BatchBuilder process

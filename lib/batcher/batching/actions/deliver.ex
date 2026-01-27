@@ -97,8 +97,35 @@ defmodule Batcher.Batching.Actions.Deliver do
         request.delivery_config["rabbitmq_queue"] ||
         request.delivery_config["queue"]
 
+    # Check if RabbitMQ Publisher is running BEFORE any state transitions
+    rabbitmq_configured? = GenServer.whereis(Batcher.RabbitMQ.Publisher) != nil
+
     # Validate required fields
     cond do
+      not rabbitmq_configured? ->
+        # Handle as delivery failure, not validation error
+        error_msg =
+          "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
+
+        Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
+
+        # Transition to delivering state first
+        request_updated =
+          request
+          |> Ash.Changeset.for_update(:begin_delivery)
+          |> Ash.update!()
+          |> Ash.load!(:batch)
+
+        batch = request_updated.batch
+
+        if batch.state == :ready_to_deliver do
+          batch
+          |> Ash.Changeset.for_update(:start_delivering)
+          |> Ash.update!()
+        end
+
+        handle_delivery_failure(request_updated, batch, :rabbitmq_not_configured, error_msg)
+
       is_nil(routing_key) ->
         error_msg = "queue or routing_key is required for RabbitMQ delivery"
         Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
@@ -149,16 +176,8 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.update!()
     end
 
-    # Check if RabbitMQ Publisher is running before attempting to publish
-    case GenServer.whereis(Batcher.RabbitMQ.Publisher) do
-      nil ->
-        error_msg = "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
-        Logger.error("Delivery failed for request #{request_updated.id}: #{error_msg}")
-        handle_delivery_failure(request_updated, batch, :rabbitmq_not_configured, error_msg)
-
-      _pid ->
-        do_rabbitmq_publish(request_updated, batch, exchange, routing_key)
-    end
+    # RabbitMQ configuration was already validated in deliver_rabbitmq/1
+    do_rabbitmq_publish(request_updated, batch, exchange, routing_key)
   end
 
   defp do_rabbitmq_publish(request_updated, batch, exchange, routing_key) do
@@ -332,9 +351,11 @@ defmodule Batcher.Batching.Actions.Deliver do
   end
 
   defp check_batch_completion(batch) do
-    # Efficiently check if all requests are in terminal states using calculation
-    # This avoids loading all 50k requests into memory
-    batch = Ash.load!(batch, [:requests_terminal_count, :delivery_stats])
+    # Re-fetch batch from database to get current state
+    # This is critical to avoid race conditions when multiple deliveries complete in parallel
+    batch =
+      Batching.get_batch_by_id!(batch.id)
+      |> Ash.load!([:requests_terminal_count, :delivery_stats])
 
     if batch.requests_terminal_count and batch.state == :delivering do
       %{delivered: delivered_count, failed: failed_count} = batch.delivery_stats

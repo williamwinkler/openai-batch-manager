@@ -32,6 +32,9 @@ defmodule Batcher.Batching.Batch do
       transition :mark_delivered, from: :delivering, to: :delivered
       transition :mark_partially_delivered, from: :delivering, to: :partially_delivered
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
+      transition :mark_done, from: :delivering, to: :done
+
+      transition :begin_redeliver, from: [:partially_delivered, :delivery_failed], to: :delivering
 
       transition :failed,
         from: [
@@ -298,6 +301,18 @@ defmodule Batcher.Batching.Batch do
       change transition_state(:delivery_failed)
     end
 
+    update :mark_done do
+      description "Mark batch as done - all processing complete"
+      require_atomic? false
+      change transition_state(:done)
+    end
+
+    update :begin_redeliver do
+      description "Transition batch back to delivering state for redelivery"
+      require_atomic? false
+      change transition_state(:delivering)
+    end
+
     update :cancel do
       require_atomic? false
       change Batching.Changes.CancelBatch
@@ -326,6 +341,14 @@ defmodule Batcher.Batching.Batch do
       constraints instance_of: __MODULE__
       transaction? false
       run Batching.Actions.CheckDeliveryCompletion
+    end
+
+    action :redeliver, :struct do
+      description "Redeliver all failed requests in the batch"
+      argument :id, :integer, allow_nil?: false
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.Redeliver
     end
 
     action :delete_expired_batch, :struct do

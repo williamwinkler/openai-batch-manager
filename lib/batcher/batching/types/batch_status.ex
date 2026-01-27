@@ -63,6 +63,10 @@ defmodule Batcher.Batching.Types.BatchStatus do
       cancelled: [
         label: "Cancelled",
         description: "Batch was cancelled"
+      ],
+      done: [
+        label: "Done",
+        description: "Batch processing is complete"
       ]
     ]
 end
