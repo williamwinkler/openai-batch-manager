@@ -13,7 +13,9 @@ defmodule BatcherWeb.BatchShowLive do
       BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch_id}")
     end
 
-    case Batching.get_batch_by_id(batch_id, load: [:request_count, :size_bytes, :transitions, :delivery_stats]) do
+    case Batching.get_batch_by_id(batch_id,
+           load: [:request_count, :size_bytes, :transitions, :delivery_stats]
+         ) do
       {:ok, batch} ->
         transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
         {:ok, assign(socket, batch: batch, transitions: transitions)}
@@ -37,7 +39,9 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.start_batch_upload(batch) do
       {:ok, updated_batch} ->
-        updated_batch = Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+        updated_batch =
+          Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+
         transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
         {:noreply,
@@ -65,7 +69,9 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.cancel_batch(batch) do
       {:ok, updated_batch} ->
-        updated_batch = Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+        updated_batch =
+          Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+
         transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
         {:noreply,
@@ -80,7 +86,10 @@ defmodule BatcherWeb.BatchShowLive do
               Enum.map_join(errors, ", ", fn e ->
                 # Handle NoMatchingTransition errors specifically
                 case e do
-                  %AshStateMachine.Errors.NoMatchingTransition{old_state: old_state, target: target} ->
+                  %AshStateMachine.Errors.NoMatchingTransition{
+                    old_state: old_state,
+                    target: target
+                  } ->
                     "Cannot transition batch from #{old_state} to #{target} state"
 
                   _ ->
@@ -106,10 +115,32 @@ defmodule BatcherWeb.BatchShowLive do
         {:noreply,
          socket
          |> put_flash(:info, "Batch deleted successfully")
-         |> redirect(to: ~p"/")}
+         |> redirect(to: ~p"/batches")}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Failed to delete batch")}
+    end
+  end
+
+  @impl true
+  def handle_event("redeliver_batch", _params, socket) do
+    batch = socket.assigns.batch
+
+    case Batching.redeliver_batch(batch.id) do
+      {:ok, _} ->
+        {:noreply, put_flash(socket, :info, "Redelivery initiated for failed requests")}
+
+      {:error, error} ->
+        error_msg =
+          case error do
+            %Ash.Error.Invalid{errors: errors} ->
+              Enum.map_join(errors, ", ", &Exception.message/1)
+
+            other ->
+              "Failed to redeliver: #{Exception.message(other)}"
+          end
+
+        {:noreply, put_flash(socket, :error, error_msg)}
     end
   end
 

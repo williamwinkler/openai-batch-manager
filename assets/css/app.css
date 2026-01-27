@@ -65,7 +65,7 @@
   --color-base-200: oklch(97% 0 0);
   --color-base-300: oklch(92% 0 0);
   --color-base-content: oklch(20% 0 0);
-  --color-primary: oklch(50% 0 0);
+  --color-primary: oklch(20% 0 0);
   --color-primary-content: oklch(98% 0 0);
   --color-secondary: oklch(45% 0 0);
   --color-secondary-content: oklch(98% 0 0);
@@ -144,3 +144,16 @@
 [data-theme="light"] .json-syntax .json-null {
   color: oklch(50% 0 0);
 }
+
+/* Light theme: increase contrast for muted text colors */
+/* Tailwind opacity modifiers on base-content are too light in light mode */
+[data-theme="light"] .text-base-content\/20 { color: oklch(65% 0 0); }
+[data-theme="light"] .text-base-content\/30 { color: oklch(55% 0 0); }
+[data-theme="light"] .text-base-content\/40 { color: oklch(50% 0 0); }
+[data-theme="light"] .text-base-content\/50 { color: oklch(45% 0 0); }
+[data-theme="light"] .text-base-content\/60 { color: oklch(40% 0 0); }
+[data-theme="light"] .text-base-content\/70 { color: oklch(35% 0 0); }
+[data-theme="light"] .text-base-content\/80 { color: oklch(30% 0 0); }
+
+/* Light theme: make primary text color darker for better contrast */
+[data-theme="light"] .text-primary { color: oklch(25% 0 0); }

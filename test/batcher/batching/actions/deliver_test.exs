@@ -97,8 +97,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.delivery_config["type"] == "webhook"
       assert attempt.error_msg == nil
 
-      # Verify batch transitioned to delivered (all 1 request is now delivered)
-      assert request_after.batch.state == :delivered
+      # Trigger batch completion check (normally done by AshOban) and verify state
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+      assert batch_after.state == :delivered
     end
 
     test "successfully delivers webhook with 201 status", %{server: server} do
@@ -307,8 +311,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.delivery_config["type"] == "rabbitmq"
       assert attempt.error_msg == nil
 
-      # Verify batch transitioned to delivered (all 1 request is now delivered)
-      assert request_after.batch.state == :delivered
+      # Trigger batch completion check (normally done by AshOban) and verify state
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+      assert batch_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -348,8 +356,13 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert request_after.state == :delivered
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.outcome == :success
-      # Batch transitions to delivered since all 1 request is now delivered
-      assert request_after.batch.state == :delivered
+
+      # Trigger batch completion check (normally done by AshOban) and verify state
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+      assert batch_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -689,8 +702,11 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
       assert batch_after.state == :delivered
 
       # Cleanup
@@ -754,8 +770,11 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
       assert batch_after.state == :partially_delivered
 
       # Cleanup
@@ -1017,8 +1036,11 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
       assert batch_after.state == :delivered
     end
 
@@ -1075,8 +1097,11 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} = Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
       assert batch_after.state == :partially_delivered
     end
 

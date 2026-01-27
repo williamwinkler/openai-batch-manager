@@ -5,7 +5,23 @@ defmodule Batcher.RabbitMQ.Consumer do
   Only starts if RABBITMQ_URL and RABBITMQ_INPUT_QUEUE are configured.
   On connection failure, logs error and exits (supervisor will handle restart).
 
-  **Important**: The queue (and optionally exchange) must be pre-created by the developer.
+  ## Configuration Modes
+
+  ### 1. Direct Queue Consumption (simple)
+  Consume directly from a queue:
+
+      RABBITMQ_URL=amqp://user:pass@host:5672
+      RABBITMQ_INPUT_QUEUE=my-queue
+
+  ### 2. Exchange with Routing Key (advanced)
+  Bind a queue to an exchange with a routing key:
+
+      RABBITMQ_URL=amqp://user:pass@host:5672
+      RABBITMQ_INPUT_QUEUE=my-queue
+      RABBITMQ_INPUT_EXCHANGE=my-exchange
+      RABBITMQ_INPUT_ROUTING_KEY=my.routing.key
+
+  **Important**: The queue and exchange must be pre-created by the developer.
   This consumer will only bind to existing queues/exchanges and consume messages.
   """
   use GenServer
@@ -30,7 +46,14 @@ defmodule Batcher.RabbitMQ.Consumer do
     exchange = Keyword.get(opts, :exchange)
     routing_key = Keyword.get(opts, :routing_key)
 
-    Logger.info("Connecting to RabbitMQ for input consumption: queue=#{queue}")
+    mode_info =
+      if exchange && routing_key do
+        "exchange=#{exchange}, routing_key=#{routing_key}, queue=#{queue}"
+      else
+        "queue=#{queue} (direct)"
+      end
+
+    Logger.info("RabbitMQ consumer starting: #{mode_info}")
 
     case connect_and_setup(url, queue, exchange, routing_key) do
       {:ok, state} ->

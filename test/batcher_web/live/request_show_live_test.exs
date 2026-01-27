@@ -270,26 +270,41 @@ defmodule BatcherWeb.RequestShowLiveTest do
 
     test "current_webhook_url/1 extracts webhook URL" do
       assert RequestShowLive.current_webhook_url(nil) == ""
-      assert RequestShowLive.current_webhook_url(%{"webhook_url" => "http://test.com"}) == "http://test.com"
-      assert RequestShowLive.current_webhook_url(%{webhook_url: "http://test.com"}) == "http://test.com"
+
+      assert RequestShowLive.current_webhook_url(%{"webhook_url" => "http://test.com"}) ==
+               "http://test.com"
+
+      assert RequestShowLive.current_webhook_url(%{webhook_url: "http://test.com"}) ==
+               "http://test.com"
     end
 
     test "current_rabbitmq_queue/1 extracts queue name" do
       assert RequestShowLive.current_rabbitmq_queue(nil) == ""
-      assert RequestShowLive.current_rabbitmq_queue(%{"rabbitmq_queue" => "my_queue"}) == "my_queue"
+
+      assert RequestShowLive.current_rabbitmq_queue(%{"rabbitmq_queue" => "my_queue"}) ==
+               "my_queue"
+
       assert RequestShowLive.current_rabbitmq_queue(%{rabbitmq_queue: "my_queue"}) == "my_queue"
     end
 
     test "current_rabbitmq_exchange/1 extracts exchange name" do
       assert RequestShowLive.current_rabbitmq_exchange(nil) == ""
-      assert RequestShowLive.current_rabbitmq_exchange(%{"rabbitmq_exchange" => "my_exchange"}) == "my_exchange"
-      assert RequestShowLive.current_rabbitmq_exchange(%{rabbitmq_exchange: "my_exchange"}) == "my_exchange"
+
+      assert RequestShowLive.current_rabbitmq_exchange(%{"rabbitmq_exchange" => "my_exchange"}) ==
+               "my_exchange"
+
+      assert RequestShowLive.current_rabbitmq_exchange(%{rabbitmq_exchange: "my_exchange"}) ==
+               "my_exchange"
     end
 
     test "current_rabbitmq_routing_key/1 extracts routing key" do
       assert RequestShowLive.current_rabbitmq_routing_key(nil) == ""
-      assert RequestShowLive.current_rabbitmq_routing_key(%{"rabbitmq_routing_key" => "my_key"}) == "my_key"
-      assert RequestShowLive.current_rabbitmq_routing_key(%{rabbitmq_routing_key: "my_key"}) == "my_key"
+
+      assert RequestShowLive.current_rabbitmq_routing_key(%{"rabbitmq_routing_key" => "my_key"}) ==
+               "my_key"
+
+      assert RequestShowLive.current_rabbitmq_routing_key(%{rabbitmq_routing_key: "my_key"}) ==
+               "my_key"
     end
   end
 

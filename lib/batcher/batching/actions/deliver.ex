@@ -291,13 +291,13 @@ defmodule Batcher.Batching.Actions.Deliver do
     end
   end
 
-  defp handle_delivery_result({:ok, request}, batch) do
-    # Check if all requests in batch are delivered/failed
-    check_batch_completion(batch)
+  defp handle_delivery_result({:ok, request}, _batch) do
+    # Batch completion is checked by the check_delivery_completion AshOban trigger
+    # which runs on a queue with concurrency 1 to avoid race conditions
     {:ok, request}
   end
 
-  defp handle_delivery_failure(request, batch, outcome, error_msg) do
+  defp handle_delivery_failure(request, _batch, outcome, error_msg) do
     # Mark request as delivery_failed (not :failed) because this is a delivery error,
     # not an OpenAI processing error. The error is recorded on the delivery_attempt.
     request_after =
@@ -309,8 +309,8 @@ defmodule Batcher.Batching.Actions.Deliver do
       })
       |> Ash.update!()
 
-    # Check if all requests in batch are delivered/delivery_failed
-    check_batch_completion(batch)
+    # Batch completion is checked by the check_delivery_completion AshOban trigger
+    # which runs on a queue with concurrency 1 to avoid race conditions
     {:ok, request_after}
   end
 
@@ -347,42 +347,6 @@ defmodule Batcher.Batching.Actions.Deliver do
       :timeout -> "Publish confirmation timeout"
       :nack -> "Message was nacked by broker"
       other -> "RabbitMQ error: #{inspect(other)}"
-    end
-  end
-
-  defp check_batch_completion(batch) do
-    # Re-fetch batch from database to get current state
-    # This is critical to avoid race conditions when multiple deliveries complete in parallel
-    batch =
-      Batching.get_batch_by_id!(batch.id)
-      |> Ash.load!([:requests_terminal_count, :delivery_stats])
-
-    if batch.requests_terminal_count and batch.state == :delivering do
-      %{delivered: delivered_count, failed: failed_count} = batch.delivery_stats
-
-      {action, state_name} =
-        cond do
-          delivered_count > 0 and failed_count == 0 ->
-            {:mark_delivered, "delivered"}
-
-          delivered_count == 0 and failed_count > 0 ->
-            {:mark_delivery_failed, "delivery_failed"}
-
-          delivered_count > 0 and failed_count > 0 ->
-            {:mark_partially_delivered, "partially_delivered"}
-
-          true ->
-            # Empty batch edge case
-            {:mark_delivered, "delivered"}
-        end
-
-      batch
-      |> Ash.Changeset.for_update(action)
-      |> Ash.update!()
-
-      Logger.info(
-        "Batch #{batch.id} delivery complete - state: #{state_name} (#{delivered_count} delivered, #{failed_count} failed)"
-      )
     end
   end
 

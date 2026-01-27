@@ -149,6 +149,31 @@ const ThemeToggle = {
   }
 }
 
+// RabbitMQ Modal hook
+const RabbitMQModal = {
+  mounted() {
+    const modalId = this.el.dataset.modalId
+    const modal = document.getElementById(modalId)
+    
+    if (!modal) return
+
+    // Open modal on button click
+    this.el.addEventListener("click", () => {
+      modal.classList.remove("hidden")
+      document.body.style.overflow = "hidden"
+    })
+
+    // Close modal on backdrop or close button click
+    const closeHandlers = modal.querySelectorAll("[data-close-modal]")
+    closeHandlers.forEach(handler => {
+      handler.addEventListener("click", () => {
+        modal.classList.add("hidden")
+        document.body.style.overflow = ""
+      })
+    })
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
@@ -157,7 +182,8 @@ const liveSocket = new LiveSocket("/live", Socket, {
     ...colocatedHooks,
     ClickableRow,
     ThemeToggle,
-    JsonSyntaxHighlight
+    JsonSyntaxHighlight,
+    RabbitMQModal
   },
 })
 

@@ -117,8 +117,8 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> element("button[phx-click='delete_batch']")
       |> render_click()
 
-      # Should redirect to root
-      assert_redirect(view, ~p"/")
+      # Should redirect to batches list
+      assert_redirect(view, ~p"/batches")
     end
   end
 

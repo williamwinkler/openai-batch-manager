@@ -132,7 +132,10 @@ defmodule Batcher.Batching.Request do
         default "-created_at"
       end
 
-      filter expr(contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
+      filter expr(
+               contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)) or
+                 contains(url, ^arg(:query))
+             )
 
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)
@@ -336,7 +339,6 @@ defmodule Batcher.Batching.Request do
         Ash.Query.sort(query, created_at: :desc)
     end
   end
-
 
   defp parse_sort_by("-created_at"), do: {:created_at, :desc}
   defp parse_sort_by("created_at"), do: {:created_at, :asc}

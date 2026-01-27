@@ -4,7 +4,7 @@ defmodule Batcher.Batching.Types.DeliveryType do
   """
   use Ash.Type.Enum,
     values: [
-      webhook: "Deliver via HTTP POST to a webhook URL",
+      webhook: [label: "Webhook", description: "Deliver via HTTP POST to a webhook URL"],
       rabbitmq: [label: "RabbitMQ", description: "Deliver via RabbitMQ message queue"]
     ]
 end

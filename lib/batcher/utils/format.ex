@@ -78,20 +78,20 @@ defmodule Batcher.Utils.Format do
         hours = div(diff, 3600)
         "#{hours}h ago"
 
-      diff < 604800 ->
+      diff < 604_800 ->
         days = div(diff, 86400)
         "#{days}d ago"
 
-      diff < 2592000 ->
-        weeks = div(diff, 604800)
+      diff < 2_592_000 ->
+        weeks = div(diff, 604_800)
         "#{weeks}w ago"
 
-      diff < 31536000 ->
-        months = div(diff, 2592000)
+      diff < 31_536_000 ->
+        months = div(diff, 2_592_000)
         "#{months}mo ago"
 
       true ->
-        years = div(diff, 31536000)
+        years = div(diff, 31_536_000)
         "#{years}y ago"
     end
   end

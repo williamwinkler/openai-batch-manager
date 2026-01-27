@@ -360,7 +360,10 @@ defmodule BatcherWeb.CoreComponents do
           >
             {col[:label]}
           </th>
-          <th :if={@action != []} class="text-right font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4 w-32">
+          <th
+            :if={@action != []}
+            class="text-right font-semibold text-base-content/50 text-xs uppercase tracking-wider py-3 px-4 w-32"
+          >
             {gettext("Actions")}
           </th>
         </tr>
@@ -444,6 +447,10 @@ defmodule BatcherWeb.CoreComponents do
   attr :name, :string, required: true
   attr :class, :string, default: "size-4"
 
+  def icon(%{name: "batch-icon"} = assigns) do
+    batch_icon(assigns)
+  end
+
   def icon(%{name: "hero-" <> _} = assigns) do
     ~H"""
     <span class={[@name, @class]} />
@@ -464,23 +471,46 @@ defmodule BatcherWeb.CoreComponents do
 
   def timeline_icon(%{type: :completed} = assigns) do
     ~H"""
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-primary">
-      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      class="w-5 h-5 text-primary"
+    >
+      <path
+        fill-rule="evenodd"
+        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+        clip-rule="evenodd"
+      />
     </svg>
     """
   end
 
   def timeline_icon(%{type: :error} = assigns) do
     ~H"""
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-error">
-      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      class="w-5 h-5 text-error"
+    >
+      <path
+        fill-rule="evenodd"
+        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+        clip-rule="evenodd"
+      />
     </svg>
     """
   end
 
   def timeline_icon(%{type: :current} = assigns) do
     ~H"""
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-primary animate-pulse">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      class="w-5 h-5 text-primary animate-pulse"
+    >
       <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16z" clip-rule="evenodd" />
     </svg>
     """
@@ -488,8 +518,26 @@ defmodule BatcherWeb.CoreComponents do
 
   def timeline_icon(%{type: :future} = assigns) do
     ~H"""
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-base-300">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      class="w-5 h-5 text-base-300"
+    >
       <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16z" clip-rule="evenodd" />
+    </svg>
+    """
+  end
+
+  attr :class, :string, default: "size-4"
+
+  def batch_icon(assigns) do
+    ~H"""
+    <svg class={@class} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3 7a4 4 0 0 1 4-4 1 1 0 0 1 0 2 2 2 0 0 0-2 2c0 .257.005.511.01.772v.032c.006.268.011.544.01.815-.004.535-.033 1.105-.16 1.652-.132.558-.372 1.114-.808 1.599a3.315 3.315 0 0 1-.13.137c.034.035.067.07.1.107.431.477.673 1.027.81 1.581.132.544.17 1.114.178 1.655.005.308 0 .657-.004.997-.003.227-.006.45-.006.653a2 2 0 0 0 2 2 1 1 0 1 1 0 2 4 4 0 0 1-4-4c0-.27.003-.51.007-.738.004-.303.008-.583.003-.88-.008-.49-.041-.884-.121-1.21-.078-.316-.192-.542-.351-.718-.158-.175-.41-.356-.847-.503A.995.995 0 0 1 1 12a.998.998 0 0 1 .691-.951c.457-.153.715-.34.875-.517.16-.178.272-.404.346-.718.077-.326.105-.719.108-1.207.001-.241-.004-.493-.009-.764v-.038A29.585 29.585 0 0 1 3 7Zm16.942 5.123c.039-.042.078-.083.118-.123a3.16 3.16 0 0 1-.117-.123c-.44-.482-.681-1.036-.811-1.594-.127-.545-.154-1.115-.155-1.65 0-.269.005-.544.011-.812v-.006C18.994 7.54 19 7.272 19 7a2 2 0 0 0-2-2 1 1 0 1 1 0-2 4 4 0 0 1 4 4c0 .296-.006.584-.012.854v.004c-.006.274-.011.527-.01.77 0 .491.027.88.101 1.2.072.308.183.528.341.702.16.174.421.362.889.519A.995.995 0 0 1 23 12a1.003 1.003 0 0 1-.692.951c-.468.157-.73.345-.889.52-.159.173-.269.393-.34.7-.075.321-.102.71-.103 1.201 0 .243.005.496.01.77l.001.004c.006.27.012.558.012.854a4 4 0 0 1-4 4 1 1 0 1 1 0-2 2 2 0 0 0 2-2c0-.272-.006-.54-.012-.814v-.007a34.216 34.216 0 0 1-.01-.811c0-.536.027-1.106.154-1.65.13-.56.37-1.113.81-1.595Z">
+      </path>
+      <path d="M9 11a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H9ZM8 8a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Zm1 7a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H9Z">
+      </path>
     </svg>
     """
   end
@@ -721,9 +769,9 @@ defmodule BatcherWeb.CoreComponents do
     <div class="text-xs">
       <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-base-300/50 text-base-content/70 font-medium">
         <%= if @delivery_type == "webhook" do %>
-          <.icon name="hero-globe-alt" class="w-3 h-3" /> webhook
+          <.icon name="hero-globe-alt" class="w-3 h-3" /> Webhook
         <% else %>
-          <img src="/images/rabbitmq.svg" class="w-3 h-3 inline-block" alt="RabbitMQ" /> rabbitmq
+          <img src="/images/rabbitmq.svg" class="w-3 h-3 inline-block" alt="RabbitMQ" /> RabbitMQ
         <% end %>
       </span>
     </div>
@@ -788,7 +836,14 @@ defmodule BatcherWeb.CoreComponents do
         </.link>
         <.link
           :if={@total_pages > 1}
-          patch={build_pagination_url(@base_path, @extra_params, max(0, (@current_page - 2) * @limit), @limit)}
+          patch={
+            build_pagination_url(
+              @base_path,
+              @extra_params,
+              max(0, (@current_page - 2) * @limit),
+              @limit
+            )
+          }
           class={["join-item btn btn-sm", !@has_prev && "btn-disabled"]}
         >
           <.icon name="hero-chevron-left" class="w-4 h-4" />
@@ -800,7 +855,9 @@ defmodule BatcherWeb.CoreComponents do
               <span class="join-item btn btn-sm btn-disabled">...</span>
             <% page_num -> %>
               <.link
-                patch={build_pagination_url(@base_path, @extra_params, (page_num - 1) * @limit, @limit)}
+                patch={
+                  build_pagination_url(@base_path, @extra_params, (page_num - 1) * @limit, @limit)
+                }
                 class={["join-item btn btn-sm", page_num == @current_page && "btn-primary"]}
               >
                 {page_num}
@@ -887,6 +944,55 @@ defmodule BatcherWeb.CoreComponents do
         <% end %>
       <% end %>
     </nav>
+    """
+  end
+
+  @doc """
+  Renders a delete batch button that conditionally shows based on batch state.
+
+  ## Examples
+
+      <.delete_batch_button batch_id={@batch.id} batch_state={@batch.state} />
+      <.delete_batch_button batch_id={@batch.id} batch_state={@batch.state} class="btn-sm btn-soft btn-error" />
+  """
+  attr :batch_id, :integer, required: true, doc: "the batch ID to delete"
+  attr :batch_state, :atom, required: true, doc: "the current state of the batch"
+  attr :class, :string,
+    default: "btn btn-sm btn-ghost text-error",
+    doc: "additional CSS classes for the button"
+  attr :confirm_message, :string,
+    default: "Are you sure you want to delete this batch? This will delete the batch here, all requests in it, and the data on OpenAI's platform.",
+    doc: "the confirmation message to display"
+  attr :show_icon, :boolean, default: true, doc: "whether to show the trash icon"
+  attr :label, :string, default: "Delete Batch", doc: "the button label text"
+
+  def delete_batch_button(assigns) do
+    deletable_states = [
+      :done,
+      :failed,
+      :cancelled,
+      :delivered,
+      :partially_delivered,
+      :delivery_failed
+    ]
+
+    should_show = assigns.batch_state in deletable_states
+
+    assigns = assign(assigns, :should_show, should_show)
+
+    ~H"""
+    <button
+      :if={@should_show}
+      phx-click="delete_batch"
+      phx-value-id={@batch_id}
+      class={@class}
+      data-confirm={@confirm_message}
+    >
+      <%= if @show_icon do %>
+        <.icon name="hero-trash" class="w-4 h-4" />
+      <% end %>
+      {@label}
+    </button>
     """
   end
 end

@@ -127,7 +127,10 @@ defmodule BatcherWeb.BatchIndexLive do
                   Enum.map_join(errors, ", ", fn e ->
                     # Handle NoMatchingTransition errors specifically
                     case e do
-                      %AshStateMachine.Errors.NoMatchingTransition{old_state: old_state, target: target} ->
+                      %AshStateMachine.Errors.NoMatchingTransition{
+                        old_state: old_state,
+                        target: target
+                      } ->
                         "Cannot transition batch from #{old_state} to #{target} state"
 
                       _ ->

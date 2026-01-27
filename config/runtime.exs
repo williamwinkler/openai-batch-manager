@@ -14,20 +14,21 @@ if config_env() != :test do
 
   config :batcher, Batcher.OpenaiApiClient, openai_api_key: openai_api_key
 
-  # RabbitMQ configuration (optional - only if RABBITMQ_URL is set)
+  # RabbitMQ configuration (optional)
+  # - RABBITMQ_URL: Enables RabbitMQ publisher for output delivery
+  # - RABBITMQ_INPUT_QUEUE: Enables RabbitMQ consumer for input (requires RABBITMQ_URL)
   rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
+  rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
 
+  # Publisher: enabled when RABBITMQ_URL is set (used for output delivery)
   if rabbitmq_url do
-    # Configure RabbitMQ publisher (for output delivery)
     config :batcher, :rabbitmq_publisher, url: rabbitmq_url
+  end
 
-    # Configure RabbitMQ consumer
-    # Queue is required when RABBITMQ_URL is set
-    rabbitmq_input_queue =
-      env!("RABBITMQ_INPUT_QUEUE", :string, nil) ||
-        raise "RABBITMQ_INPUT_QUEUE is required when RABBITMQ_URL is set"
-
-    # Exchange and routing_key are optional, but if exchange is set, routing_key must also be set
+  # Consumer: enabled when both RABBITMQ_URL and RABBITMQ_INPUT_QUEUE are set
+  if rabbitmq_url && rabbitmq_input_queue do
+    # Exchange and routing_key are optional for binding to an exchange
+    # If exchange is set, routing_key must also be set
     rabbitmq_input_exchange = env!("RABBITMQ_INPUT_EXCHANGE", :string, nil)
     rabbitmq_input_routing_key = env!("RABBITMQ_INPUT_ROUTING_KEY", :string, nil)
 

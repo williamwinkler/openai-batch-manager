@@ -131,7 +131,9 @@ defmodule Batcher.Batching.Batch do
       trigger :check_delivery_completion do
         action :check_delivery_completion
         where expr(state == :delivering)
-        queue :default
+        # Use batch_processing queue (concurrency 1) to prevent race conditions
+        # when multiple jobs try to transition the batch simultaneously
+        queue :batch_processing
         worker_module_name Batching.Batch.AshOban.Worker.CheckDeliveryCompletion
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CheckDeliveryCompletion
       end

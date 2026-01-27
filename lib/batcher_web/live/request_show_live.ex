@@ -27,7 +27,10 @@ defmodule BatcherWeb.RequestShowLive do
           |> assign(:payload_modal_content, "")
           |> assign(:payload_modal_is_json, false)
           |> assign(:editing_delivery_config, false)
-          |> assign(:delivery_types, Enum.map(DeliveryType.values(), &{DeliveryType.label(&1), to_string(&1)}))
+          |> assign(
+            :delivery_types,
+            Enum.map(DeliveryType.values(), &{DeliveryType.label(&1), to_string(&1)})
+          )
           |> assign_delivery_config_form_values(request.delivery_config)
           |> assign_delivery_config_form(request)
 
@@ -140,6 +143,27 @@ defmodule BatcherWeb.RequestShowLive do
   end
 
   @impl true
+  def handle_event("delete_request", _params, socket) do
+    request = socket.assigns.request
+
+    # Only allow deletion if batch is in building state
+    if request.batch.state == :building do
+      case Batching.destroy_request(request) do
+        :ok ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Request deleted")
+           |> redirect(to: ~p"/requests")}
+
+        {:error, _error} ->
+          {:noreply, put_flash(socket, :error, "Failed to delete request")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Can only delete requests in building batches")}
+    end
+  end
+
+  @impl true
   def handle_event("edit_delivery_config", _params, socket) do
     {:noreply, assign(socket, :editing_delivery_config, true)}
   end
@@ -165,7 +189,9 @@ defmodule BatcherWeb.RequestShowLive do
     webhook_url = params["webhook_url"] || socket.assigns.form_webhook_url || ""
     rabbitmq_queue = params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || ""
     rabbitmq_exchange = params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || ""
-    rabbitmq_routing_key = params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
+
+    rabbitmq_routing_key =
+      params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
 
     # Build merged params for validation
     merged_params = %{
@@ -205,8 +231,10 @@ defmodule BatcherWeb.RequestShowLive do
       "webhook_url" => params["webhook_url"] || socket.assigns.form_webhook_url || "",
       "rabbitmq_mode" => params["rabbitmq_mode"] || socket.assigns.form_rabbitmq_mode || "queue",
       "rabbitmq_queue" => params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || "",
-      "rabbitmq_exchange" => params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || "",
-      "rabbitmq_routing_key" => params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
+      "rabbitmq_exchange" =>
+        params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || "",
+      "rabbitmq_routing_key" =>
+        params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
     }
 
     # Build the delivery_config from merged params
@@ -271,7 +299,11 @@ defmodule BatcherWeb.RequestShowLive do
   defp load_delivery_attempts(socket, request_id, offset) do
     query =
       Batching.RequestDeliveryAttempt
-      |> Ash.Query.for_read(:list_paginated, request_id: request_id, skip: offset, limit: @per_page)
+      |> Ash.Query.for_read(:list_paginated,
+        request_id: request_id,
+        skip: offset,
+        limit: @per_page
+      )
 
     page = Ash.read!(query, page: [offset: offset, limit: @per_page, count: true])
 
@@ -329,15 +361,26 @@ defmodule BatcherWeb.RequestShowLive do
     type = config["type"] || config[:type]
 
     case type do
-      "webhook" -> "Webhook"
-      "rabbitmq" -> "RabbitMQ"
+      "webhook" ->
+        "Webhook"
+
+      "rabbitmq" ->
+        "RabbitMQ"
+
       _ ->
         # Fallback for legacy configs without type field
         cond do
-          Map.has_key?(config, "webhook_url") or Map.has_key?(config, :webhook_url) -> "Webhook"
-          Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) -> "RabbitMQ"
-          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) -> "RabbitMQ"
-          true -> "Unknown"
+          Map.has_key?(config, "webhook_url") or Map.has_key?(config, :webhook_url) ->
+            "Webhook"
+
+          Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) ->
+            "RabbitMQ"
+
+          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) ->
+            "RabbitMQ"
+
+          true ->
+            "Unknown"
         end
     end
   end
@@ -446,15 +489,26 @@ defmodule BatcherWeb.RequestShowLive do
     type = config["type"] || config[:type]
 
     case type do
-      "webhook" -> "webhook"
-      "rabbitmq" -> "rabbitmq"
+      "webhook" ->
+        "webhook"
+
+      "rabbitmq" ->
+        "rabbitmq"
+
       _ ->
         # Fallback for legacy configs without type field
         cond do
-          Map.has_key?(config, "webhook_url") or Map.has_key?(config, :webhook_url) -> "webhook"
-          Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) -> "rabbitmq"
-          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) -> "rabbitmq"
-          true -> nil
+          Map.has_key?(config, "webhook_url") or Map.has_key?(config, :webhook_url) ->
+            "webhook"
+
+          Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) ->
+            "rabbitmq"
+
+          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) ->
+            "rabbitmq"
+
+          true ->
+            nil
         end
     end
   end

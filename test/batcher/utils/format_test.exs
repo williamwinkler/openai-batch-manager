@@ -97,32 +97,32 @@ defmodule Batcher.Utils.FormatTest do
     test "shows days for times between 1-6 days ago" do
       now = DateTime.utc_now()
       assert Format.time_ago(DateTime.add(now, -86400, :second)) == "1d ago"
-      assert Format.time_ago(DateTime.add(now, -172800, :second)) == "2d ago"
-      assert Format.time_ago(DateTime.add(now, -604799, :second)) == "6d ago"
+      assert Format.time_ago(DateTime.add(now, -172_800, :second)) == "2d ago"
+      assert Format.time_ago(DateTime.add(now, -604_799, :second)) == "6d ago"
     end
 
     test "shows weeks for times between 1-4 weeks ago" do
       now = DateTime.utc_now()
       # 604,800 seconds = 1 week
-      assert Format.time_ago(DateTime.add(now, -604800, :second)) == "1w ago"
+      assert Format.time_ago(DateTime.add(now, -604_800, :second)) == "1w ago"
       # 1,209,600 seconds = 2 weeks
-      assert Format.time_ago(DateTime.add(now, -1209600, :second)) == "2w ago"
+      assert Format.time_ago(DateTime.add(now, -1_209_600, :second)) == "2w ago"
       # 1,814,400 seconds = 3 weeks
-      assert Format.time_ago(DateTime.add(now, -1814400, :second)) == "3w ago"
+      assert Format.time_ago(DateTime.add(now, -1_814_400, :second)) == "3w ago"
     end
 
     test "shows months for times between 1-11 months ago" do
       now = DateTime.utc_now()
-      assert Format.time_ago(DateTime.add(now, -2592000, :second)) == "1mo ago"
-      assert Format.time_ago(DateTime.add(now, -5184000, :second)) == "2mo ago"
-      assert Format.time_ago(DateTime.add(now, -31535999, :second)) == "12mo ago"
+      assert Format.time_ago(DateTime.add(now, -2_592_000, :second)) == "1mo ago"
+      assert Format.time_ago(DateTime.add(now, -5_184_000, :second)) == "2mo ago"
+      assert Format.time_ago(DateTime.add(now, -31_535_999, :second)) == "12mo ago"
     end
 
     test "shows years for times 1+ years ago" do
       now = DateTime.utc_now()
-      assert Format.time_ago(DateTime.add(now, -31536000, :second)) == "1y ago"
-      assert Format.time_ago(DateTime.add(now, -63072000, :second)) == "2y ago"
-      assert Format.time_ago(DateTime.add(now, -94608000, :second)) == "3y ago"
+      assert Format.time_ago(DateTime.add(now, -31_536_000, :second)) == "1y ago"
+      assert Format.time_ago(DateTime.add(now, -63_072_000, :second)) == "2y ago"
+      assert Format.time_ago(DateTime.add(now, -94_608_000, :second)) == "3y ago"
     end
 
     test "handles future times" do

@@ -39,6 +39,7 @@ defmodule Batcher.Batching do
       define :deliver_request, action: :deliver
       define :update_request_delivery_config, action: :update_delivery_config
       define :retry_request_delivery, action: :retry_delivery
+      define :destroy_request, action: :destroy
     end
 
     # Transition resources (internal only)

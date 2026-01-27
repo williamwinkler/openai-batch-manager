@@ -6,9 +6,20 @@
     ]} />
 
     <%!-- Page header --%>
-    <div class="flex items-center gap-3">
-      <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
-      <.status_badge status={@request.state} type={:request} />
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
+        <.status_badge status={@request.state} type={:request} />
+      </div>
+      <button
+        :if={@request.batch.state == :building}
+        type="button"
+        class="btn btn-error btn-sm"
+        phx-click="delete_request"
+        data-confirm="Are you sure you want to delete this request?"
+      >
+        <.icon name="hero-trash" class="w-4 h-4" /> Delete
+      </button>
     </div>
 
     <%!-- Request info --%>
@@ -58,8 +69,7 @@
         <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
           <span class="font-medium">Delivery configuration</span>
           <button type="button" class="btn btn-ghost btn-xs" phx-click="edit_delivery_config">
-            <.icon name="hero-pencil-square" class="w-4 h-4" />
-            Edit
+            <.icon name="hero-pencil-square" class="w-4 h-4" /> Edit
           </button>
         </div>
         <div class="p-4">
@@ -159,8 +169,7 @@
             class="btn btn-sm btn-primary btn-disabled"
             disabled
           >
-            <span class="loading loading-spinner loading-xs"></span>
-            Delivering...
+            <span class="loading loading-spinner loading-xs"></span> Delivering...
           </button>
           <div
             :if={@request.state in [:openai_processed, :delivered, :delivery_failed]}
@@ -173,8 +182,7 @@
               phx-click="retry_delivery"
               phx-disable-with="Redelivering..."
             >
-              <.icon name="hero-arrow-path" class="w-4 h-4" />
-              Redeliver
+              <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
             </button>
           </div>
         </div>
