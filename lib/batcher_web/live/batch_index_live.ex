@@ -93,6 +93,7 @@ defmodule BatcherWeb.BatchIndexLive do
               error_msg =
                 case reason do
                   :noproc -> "BatchBuilder not found. The batch may have already been uploaded."
+                  :no_building_batch -> "No batch in building state found for this model/endpoint."
                   other -> "Failed to upload batch: #{inspect(other)}"
                 end
 

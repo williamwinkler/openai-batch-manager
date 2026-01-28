@@ -641,17 +641,18 @@ defmodule BatcherWeb.CoreComponents do
       |> assign(:description, description)
 
     ~H"""
-    <span
-      class={[
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium cursor-default",
-        @bg_class,
-        @text_class
-      ]}
-      title={@description}
-    >
-      <span class={["w-1.5 h-1.5 rounded-full", @dot_class]}></span>
-      {@status_label}
-    </span>
+    <div class="tooltip tooltip-bottom" data-tip={@description}>
+      <span
+        class={[
+          "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium",
+          @bg_class,
+          @text_class
+        ]}
+      >
+        <span class={["w-1.5 h-1.5 rounded-full", @dot_class]}></span>
+        {@status_label}
+      </span>
+    </div>
     """
   end
 

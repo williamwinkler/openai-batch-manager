@@ -269,11 +269,11 @@
           idx -> Enum.drop(happy_path, idx + 1)
         end
       end %>
-    <div class="border border-base-300/50 rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
+    <div class="border border-base-300/50 rounded-lg overflow-visible">
+      <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 rounded-t-lg">
         <span class="font-medium">Timeline</span>
       </div>
-      <div class="p-4 overflow-x-auto flex justify-center">
+      <div class="p-4 pb-10 flex justify-center">
         <ul class="timeline timeline-horizontal">
           <%!-- Render actual transitions that have happened --%>
           <%= for {transition, index} <- Enum.with_index(@transitions) do %>
@@ -307,14 +307,15 @@
                     <.timeline_icon type={:completed} />
                 <% end %>
               </div>
-              <div
-                class={[
-                  "timeline-end timeline-box text-xs cursor-default",
-                  if(is_error, do: "text-error")
-                ]}
-                title={state_description}
-              >
-                {state_label}
+              <div class="timeline-end tooltip tooltip-bottom" data-tip={state_description}>
+                <div
+                  class={[
+                    "timeline-box text-xs",
+                    if(is_error, do: "text-error")
+                  ]}
+                >
+                  {state_label}
+                </div>
               </div>
               <%= cond do %>
                 <% not is_last_transition -> %>
@@ -342,11 +343,10 @@
               <div class="timeline-middle">
                 <.timeline_icon type={:future} />
               </div>
-              <div
-                class="timeline-end timeline-box text-xs cursor-default opacity-40"
-                title={state_description}
-              >
-                {state_label}
+              <div class="timeline-end tooltip tooltip-bottom" data-tip={state_description}>
+                <div class="timeline-box text-xs opacity-40">
+                  {state_label}
+                </div>
               </div>
               <%= if not is_last_future do %>
                 <hr class="bg-base-300" />

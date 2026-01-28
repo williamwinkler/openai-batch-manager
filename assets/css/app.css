@@ -157,3 +157,9 @@
 
 /* Light theme: make primary text color darker for better contrast */
 [data-theme="light"] .text-primary { color: oklch(25% 0 0); }
+
+/* Dark theme: darker tooltip background for better contrast */
+[data-theme="dark"] .tooltip {
+  --tt-bg: #0a0a0a;
+}
+
