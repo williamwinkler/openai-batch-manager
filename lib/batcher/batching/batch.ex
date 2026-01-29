@@ -25,9 +25,11 @@ defmodule Batcher.Batching.Batch do
       transition :upload, from: :uploading, to: :uploaded
       transition :create_openai_batch, from: [:uploaded, :expired], to: :openai_processing
       transition :mark_expired, from: :openai_processing, to: :expired
+      transition :handle_partial_expiration, from: :openai_processing, to: :expired
+      transition :reupload_unprocessed, from: :expired, to: :uploading
       transition :openai_processing_completed, from: :openai_processing, to: :openai_completed
       transition :start_downloading, from: :openai_completed, to: :downloading
-      transition :finalize_processing, from: :downloading, to: :ready_to_deliver
+      transition :finalize_processing, from: [:downloading, :expired], to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
       transition :mark_delivered, from: :delivering, to: :delivered
       transition :mark_partially_delivered, from: :delivering, to: :partially_delivered
@@ -46,7 +48,8 @@ defmodule Batcher.Batching.Batch do
           :downloading,
           :downloaded,
           :ready_to_deliver,
-          :delivering
+          :delivering,
+          :expired
         ],
         to: :failed
 
@@ -86,10 +89,29 @@ defmodule Batcher.Batching.Batch do
 
       trigger :create_openai_batch do
         action :create_openai_batch
-        where expr(state == :uploaded or state == :expired)
+
+        where expr(
+                state == :uploaded or
+                  (state == :expired and is_nil(openai_output_file_id) and
+                     is_nil(openai_error_file_id))
+              )
+
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
+      end
+
+      trigger :process_expired_batch do
+        action :process_expired_batch
+
+        where expr(
+                state == :expired and
+                  (not is_nil(openai_output_file_id) or not is_nil(openai_error_file_id))
+              )
+
+        queue :batch_processing
+        worker_module_name Batching.Batch.AshOban.Worker.ProcessExpiredBatch
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessExpiredBatch
       end
 
       trigger :check_batch_status do
@@ -336,6 +358,34 @@ defmodule Batcher.Batching.Batch do
       change set_attribute(:openai_batch_id, nil)
       change transition_state(:expired)
       change run_oban_trigger(:create_openai_batch)
+    end
+
+    update :handle_partial_expiration do
+      description "Handle batch expiration with partial results from OpenAI"
+      require_atomic? false
+      accept [:openai_output_file_id, :openai_error_file_id]
+      change set_attribute(:openai_status_last_checked_at, nil)
+      change set_attribute(:openai_batch_id, nil)
+      change set_attribute(:expires_at, nil)
+      change transition_state(:expired)
+      change run_oban_trigger(:process_expired_batch)
+    end
+
+    update :reupload_unprocessed do
+      description "Clear input file and re-upload only unprocessed requests"
+      require_atomic? false
+      change set_attribute(:openai_input_file_id, nil)
+      change set_attribute(:openai_output_file_id, nil)
+      change set_attribute(:openai_error_file_id, nil)
+      change transition_state(:uploading)
+      change run_oban_trigger(:upload)
+    end
+
+    action :process_expired_batch, :struct do
+      description "Process partial results from expired batch and reschedule unprocessed requests"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.ProcessExpiredBatch
     end
 
     action :check_delivery_completion, :struct do

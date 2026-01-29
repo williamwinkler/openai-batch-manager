@@ -98,7 +98,9 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       assert latest_transition.to == :failed
     end
 
-    test "transitions to expired and reschedules when status is expired", %{server: server} do
+    test "transitions to expired and reschedules when status is expired with no file IDs", %{
+      server: server
+    } do
       openai_batch_id = "batch_expired123"
       openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
 
@@ -119,7 +121,7 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
         )
       )
 
-      # Mock the expired status check
+      # Mock the expired status check with NO file IDs
       expired_response = %{
         "status" => "expired"
       }
@@ -182,6 +184,81 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
                expired_transition.transitioned_at,
                resumed_transition.transitioned_at
              ) != :gt
+    end
+
+    test "transitions to expired with partial results when output_file_id is present", %{
+      server: server
+    } do
+      openai_batch_id = "batch_expired_partial123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          openai_input_file_id: "file-input123"
+        )
+        |> generate()
+
+      # Mock the expired status check WITH output_file_id
+      expired_response = %{
+        "status" => "expired",
+        "output_file_id" => "file-partial-output123",
+        "error_file_id" => "file-partial-error123"
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", expired_response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      # Should use handle_partial_expiration instead of mark_expired
+      assert batch_after.state == :expired
+      assert batch_after.openai_output_file_id == "file-partial-output123"
+      assert batch_after.openai_error_file_id == "file-partial-error123"
+      assert batch_after.openai_batch_id == nil
+      assert batch_after.openai_status_last_checked_at == nil
+      assert batch_after.expires_at == nil
+
+      # Should enqueue process_expired_batch job
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.ProcessExpiredBatch)
+    end
+
+    test "transitions to expired with partial results when only error_file_id is present", %{
+      server: server
+    } do
+      openai_batch_id = "batch_expired_error_only123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          openai_input_file_id: "file-input456"
+        )
+        |> generate()
+
+      # Mock the expired status check with only error_file_id
+      expired_response = %{
+        "status" => "expired",
+        "error_file_id" => "file-error-only456"
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", expired_response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      assert batch_after.state == :expired
+      assert batch_after.openai_output_file_id == nil
+      assert batch_after.openai_error_file_id == "file-error-only456"
+
+      # Should enqueue process_expired_batch job
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.ProcessExpiredBatch)
     end
 
     test "updates last_checked_at without state change when status is pending", %{server: server} do

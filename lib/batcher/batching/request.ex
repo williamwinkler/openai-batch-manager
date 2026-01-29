@@ -51,6 +51,9 @@ defmodule Batcher.Batching.Request do
         from: [:openai_processed, :delivered, :delivery_failed],
         to: :openai_processed
 
+      transition :reset_to_pending, from: :openai_processing, to: :pending
+      transition :bulk_reset_to_pending, from: :openai_processing, to: :pending
+
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
       transition :cancel, from: :pending, to: :cancelled
     end
@@ -208,6 +211,18 @@ defmodule Batcher.Batching.Request do
     update :cancel do
       require_atomic? false
       change transition_state(:cancelled)
+    end
+
+    update :reset_to_pending do
+      description "Reset a request from openai_processing back to pending for reprocessing"
+      require_atomic? false
+      change transition_state(:pending)
+    end
+
+    update :bulk_reset_to_pending do
+      description "Bulk reset requests from openai_processing back to pending"
+      require_atomic? false
+      change transition_state(:pending)
     end
 
     update :update_delivery_config do

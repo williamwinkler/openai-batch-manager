@@ -70,5 +70,4 @@ defmodule BatcherWeb.Router do
       oban_dashboard("/oban")
     end
   end
-
 end

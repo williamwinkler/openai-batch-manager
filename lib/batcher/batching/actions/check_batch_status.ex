@@ -28,12 +28,26 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
         )
         |> Ash.update()
 
-      {:ok, %{"status" => "expired"}} ->
-        Logger.info("Batch #{batch.id} expired on OpenAI, rescheduling")
+      {:ok, %{"status" => "expired"} = response} ->
+        output_file_id = response["output_file_id"]
+        error_file_id = response["error_file_id"]
 
-        batch
-        |> Ash.Changeset.for_update(:mark_expired, %{})
-        |> Ash.update()
+        if output_file_id || error_file_id do
+          Logger.info("Batch #{batch.id} expired with partial results")
+
+          batch
+          |> Ash.Changeset.for_update(:handle_partial_expiration, %{
+            openai_output_file_id: output_file_id,
+            openai_error_file_id: error_file_id
+          })
+          |> Ash.update()
+        else
+          Logger.info("Batch #{batch.id} expired with no results, rescheduling")
+
+          batch
+          |> Ash.Changeset.for_update(:mark_expired, %{})
+          |> Ash.update()
+        end
 
       {:ok, %{"status" => "failed"} = resp} ->
         error_msg = JSON.encode!(resp)

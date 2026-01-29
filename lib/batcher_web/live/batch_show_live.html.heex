@@ -80,7 +80,10 @@
               <div>{Calendar.strftime(@batch.updated_at, "%d %b %Y, %H:%M")}</div>
             </div>
             <div
-              class={["tooltip tooltip-bottom", if(@batch.state != :openai_processing, do: "opacity-40")]}
+              class={[
+                "tooltip tooltip-bottom",
+                if(@batch.state != :openai_processing, do: "opacity-40")
+              ]}
               data-tip="When the batch processing status was last checked on OpenAI's platform"
             >
               <div class="text-base-content/50 mb-1">Last checked on OpenAI</div>
@@ -308,12 +311,10 @@
                 <% end %>
               </div>
               <div class="timeline-end tooltip tooltip-bottom" data-tip={state_description}>
-                <div
-                  class={[
-                    "timeline-box text-xs",
-                    if(is_error, do: "text-error")
-                  ]}
-                >
+                <div class={[
+                  "timeline-box text-xs",
+                  if(is_error, do: "text-error")
+                ]}>
                   {state_label}
                 </div>
               </div>

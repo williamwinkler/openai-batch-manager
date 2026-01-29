@@ -70,7 +70,7 @@ defmodule BatcherWeb.Layouts do
           </div>
         </div>
       </header>
-
+      
     <!-- Main Content -->
       <div class="flex-1 overflow-hidden">
         <main class="h-full overflow-auto p-6">
@@ -210,7 +210,8 @@ defmodule BatcherWeb.Layouts do
                     %{
                       label: "Input exchange",
                       value: "Not configured",
-                      hint: "Set RABBITMQ_INPUT_EXCHANGE and RABBITMQ_INPUT_ROUTING_KEY to bind to an exchange"
+                      hint:
+                        "Set RABBITMQ_INPUT_EXCHANGE and RABBITMQ_INPUT_ROUTING_KEY to bind to an exchange"
                     }
                   ]
               end
@@ -273,8 +274,8 @@ defmodule BatcherWeb.Layouts do
           <span class="w-1.5 h-1.5 rounded-full bg-base-content/30"></span>
         </div>
       </div>
-
-      <!-- Modal -->
+      
+    <!-- Modal -->
       <div
         id={@modal_id}
         class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"

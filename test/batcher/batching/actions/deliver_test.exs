@@ -98,10 +98,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.error_msg == nil
 
       # Trigger batch completion check (normally done by AshOban) and verify state
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :delivered
     end
 
@@ -312,10 +314,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.error_msg == nil
 
       # Trigger batch completion check (normally done by AshOban) and verify state
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :delivered
 
       # Cleanup
@@ -358,10 +362,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.outcome == :success
 
       # Trigger batch completion check (normally done by AshOban) and verify state
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :delivered
 
       # Cleanup
@@ -703,10 +709,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       # Trigger batch completion check (normally done by AshOban)
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :delivered
 
       # Cleanup
@@ -771,10 +779,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       # Trigger batch completion check (normally done by AshOban)
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :partially_delivered
 
       # Cleanup
@@ -1037,10 +1047,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       # Trigger batch completion check (normally done by AshOban)
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :delivered
     end
 
@@ -1098,10 +1110,12 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       # Trigger batch completion check (normally done by AshOban)
-      {:ok, batch_after} = Batching.Batch
+      {:ok, batch_after} =
+        Batching.Batch
         |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
         |> Map.put(:subject, batch)
         |> Ash.run_action()
+
       assert batch_after.state == :partially_delivered
     end
 

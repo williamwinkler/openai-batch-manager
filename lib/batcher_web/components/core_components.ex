@@ -642,13 +642,11 @@ defmodule BatcherWeb.CoreComponents do
 
     ~H"""
     <div class="tooltip tooltip-bottom" data-tip={@description}>
-      <span
-        class={[
-          "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium",
-          @bg_class,
-          @text_class
-        ]}
-      >
+      <span class={[
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium",
+        @bg_class,
+        @text_class
+      ]}>
         <span class={["w-1.5 h-1.5 rounded-full", @dot_class]}></span>
         {@status_label}
       </span>
@@ -958,12 +956,16 @@ defmodule BatcherWeb.CoreComponents do
   """
   attr :batch_id, :integer, required: true, doc: "the batch ID to delete"
   attr :batch_state, :atom, required: true, doc: "the current state of the batch"
+
   attr :class, :string,
     default: "btn btn-sm btn-ghost text-error",
     doc: "additional CSS classes for the button"
+
   attr :confirm_message, :string,
-    default: "Are you sure you want to delete this batch? This will delete the batch here, all requests in it, and the data on OpenAI's platform.",
+    default:
+      "Are you sure you want to delete this batch? This will delete the batch here, all requests in it, and the data on OpenAI's platform.",
     doc: "the confirmation message to display"
+
   attr :show_icon, :boolean, default: true, doc: "whether to show the trash icon"
   attr :label, :string, default: "Delete Batch", doc: "the button label text"
 

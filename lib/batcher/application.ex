@@ -67,7 +67,10 @@ defmodule Batcher.Application do
   defp maybe_rabbitmq_publisher do
     case Application.get_env(:batcher, :rabbitmq_publisher) do
       nil ->
-        Logger.info("RabbitMQ publisher not configured (set RABBITMQ_URL to enable output delivery via RabbitMQ)")
+        Logger.info(
+          "RabbitMQ publisher not configured (set RABBITMQ_URL to enable output delivery via RabbitMQ)"
+        )
+
         nil
 
       config ->
@@ -80,7 +83,10 @@ defmodule Batcher.Application do
   defp maybe_rabbitmq_consumer do
     case Application.get_env(:batcher, :rabbitmq_input) do
       nil ->
-        Logger.info("RabbitMQ consumer not configured (set RABBITMQ_INPUT_QUEUE to enable input via RabbitMQ)")
+        Logger.info(
+          "RabbitMQ consumer not configured (set RABBITMQ_INPUT_QUEUE to enable input via RabbitMQ)"
+        )
+
         nil
 
       config ->
