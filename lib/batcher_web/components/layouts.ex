@@ -47,8 +47,8 @@ defmodule BatcherWeb.Layouts do
           <nav class="flex items-center gap-1">
             <.nav_link
               href="/"
-              icon="hero-chart-bar"
-              label="Dashboard"
+              icon="hero-home"
+              label="Home"
               active={@current_path == "/"}
             />
             <.nav_link
@@ -94,7 +94,7 @@ defmodule BatcherWeb.Layouts do
       navigate={@href}
       class={[
         "flex items-center gap-2 px-3 py-2 rounded-md transition-colors",
-        @active && "bg-primary/10 text-primary font-medium",
+        @active && "bg-primary/10 text-primary",
         !@active && "text-base-content/60 hover:bg-base-300/50 hover:text-base-content"
       ]}
     >

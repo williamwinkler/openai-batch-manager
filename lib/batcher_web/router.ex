@@ -25,7 +25,7 @@ defmodule BatcherWeb.Router do
     pipe_through :browser
 
     live_session :default, on_mount: [{BatcherWeb.NavHooks, :default}] do
-      live "/", DashboardLive, :index
+      live "/", HomeLive, :index
       live "/batches", BatchIndexLive, :index
       live "/batches/:id", BatchShowLive, :show
       live "/requests", RequestIndexLive, :index
@@ -71,13 +71,4 @@ defmodule BatcherWeb.Router do
     end
   end
 
-  if Application.compile_env(:batcher, :dev_routes) do
-    import AshAdmin.Router
-
-    scope "/admin" do
-      pipe_through :browser
-
-      ash_admin "/"
-    end
-  end
 end
