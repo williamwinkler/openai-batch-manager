@@ -14,23 +14,23 @@ if config_env() != :test do
 
   config :batcher, Batcher.OpenaiApiClient, openai_api_key: openai_api_key
 
-  # RabbitMQ configuration (optional - only if RABBITMQ_URL is set)
-  rabbitmq_url = System.get_env("RABBITMQ_URL")
+  # RabbitMQ configuration (optional)
+  # - RABBITMQ_URL: Enables RabbitMQ publisher for output delivery
+  # - RABBITMQ_INPUT_QUEUE: Enables RabbitMQ consumer for input (requires RABBITMQ_URL)
+  rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
+  rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
 
+  # Publisher: enabled when RABBITMQ_URL is set (used for output delivery)
   if rabbitmq_url do
-    # Configure RabbitMQ publisher (for output delivery)
     config :batcher, :rabbitmq_publisher, url: rabbitmq_url
+  end
 
-    # Configure RabbitMQ consumer
-    # Queue is required when RABBITMQ_URL is set
-    rabbitmq_input_queue =
-      System.get_env("RABBITMQ_INPUT_QUEUE") ||
-        raise "RABBITMQ_INPUT_QUEUE is required when RABBITMQ_URL is set"
-
-    # Exchange and routing_key are optional, but if exchange is set, routing_key must also be set
-    # Use System.get_env since source! already loaded .env file values
-    rabbitmq_input_exchange = System.get_env("RABBITMQ_INPUT_EXCHANGE")
-    rabbitmq_input_routing_key = System.get_env("RABBITMQ_INPUT_ROUTING_KEY")
+  # Consumer: enabled when both RABBITMQ_URL and RABBITMQ_INPUT_QUEUE are set
+  if rabbitmq_url && rabbitmq_input_queue do
+    # Exchange and routing_key are optional for binding to an exchange
+    # If exchange is set, routing_key must also be set
+    rabbitmq_input_exchange = env!("RABBITMQ_INPUT_EXCHANGE", :string, nil)
+    rabbitmq_input_routing_key = env!("RABBITMQ_INPUT_ROUTING_KEY", :string, nil)
 
     if rabbitmq_input_exchange && !rabbitmq_input_routing_key do
       raise "RABBITMQ_INPUT_ROUTING_KEY is required when RABBITMQ_INPUT_EXCHANGE is set"
@@ -131,13 +131,14 @@ if config_env() == :prod do
         value
     end
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.get_env("PHX_HOST") || "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :batcher, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :batcher, BatcherWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: port, scheme: "http"],
+    check_origin: false,
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.

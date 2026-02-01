@@ -515,6 +515,91 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
       assert {:error, %Ash.Error.Invalid{}} = result
     end
 
+    test "JSONL only contains pending requests when batch has mixed-state requests", %{
+      server: server
+    } do
+      batch = generate(batch())
+
+      # Create a pending request (should be included)
+      {:ok, _pending_request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "pending_req",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "pending_req",
+            body: %{input: "test pending", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      # Create a request already processed (should NOT be included)
+      # We use seeded_request to bypass action validation and set state directly
+      _processed_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :openai_processed,
+            custom_id: "processed_req",
+            response_payload: %{"output" => "already done"}
+          )
+        )
+
+      # Create a failed request (should NOT be included)
+      _failed_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :failed,
+            custom_id: "failed_req"
+          )
+        )
+
+      {:ok, batch} = Batching.start_batch_upload(batch)
+
+      # Mock file upload - capture the uploaded content
+      expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      TestServer.add(server, "/v1/files",
+        via: :post,
+        to: fn conn ->
+          # Read the multipart body to verify content
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          # The body should only contain the pending request's payload
+          # It should contain "pending_req" but NOT "processed_req" or "failed_req"
+          assert String.contains?(body, "pending_req")
+          refute String.contains?(body, "processed_req")
+          refute String.contains?(body, "failed_req")
+
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.send_resp(
+            200,
+            JSON.encode!(%{"id" => "file-filtered", "expires_at" => expires_at})
+          )
+        end
+      )
+
+      {:ok, updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:upload)
+        |> Ash.update()
+
+      assert updated_batch.openai_input_file_id == "file-filtered"
+      assert updated_batch.state == :uploaded
+    end
+
     test "handles File.stat errors during file verification" do
       batch = generate(batch())
 

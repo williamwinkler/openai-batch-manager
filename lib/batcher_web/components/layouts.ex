@@ -26,49 +26,84 @@ defmodule BatcherWeb.Layouts do
 
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
-
-  attr :current_scope, :map,
-    default: nil,
-    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
+  attr :current_path, :string, default: nil, doc: "the current request path for nav highlighting"
 
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
+    <div class="flex flex-col h-screen bg-base-100">
+      <!-- Top Navbar -->
+      <header class="bg-base-200 border-b border-base-300/50">
+        <div class="flex items-center h-16 px-6">
+          <div class="flex-1 flex items-center">
+            <a href="/" class="flex items-center gap-1.5">
+              <.icon name="batch-icon" class="w-7 h-7 shrink-0" />
+              <span class="text-lg font-semibold tracking-tight hidden lg:inline">
+                OpenAI Batch Manager
+              </span>
             </a>
-          </li>
-        </ul>
+          </div>
+          <nav class="flex items-center gap-1">
+            <.nav_link
+              href="/"
+              icon="hero-home"
+              label="Home"
+              active={@current_path == "/"}
+            />
+            <.nav_link
+              href="/batches"
+              icon="batch-icon"
+              label="Batches"
+              active={@current_path && String.starts_with?(@current_path, "/batches")}
+            />
+            <.nav_link
+              href="/requests"
+              icon="hero-chat-bubble-bottom-center-text"
+              label="Requests"
+              active={@current_path && String.starts_with?(@current_path, "/requests")}
+            />
+          </nav>
+          <div class="flex-1 flex items-center justify-end gap-3">
+            <span class="text-xs text-base-content/20 font-mono select-all">
+              v{Application.spec(:batcher, :vsn)}
+            </span>
+            <.rabbitmq_status />
+            <.theme_toggle />
+          </div>
+        </div>
+      </header>
+      
+    <!-- Main Content -->
+      <div class="flex-1 overflow-hidden">
+        <main class="h-full overflow-auto p-6">
+          {render_slot(@inner_block)}
+        </main>
       </div>
-    </header>
-
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
-        {render_slot(@inner_block)}
-      </div>
-    </main>
+    </div>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  attr :href, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :active, :boolean, default: false
+
+  defp nav_link(assigns) do
+    ~H"""
+    <.link
+      navigate={@href}
+      class={[
+        "flex items-center gap-2 px-3 py-2 rounded-md transition-colors",
+        @active && "bg-primary/10 text-primary",
+        !@active && "text-base-content/60 hover:bg-base-300/50 hover:text-base-content"
+      ]}
+    >
+      <.icon name={@icon} class="w-5 h-5" />
+      <span>{@label}</span>
+    </.link>
     """
   end
 
@@ -115,6 +150,180 @@ defmodule BatcherWeb.Layouts do
     """
   end
 
+  # Remove app_with_sidebar as it's now merged into app
+
+  @doc """
+  Renders the RabbitMQ connection status indicator.
+  Shows a green circle when RabbitMQ is configured, grey when not.
+  When connected, clicking opens a modal with connection details.
+  """
+  def rabbitmq_status(assigns) do
+    publisher_config = Application.get_env(:batcher, :rabbitmq_publisher)
+    consumer_config = Application.get_env(:batcher, :rabbitmq_input)
+    configured? = publisher_config != nil || consumer_config != nil
+
+    {connection_details, tooltip_text} =
+      if configured? do
+        # Get URL from publisher or consumer config
+        url =
+          (publisher_config && Keyword.get(publisher_config, :url)) ||
+            (consumer_config && Keyword.get(consumer_config, :url)) ||
+            "N/A"
+
+        # Extract host from URL (e.g., "amqp://user:pass@host:5672" -> "host:5672")
+        host_info =
+          case URI.parse(url) do
+            %URI{host: nil} -> url
+            %URI{host: host, port: nil} -> host
+            %URI{host: host, port: port} -> "#{host}:#{port}"
+          end
+
+        details = [%{label: "Connected to", value: host_info}]
+
+        # Add publisher status
+        details =
+          if publisher_config do
+            details ++ [%{label: "Output delivery", value: "Enabled"}]
+          else
+            details ++
+              [
+                %{
+                  label: "Output delivery",
+                  value: "Disabled",
+                  hint: "Set RABBITMQ_URL to enable"
+                }
+              ]
+          end
+
+        # Add consumer details if configured
+        details =
+          if consumer_config do
+            queue = Keyword.get(consumer_config, :queue, "N/A")
+            exchange = Keyword.get(consumer_config, :exchange)
+            routing_key = Keyword.get(consumer_config, :routing_key)
+
+            details = details ++ [%{label: "Input queue", value: queue}]
+
+            details =
+              if exchange do
+                details ++ [%{label: "Input exchange", value: exchange}]
+              else
+                details ++
+                  [
+                    %{
+                      label: "Input exchange",
+                      value: "Not configured",
+                      hint:
+                        "Set RABBITMQ_INPUT_EXCHANGE and RABBITMQ_INPUT_ROUTING_KEY to bind to an exchange"
+                    }
+                  ]
+              end
+
+            if routing_key do
+              details ++ [%{label: "Input routing key", value: routing_key}]
+            else
+              details
+            end
+          else
+            details ++
+              [
+                %{
+                  label: "Input consumer",
+                  value: "Disabled",
+                  hint: "Set RABBITMQ_INPUT_QUEUE to enable"
+                }
+              ]
+          end
+
+        {details, "RabbitMQ Connected"}
+      else
+        {[], "RabbitMQ not configured"}
+      end
+
+    modal_id = "rabbitmq-status-modal"
+
+    assigns =
+      assigns
+      |> assign(:configured?, configured?)
+      |> assign(:tooltip_text, tooltip_text)
+      |> assign(:connection_details, connection_details)
+      |> assign(:modal_id, modal_id)
+
+    ~H"""
+    <div>
+      <div
+        :if={@configured?}
+        class="tooltip tooltip-bottom"
+        data-tip="Click to view connection details"
+      >
+        <button
+          type="button"
+          id="rabbitmq-status-btn"
+          class="flex items-center gap-1.5 px-1.5 bg-base-300/50 rounded-lg h-7 cursor-pointer hover:bg-base-300 transition-colors"
+          phx-hook="RabbitMQModal"
+          data-modal-id={@modal_id}
+        >
+          <img src="/images/rabbitmq.svg" class="w-4 h-3.5" alt="RabbitMQ" />
+          <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+        </button>
+      </div>
+      <div
+        :if={!@configured?}
+        class="tooltip tooltip-bottom"
+        data-tip={@tooltip_text}
+      >
+        <div class="flex items-center gap-1.5 px-1.5 bg-base-300/50 rounded-lg h-7">
+          <img src="/images/rabbitmq.svg" class="w-4 h-3.5" alt="RabbitMQ" />
+          <span class="w-1.5 h-1.5 rounded-full bg-base-content/30"></span>
+        </div>
+      </div>
+      
+    <!-- Modal -->
+      <div
+        id={@modal_id}
+        class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+      >
+        <%!-- Backdrop - only this closes the modal --%>
+        <div class="absolute inset-0 bg-black/50" data-close-modal={@modal_id}></div>
+
+        <%!-- Modal Content - clicks here don't close --%>
+        <div class="relative bg-base-100 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <%!-- Header --%>
+          <div class="px-6 py-4 border-b border-base-300 flex items-center justify-between shrink-0">
+            <h3 class="text-lg font-semibold">RabbitMQ Connection Details</h3>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-circle"
+              data-close-modal={@modal_id}
+            >
+              <.icon name="hero-x-mark" class="w-5 h-5" />
+            </button>
+          </div>
+
+          <%!-- Body --%>
+          <div class="p-6 overflow-auto flex-1">
+            <div class="space-y-4">
+              <div :for={detail <- @connection_details} class="flex flex-col gap-1">
+                <span class="text-sm font-semibold text-base-content/70">{detail.label}</span>
+                <span class={[
+                  "text-base font-mono",
+                  detail[:hint] && "text-base-content/50",
+                  !detail[:hint] && "text-base-content"
+                ]}>
+                  {detail.value}
+                </span>
+                <span :if={detail[:hint]} class="text-xs text-base-content/50 italic">
+                  {detail.hint}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
   @doc """
   Provides dark vs light theme toggle based on themes defined in app.css.
 
@@ -122,31 +331,37 @@ defmodule BatcherWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
-
+    <div
+      class="flex items-center gap-0.5 px-1 bg-base-300/50 rounded-lg h-7"
+      phx-hook="ThemeToggle"
+      id="theme-toggle"
+    >
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="p-1 rounded hover:bg-base-200 transition-colors theme-btn cursor-pointer"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
+        data-theme-value="system"
+        title="System theme"
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-computer-desktop" class="size-3.5 text-base-content/60" />
       </button>
-
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="p-1 rounded hover:bg-base-200 transition-colors theme-btn cursor-pointer"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        data-theme-value="light"
+        title="Light theme"
       >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-sun" class="size-3.5 text-base-content/60 cursor-pointer" />
       </button>
-
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="p-1 rounded hover:bg-base-200 transition-colors theme-btn cursor-pointer"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        data-theme-value="dark"
+        title="Dark theme"
       >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-moon" class="size-3.5 text-base-content/60 cursor-pointer" />
       </button>
     </div>
     """

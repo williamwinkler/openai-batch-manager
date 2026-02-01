@@ -1,0 +1,443 @@
+<Layouts.app flash={@flash} current_path={@current_path}>
+  <div class="max-w-6xl mx-auto space-y-6">
+    <.breadcrumb items={[{"Batches", "/"}, {"Batch #{@batch.id}", ~p"/batches/#{@batch.id}"}]} />
+
+    <%!-- Page header --%>
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-semibold">Batch {@batch.id}</h1>
+        <.status_badge status={@batch.state} />
+      </div>
+      <div class="flex gap-2">
+        <.link
+          navigate={~p"/requests?batch_id=#{@batch.id}"}
+          class="btn btn-sm btn-ghost"
+        >
+          <.icon name="hero-chat-bubble-bottom-center-text" class="w-4 h-4" /> View Requests
+        </.link>
+        <button
+          :if={@batch.state == :building}
+          phx-click="upload_batch"
+          class="btn btn-sm btn-primary"
+        >
+          <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload Batch
+        </button>
+        <button
+          :if={
+            @batch.state not in [
+              :delivered,
+              :partially_delivered,
+              :delivery_failed,
+              :failed,
+              :cancelled
+            ]
+          }
+          phx-click="cancel_batch"
+          class="btn btn-sm btn-ghost text-warning"
+          data-confirm="Are you sure you want to cancel this batch?"
+        >
+          Cancel Batch
+        </button>
+        <.delete_batch_button
+          batch_id={@batch.id}
+          batch_state={@batch.state}
+          show_icon={false}
+        />
+      </div>
+    </div>
+
+    <%!-- Batch info --%>
+    <div class="space-y-4">
+      <%!-- Batch Details Section --%>
+      <div class="border border-base-300/50 rounded-lg overflow-visible">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
+          <span class="font-medium">Batch details</span>
+        </div>
+        <div class="p-4">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 text-sm">
+            <div>
+              <div class="text-base-content/50 mb-1">Model</div>
+              <div class="font-mono">{@batch.model}</div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Endpoint</div>
+              <div class="font-mono">{@batch.url}</div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Requests</div>
+              <div class="font-medium">{@batch.request_count || 0}</div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Size</div>
+              <div>{Format.bytes(@batch.size_bytes)}</div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Created</div>
+              <div
+                id="batch-created-at"
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(@batch.created_at)}
+                data-format="datetime"
+              >
+                {Calendar.strftime(@batch.created_at, "%d %b %Y, %H:%M")}
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Updated</div>
+              <div
+                id="batch-updated-at"
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(@batch.updated_at)}
+                data-format="datetime"
+              >
+                {Calendar.strftime(@batch.updated_at, "%d %b %Y, %H:%M")}
+              </div>
+            </div>
+            <div
+              class={[
+                "tooltip tooltip-bottom",
+                if(@batch.state != :openai_processing, do: "opacity-40")
+              ]}
+              data-tip="When the batch processing status was last checked on OpenAI's platform"
+            >
+              <div class="text-base-content/50 mb-1">Last checked on OpenAI</div>
+              <div>
+                <%= if @batch.openai_status_last_checked_at do %>
+                  <span
+                    id="batch-last-checked"
+                    phx-hook="LocalTime"
+                    data-utc={DateTime.to_iso8601(@batch.openai_status_last_checked_at)}
+                    data-format="datetime"
+                  >
+                    {Calendar.strftime(@batch.openai_status_last_checked_at, "%d %b %Y, %H:%M")}
+                  </span>
+                <% else %>
+                  —
+                <% end %>
+              </div>
+            </div>
+            <div
+              class="tooltip tooltip-bottom"
+              data-tip="When this batch and its data will be automatically deleted"
+            >
+              <div class="text-base-content/50 mb-1">Expires at</div>
+              <div>
+                <%= if @batch.expires_at do %>
+                  <span
+                    id="batch-expires-at"
+                    phx-hook="LocalTime"
+                    data-utc={DateTime.to_iso8601(@batch.expires_at)}
+                    data-format="datetime"
+                  >
+                    {Calendar.strftime(@batch.expires_at, "%d %b %Y, %H:%M")}
+                  </span>
+                <% else %>
+                  —
+                <% end %>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        :if={@batch.error_msg}
+        class="text-sm text-error bg-error/10 px-3 py-2 rounded"
+      >
+        {@batch.error_msg}
+      </div>
+    </div>
+
+    <%!-- OpenAI, Token Usage, and Delivery Stats --%>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <%!-- OpenAI Section --%>
+      <div class="border border-base-300/50 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
+          <span class="font-medium">OpenAI</span>
+        </div>
+        <div class="p-4">
+          <div class="grid grid-cols-1 gap-3 text-sm">
+            <div>
+              <div class="text-base-content/50 mb-1">Batch ID</div>
+              <div class="font-mono text-xs break-all">{@batch.openai_batch_id || "—"}</div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Input file</div>
+              <div class="flex items-center gap-2">
+                <div class="font-mono text-xs break-all">
+                  {@batch.openai_input_file_id || "—"}
+                </div>
+                <a
+                  :if={@batch.openai_input_file_id}
+                  href={~p"/batches/#{@batch.id}/files/input/download"}
+                  class="btn btn-ghost btn-xs"
+                  title="Download input file"
+                >
+                  <.icon name="hero-arrow-down-tray" class="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Output file</div>
+              <div class="flex items-center gap-2">
+                <div class="font-mono text-xs break-all">
+                  {@batch.openai_output_file_id || "—"}
+                </div>
+                <a
+                  :if={@batch.openai_output_file_id}
+                  href={~p"/batches/#{@batch.id}/files/output/download"}
+                  class="btn btn-ghost btn-xs"
+                  title="Download output file"
+                >
+                  <.icon name="hero-arrow-down-tray" class="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Error file</div>
+              <div class="flex items-center gap-2">
+                <div class="font-mono text-xs break-all">
+                  {@batch.openai_error_file_id || "—"}
+                </div>
+                <a
+                  :if={@batch.openai_error_file_id}
+                  href={~p"/batches/#{@batch.id}/files/error/download"}
+                  class="btn btn-ghost btn-xs"
+                  title="Download error file"
+                >
+                  <.icon name="hero-arrow-down-tray" class="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <%!-- Token Usage Section --%>
+      <div class="border border-base-300/50 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30">
+          <span class="font-medium">Token usage</span>
+        </div>
+        <div class="p-4">
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-base-content/50">Input</span>
+              <span class="font-mono">{@batch.input_tokens || 0}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-base-content/50">Cached</span>
+              <span class="font-mono">{@batch.cached_tokens || 0}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-base-content/50">Output</span>
+              <span class="font-mono">{@batch.output_tokens || 0}</span>
+            </div>
+            <div class="flex justify-between pt-2 border-t border-base-300/50 font-medium">
+              <span>Total</span>
+              <span class="font-mono">
+                {(@batch.input_tokens || 0) + (@batch.output_tokens || 0)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <%!-- Delivery Stats Section --%>
+      <% total = @batch.request_count || 0
+      delivered = @batch.delivery_stats[:delivered] || 0
+      delivering = @batch.delivery_stats[:delivering] || 0
+      failed = @batch.delivery_stats[:failed] || 0
+
+      # Calculate percentages for the stacked bar
+      {delivered_pct, delivering_pct, failed_pct} =
+        if total > 0 do
+          {delivered / total * 100, delivering / total * 100, failed / total * 100}
+        else
+          {0, 0, 0}
+        end %>
+      <div class="border border-base-300/50 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
+          <span class="font-medium">Delivery</span>
+          <button
+            :if={@batch.state in [:partially_delivered, :delivery_failed]}
+            phx-click="redeliver_batch"
+            class="btn btn-xs btn-primary"
+            data-confirm="Redeliver all failed requests in this batch?"
+          >
+            <.icon name="hero-arrow-path" class="w-3.5 h-3.5" /> Redeliver Failed
+          </button>
+        </div>
+        <div class="p-4">
+          <div class="space-y-3 text-sm">
+            <%!-- Stacked progress bar --%>
+            <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
+              <div class="bg-primary h-full" style={"width: #{delivered_pct}%"}></div>
+              <div class="bg-info h-full" style={"width: #{delivering_pct}%"}></div>
+              <div class="bg-error h-full" style={"width: #{failed_pct}%"}></div>
+            </div>
+
+            <%!-- Stats with x/total format --%>
+            <div class="flex justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-primary"></span>
+                <span class="text-base-content/50">Delivered</span>
+              </span>
+              <span class="font-mono">{delivered}/{total}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-info"></span>
+                <span class="text-base-content/50">Delivering</span>
+              </span>
+              <span class="font-mono">{delivering}/{total}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-error"></span>
+                <span class="text-base-content/50">Failed</span>
+              </span>
+              <span class="font-mono">{failed}/{total}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <%!-- Transition Timeline --%>
+    <% # Define terminal states (no future states to show after these)
+    terminal_states = [:delivered, :failed, :cancelled]
+    error_states = [:failed, :cancelled, :partially_delivered, :delivery_failed]
+
+    # Happy path: states we expect a successful batch to go through
+    happy_path = [
+      :building,
+      :uploading,
+      :uploaded,
+      :openai_processing,
+      :openai_completed,
+      :downloading,
+      :ready_to_deliver,
+      :delivering,
+      :delivered
+    ]
+
+    # Current state
+    current_state = @batch.state
+
+    # Determine future states to show (only if not in a terminal state)
+    future_states =
+      if current_state in terminal_states do
+        []
+      else
+        # Find where current state is in happy path and show states after it
+        case Enum.find_index(happy_path, &(&1 == current_state)) do
+          # Current state not in happy path (e.g., error state), show remaining from delivering onwards
+          nil -> []
+          idx -> Enum.drop(happy_path, idx + 1)
+        end
+      end %>
+    <div class="border border-base-300/50 rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 rounded-t-lg">
+        <span class="font-medium">Timeline</span>
+      </div>
+      <div class="p-4 pb-10 overflow-x-auto flex justify-center">
+        <ul class="timeline timeline-horizontal">
+          <%!-- Render actual transitions that have happened --%>
+          <%= for {transition, index} <- Enum.with_index(@transitions) do %>
+            <% is_last_transition = index == length(@transitions) - 1
+            is_current = is_last_transition and Enum.empty?(future_states)
+            is_error = transition.to in error_states
+
+            state_label =
+              Batcher.Batching.Types.BatchStatus.label(transition.to) ||
+                transition.to |> to_string() |> String.replace("_", " ")
+
+            state_description = Batcher.Batching.Types.BatchStatus.description(transition.to) %>
+            <li>
+              <%= if index > 0 do %>
+                <hr class={if is_error, do: "bg-error", else: "bg-primary"} />
+              <% end %>
+              <div
+                class="timeline-start text-xs text-base-content/50 min-h-5"
+                id={"transition-time-#{index}"}
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(transition.transitioned_at)}
+                data-format="datetime-short"
+              >
+                {Calendar.strftime(transition.transitioned_at, "%d %b %H:%M")}
+              </div>
+              <div class="timeline-middle">
+                <%= cond do %>
+                  <% is_last_transition and is_error -> %>
+                    <.timeline_icon type={:error} />
+                  <% is_last_transition and current_state in terminal_states -> %>
+                    <.timeline_icon type={:completed} />
+                  <% is_current -> %>
+                    <.timeline_icon type={:current} />
+                  <% is_last_transition -> %>
+                    <.timeline_icon type={:current} />
+                  <% is_error -> %>
+                    <.timeline_icon type={:error} />
+                  <% true -> %>
+                    <.timeline_icon type={:completed} />
+                <% end %>
+              </div>
+              <div
+                class="timeline-end"
+                id={"transition-#{index}"}
+                phx-hook="Tooltip"
+                data-tip={state_description}
+              >
+                <div class={[
+                  "timeline-box text-xs",
+                  if(is_error, do: "text-error")
+                ]}>
+                  {state_label}
+                </div>
+              </div>
+              <%= cond do %>
+                <% not is_last_transition -> %>
+                  <% next_transition = Enum.at(@transitions, index + 1)
+                  next_is_error = next_transition && next_transition.to in error_states %>
+                  <hr class={if next_is_error, do: "bg-error", else: "bg-primary"} />
+                <% is_last_transition and not Enum.empty?(future_states) -> %>
+                  <hr class="bg-base-300" />
+                <% true -> %>
+              <% end %>
+            </li>
+          <% end %>
+          <%!-- Render future expected states (grayed out) --%>
+          <%= for {state, index} <- Enum.with_index(future_states) do %>
+            <% is_last_future = index == length(future_states) - 1
+
+            state_label =
+              Batcher.Batching.Types.BatchStatus.label(state) ||
+                state |> to_string() |> String.replace("_", " ")
+
+            state_description = Batcher.Batching.Types.BatchStatus.description(state) %>
+            <li>
+              <hr class="bg-base-300" />
+              <div class="timeline-start text-xs text-base-content/50 min-h-5"></div>
+              <div class="timeline-middle">
+                <.timeline_icon type={:future} />
+              </div>
+              <div
+                class="timeline-end"
+                id={"future-#{index}"}
+                phx-hook="Tooltip"
+                data-tip={state_description}
+              >
+                <div class="timeline-box text-xs opacity-40">
+                  {state_label}
+                </div>
+              </div>
+              <%= if not is_last_future do %>
+                <hr class="bg-base-300" />
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+  </div>
+</Layouts.app>

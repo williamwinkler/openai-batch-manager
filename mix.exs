@@ -43,7 +43,14 @@ defmodule Batcher.MixProject do
           Batcher.Batching.Changes.CheckOpenaiBatchStatus,
           # Unused change module (not used in actual codebase)
           Batcher.Batching.Changes.AssignToBatch,
-          Batcher.RabbitMQ.FakePublisher
+          Batcher.RabbitMQ.FakePublisher,
+          # RabbitMQ modules require running RabbitMQ server (integration tests)
+          Batcher.RabbitMQ.Consumer,
+          Batcher.RabbitMQ.Publisher,
+          # Dead code - not routed
+          BatcherWeb.PageController,
+          # Macro-generated code (Ash.Type.Enum)
+          Batcher.Batching.Types.DeliveryType
         ]
       ]
     ]
@@ -82,7 +89,6 @@ defmodule Batcher.MixProject do
       {:ash_state_machine, "~> 0.2"},
       {:oban_web, "~> 2.0"},
       {:ash_oban, "~> 0.7"},
-      {:ash_admin, "~> 0.13"},
       {:ash_json_api, "~> 1.0"},
       {:ash_sqlite, "~> 0.2"},
       {:ash_phoenix, "~> 2.0"},

@@ -1,76 +1,31 @@
 # priv/scripts/load_test.exs
-# Efficient load test script to send 50,001 requests via HTTP and RabbitMQ
+# Load test script to publish requests to RabbitMQ input queue
 #
 # Usage: mix run priv/scripts/load_test.exs
 #
-# This will create:
-# - One batch with 50,000 requests (max batch size)
-# - One batch with 1 request (overflow)
+# Publishes requests that will be delivered to the "batch_results" RabbitMQ queue.
 
 defmodule LoadTest do
-  @http_url "http://localhost:4000/api/requests"
   @rabbitmq_url "amqp://guest:guest@localhost:5672"
   @input_queue "test-input-queue"
 
-  # Configuration
   @total_requests 50_001
-  @http_requests 0
-  @rabbitmq_requests 50_001
-  @http_concurrency 100
 
   def run do
-    IO.puts("🚀 Load Test: Sending #{@total_requests} requests")
-    IO.puts("   - HTTP: #{@http_requests} requests (#{@http_concurrency} concurrent)")
-    IO.puts("   - RabbitMQ: #{@rabbitmq_requests} requests")
+    IO.puts("Load Test: Publishing #{@total_requests} requests to RabbitMQ")
+    IO.puts("  Input queue: #{@input_queue}")
+    IO.puts("  Delivery queue: batch_results")
     IO.puts("")
 
-    # Run HTTP and RabbitMQ in parallel
-    http_task = Task.async(fn -> send_http_requests() end)
-    rabbitmq_task = Task.async(fn -> send_rabbitmq_requests() end)
-
-    # Wait for both to complete
-    http_result = Task.await(http_task, :infinity)
-    rabbitmq_result = Task.await(rabbitmq_task, :infinity)
+    result = send_rabbitmq_requests()
 
     IO.puts("")
-    IO.puts("✅ Load test complete!")
-    IO.puts("   - HTTP: #{http_result.success}/#{http_result.total} successful (#{http_result.duration_ms}ms)")
-    IO.puts("   - RabbitMQ: #{rabbitmq_result.success}/#{rabbitmq_result.total} published (#{rabbitmq_result.duration_ms}ms)")
-  end
-
-  defp send_http_requests do
-    IO.puts("[HTTP] Starting #{@http_requests} requests...")
-    start_time = System.monotonic_time(:millisecond)
-
-    results =
-      1..@http_requests
-      |> Task.async_stream(
-        fn i ->
-          req = build_request("http_#{i}_#{random_id()}")
-
-          case Req.post(@http_url, json: req, receive_timeout: 30_000) do
-            {:ok, %{status: status}} when status in 200..299 -> :ok
-            {:ok, %{status: status}} -> {:error, status}
-            {:error, reason} -> {:error, reason}
-          end
-        end,
-        max_concurrency: @http_concurrency,
-        timeout: 60_000,
-        ordered: false
-      )
-      |> Enum.reduce(%{success: 0, failed: 0}, fn
-        {:ok, :ok}, acc -> %{acc | success: acc.success + 1}
-        _, acc -> %{acc | failed: acc.failed + 1}
-      end)
-
-    duration_ms = System.monotonic_time(:millisecond) - start_time
-    IO.puts("[HTTP] Done: #{results.success} success, #{results.failed} failed")
-
-    %{success: results.success, total: @http_requests, duration_ms: duration_ms}
+    IO.puts("Load test complete!")
+    IO.puts("  #{result.success}/#{result.total} published (#{result.duration_ms}ms)")
   end
 
   defp send_rabbitmq_requests do
-    IO.puts("[RabbitMQ] Starting #{@rabbitmq_requests} requests...")
+    IO.puts("[RabbitMQ] Connecting...")
     start_time = System.monotonic_time(:millisecond)
 
     case AMQP.Connection.open(@rabbitmq_url) do
@@ -78,9 +33,10 @@ defmodule LoadTest do
         {:ok, chan} = AMQP.Channel.open(conn)
         {:ok, _} = AMQP.Queue.declare(chan, @input_queue, durable: true)
 
-        # Publish all messages (non-blocking)
+        IO.puts("[RabbitMQ] Publishing #{@total_requests} requests...")
+
         success_count =
-          1..@rabbitmq_requests
+          1..@total_requests
           |> Enum.reduce(0, fn i, count ->
             req = build_request("rmq_#{i}_#{random_id()}")
             json = JSON.encode!(req)
@@ -97,11 +53,11 @@ defmodule LoadTest do
         duration_ms = System.monotonic_time(:millisecond) - start_time
         IO.puts("[RabbitMQ] Done: #{success_count} published")
 
-        %{success: success_count, total: @rabbitmq_requests, duration_ms: duration_ms}
+        %{success: success_count, total: @total_requests, duration_ms: duration_ms}
 
       {:error, reason} ->
         IO.puts("[RabbitMQ] Connection failed: #{inspect(reason)}")
-        %{success: 0, total: @rabbitmq_requests, duration_ms: 0}
+        %{success: 0, total: @total_requests, duration_ms: 0}
     end
   end
 
@@ -115,8 +71,8 @@ defmodule LoadTest do
         "input" => "Hi"
       },
       "delivery_config" => %{
-        "type" => "webhook",
-        "webhook_url" => "https://webhook.site/737a3db4-1de7-429e-aae6-6239a3582fe9"
+        "type" => "rabbitmq",
+        "rabbitmq_queue" => "batch_results"
       }
     }
   end
@@ -126,5 +82,4 @@ defmodule LoadTest do
   end
 end
 
-# Run the load test
 LoadTest.run()

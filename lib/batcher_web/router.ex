@@ -24,7 +24,15 @@ defmodule BatcherWeb.Router do
   scope "/", BatcherWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    get "/batches/:batch_id/files/:file_type/download", BatchFileController, :download
+
+    live_session :default, on_mount: [{BatcherWeb.NavHooks, :default}] do
+      live "/", HomeLive, :index
+      live "/batches", BatchIndexLive, :index
+      live "/batches/:id", BatchShowLive, :show
+      live "/requests", RequestIndexLive, :index
+      live "/requests/:id", RequestShowLive, :show
+    end
   end
 
   # OpenApiSpex-based API
@@ -62,16 +70,6 @@ defmodule BatcherWeb.Router do
       pipe_through :browser
 
       oban_dashboard("/oban")
-    end
-  end
-
-  if Application.compile_env(:batcher, :dev_routes) do
-    import AshAdmin.Router
-
-    scope "/admin" do
-      pipe_through :browser
-
-      ash_admin "/"
     end
   end
 end

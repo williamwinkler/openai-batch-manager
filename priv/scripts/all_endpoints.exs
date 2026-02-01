@@ -9,10 +9,12 @@
 
 defmodule AllEndpointsScript do
   @webhook_url "https://webhook.site/737a3db4-1de7-429e-aae6-6239a3582fe9"
+  @rabbitmq_queue "batch_results"
   @api_url "http://localhost:4000/api/requests"
 
   def run do
     IO.puts("Sending requests to all supported endpoints...")
+    IO.puts("Randomly choosing between webhook and RabbitMQ delivery...")
     IO.puts("")
 
     send_responses_requests()
@@ -21,6 +23,15 @@ defmodule AllEndpointsScript do
 
     IO.puts("")
     IO.puts("Done! Sent 15 total requests (5 per endpoint)")
+  end
+
+  # Randomly generates either webhook or RabbitMQ delivery config
+  defp random_delivery_config do
+    if :rand.uniform(2) == 1 do
+      %{"type" => "webhook", "webhook_url" => @webhook_url}
+    else
+      %{"type" => "rabbitmq", "rabbitmq_queue" => @rabbitmq_queue}
+    end
   end
 
   # /v1/responses - Responses API (modern)
@@ -36,23 +47,24 @@ defmodule AllEndpointsScript do
     ]
 
     for prompt <- prompts do
+      delivery_config = random_delivery_config()
+
       req = %{
         "body" => %{
           "model" => "gpt-4o-mini",
           "input" => prompt
         },
         "custom_id" => Ecto.UUID.generate(),
-        "delivery_config" => %{
-          "type" => "webhook",
-          "webhook_url" => @webhook_url
-        },
+        "delivery_config" => delivery_config,
         "method" => "POST",
         "url" => "/v1/responses"
       }
 
+      delivery_type = delivery_config["type"]
+
       case Req.post(@api_url, json: req, headers: [{"content-type", "application/json"}]) do
         {:ok, %{status: status}} when status in 200..299 ->
-          IO.puts("  ✓ /v1/responses request accepted")
+          IO.puts("  ✓ /v1/responses request accepted (#{delivery_type})")
 
         {:ok, %{status: status, body: body}} ->
           IO.puts("  ✗ /v1/responses failed (#{status}): #{inspect(body)}")
@@ -91,23 +103,24 @@ defmodule AllEndpointsScript do
     ]
 
     for messages <- conversations do
+      delivery_config = random_delivery_config()
+
       req = %{
         "body" => %{
           "model" => "gpt-4o-mini",
           "messages" => messages
         },
         "custom_id" => Ecto.UUID.generate(),
-        "delivery_config" => %{
-          "type" => "webhook",
-          "webhook_url" => @webhook_url
-        },
+        "delivery_config" => delivery_config,
         "method" => "POST",
         "url" => "/v1/chat/completions"
       }
 
+      delivery_type = delivery_config["type"]
+
       case Req.post(@api_url, json: req, headers: [{"content-type", "application/json"}]) do
         {:ok, %{status: status}} when status in 200..299 ->
-          IO.puts("  ✓ /v1/chat/completions request accepted")
+          IO.puts("  ✓ /v1/chat/completions request accepted (#{delivery_type})")
 
         {:ok, %{status: status, body: body}} ->
           IO.puts("  ✗ /v1/chat/completions failed (#{status}): #{inspect(body)}")
@@ -131,23 +144,24 @@ defmodule AllEndpointsScript do
     ]
 
     for text <- texts do
+      delivery_config = random_delivery_config()
+
       req = %{
         "body" => %{
           "model" => "text-embedding-3-small",
           "input" => text
         },
         "custom_id" => Ecto.UUID.generate(),
-        "delivery_config" => %{
-          "type" => "webhook",
-          "webhook_url" => @webhook_url
-        },
+        "delivery_config" => delivery_config,
         "method" => "POST",
         "url" => "/v1/embeddings"
       }
 
+      delivery_type = delivery_config["type"]
+
       case Req.post(@api_url, json: req, headers: [{"content-type", "application/json"}]) do
         {:ok, %{status: status}} when status in 200..299 ->
-          IO.puts("  ✓ /v1/embeddings request accepted")
+          IO.puts("  ✓ /v1/embeddings request accepted (#{delivery_type})")
 
         {:ok, %{status: status, body: body}} ->
           IO.puts("  ✗ /v1/embeddings failed (#{status}): #{inspect(body)}")

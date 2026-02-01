@@ -4,9 +4,9 @@ defmodule Batcher.Batching.Validations.DeliveryConfig do
 
   Supports two delivery types:
   - webhook: requires type="webhook" and a valid webhook_url
-  - rabbitmq: two modes:
-    - Default exchange mode: requires rabbitmq_queue (routes directly to queue)
-    - Custom exchange mode: requires rabbitmq_exchange + rabbitmq_routing_key (rabbitmq_queue optional)
+  - rabbitmq: two mutually exclusive modes:
+    - Default exchange mode: requires rabbitmq_queue only (no exchange/routing_key)
+    - Custom exchange mode: requires rabbitmq_exchange + rabbitmq_routing_key (no queue)
   """
   use Ash.Resource.Validation
 
@@ -32,31 +32,42 @@ defmodule Batcher.Batching.Validations.DeliveryConfig do
     {:error, "webhook_url is required for webhook delivery"}
   end
 
-  # Mode 1: Default exchange - queue required, no exchange
+  # Mode 1: Default exchange - queue required, no exchange/routing_key allowed
   defp validate_config(%{"type" => "rabbitmq", "rabbitmq_queue" => q} = config)
        when is_binary(q) and q != "" do
-    # Ensure exchange is not set (or is empty) for default exchange mode
     exchange = Map.get(config, "rabbitmq_exchange")
+    routing_key = Map.get(config, "rabbitmq_routing_key")
 
-    if is_nil(exchange) or exchange == "" do
-      :ok
-    else
-      # Exchange is set, so we need routing_key
-      validate_exchange_mode(config)
+    cond do
+      non_empty?(exchange) and non_empty?(routing_key) ->
+        {:error,
+         "cannot specify both rabbitmq_queue and rabbitmq_exchange - use either queue (default exchange) or exchange + routing_key (custom exchange)"}
+
+      non_empty?(exchange) ->
+        {:error,
+         "cannot specify both rabbitmq_queue and rabbitmq_exchange - use either queue (default exchange) or exchange + routing_key (custom exchange)"}
+
+      non_empty?(routing_key) ->
+        {:error,
+         "cannot specify rabbitmq_routing_key with rabbitmq_queue - routing_key is only used with custom exchanges"}
+
+      true ->
+        :ok
     end
   end
 
-  # Mode 2: Custom exchange - exchange + routing_key required, queue optional
+  # Mode 2: Custom exchange - exchange + routing_key required, no queue allowed
   defp validate_config(
          %{"type" => "rabbitmq", "rabbitmq_exchange" => e, "rabbitmq_routing_key" => rk} = config
        )
        when is_binary(e) and e != "" and is_binary(rk) and rk != "" do
-    # Queue is optional here, but if provided must be valid
-    case Map.get(config, "rabbitmq_queue") do
-      nil -> :ok
-      "" -> {:error, "rabbitmq_queue cannot be empty if provided"}
-      q when is_binary(q) -> :ok
-      _ -> {:error, "rabbitmq_queue must be a string"}
+    queue = Map.get(config, "rabbitmq_queue")
+
+    if non_empty?(queue) do
+      {:error,
+       "cannot specify both rabbitmq_queue and rabbitmq_exchange - use either queue (default exchange) or exchange + routing_key (custom exchange)"}
+    else
+      :ok
     end
   end
 
@@ -66,10 +77,16 @@ defmodule Batcher.Batching.Validations.DeliveryConfig do
     {:error, "rabbitmq_routing_key is required when rabbitmq_exchange is set"}
   end
 
+  # Error: routing_key without exchange
+  defp validate_config(%{"type" => "rabbitmq", "rabbitmq_routing_key" => rk})
+       when is_binary(rk) and rk != "" do
+    {:error, "rabbitmq_exchange is required when rabbitmq_routing_key is set"}
+  end
+
   # Error: neither queue nor exchange
   defp validate_config(%{"type" => "rabbitmq"}) do
     {:error,
-     "either rabbitmq_queue (for default exchange) or rabbitmq_exchange + rabbitmq_routing_key is required"}
+     "either rabbitmq_queue (for default exchange) or rabbitmq_exchange + rabbitmq_routing_key (for custom exchange) is required"}
   end
 
   defp validate_config(%{"type" => type}) do
@@ -80,15 +97,10 @@ defmodule Batcher.Batching.Validations.DeliveryConfig do
     {:error, "type is required"}
   end
 
-  # Helper for when queue is provided but exchange is also set
-  defp validate_exchange_mode(%{"rabbitmq_routing_key" => rk})
-       when is_binary(rk) and rk != "" do
-    :ok
-  end
-
-  defp validate_exchange_mode(_) do
-    {:error, "rabbitmq_routing_key is required when rabbitmq_exchange is set"}
-  end
+  defp non_empty?(nil), do: false
+  defp non_empty?(""), do: false
+  defp non_empty?(s) when is_binary(s), do: true
+  defp non_empty?(_), do: false
 
   defp valid_url?(url) do
     case URI.parse(url) do

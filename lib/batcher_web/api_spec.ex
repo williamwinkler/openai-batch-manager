@@ -9,12 +9,14 @@ defmodule BatcherWeb.ApiSpec do
   alias BatcherWeb.Router
   @behaviour OpenApi
 
+  @version Mix.Project.config()[:version]
+
   @impl OpenApi
   def spec do
     %OpenApi{
       info: %Info{
         title: "OpenAI Batch Manager API",
-        version: "1.0.0",
+        version: @version,
         description: """
         API for managing batch processing of OpenAI requests.
         """

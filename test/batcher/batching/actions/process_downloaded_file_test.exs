@@ -234,8 +234,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         |> Ash.run_action()
 
       # Should complete successfully (missing custom_id is logged but doesn't fail)
-      # Since there are no requests in the batch, all are vacuously terminal, so batch goes to done
-      assert batch_after.state == :done
+      # Since there are no requests in the batch, all are vacuously terminal, so batch goes to delivered
+      assert batch_after.state == :delivered
     end
 
     test "handles download failures gracefully", %{server: server} do
@@ -270,9 +270,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         |> Ash.run_action()
 
       # Should complete successfully with empty file (no requests to process)
-      # Since there are no non-terminal requests, batch goes directly to done
+      # Since there are no non-terminal requests, batch goes directly to delivered
       assert {:ok, batch_after} = result
-      assert batch_after.state == :done
+      assert batch_after.state == :delivered
     end
 
     test "transitions to ready_to_deliver after processing completes", %{server: server} do
@@ -748,8 +748,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       batch_after = Ash.load!(batch_after, [:requests])
 
-      # All requests are already in terminal states, so batch goes directly to done
-      assert batch_after.state == :done
+      # All requests are already in terminal states (1 delivered, 1 failed), so batch goes to partially_delivered
+      assert batch_after.state == :partially_delivered
 
       # Verify requests are still in their original terminal states
       delivered_req =
@@ -1948,10 +1948,10 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
         )
         |> generate()
 
-      # Create requests already in terminal success states (:delivered and :delivery_failed
-      # are both terminal AND success states). Process an empty file so they stay in those states.
-      # After processing, all requests are terminal and some are in success states, so batch
-      # should transition to :done.
+      # Create requests already in terminal states (:delivered and :delivery_failed).
+      # Process an empty file so they stay in those states.
+      # After processing, all requests are terminal with 1 delivered and 1 failed (delivery_failed),
+      # so batch should transition to :partially_delivered.
       generate(
         seeded_request(
           batch_id: batch_before.id,
@@ -1996,10 +1996,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
                req.state in [:delivered, :delivery_failed]
              end)
 
-      # After processing, if all requests are terminal and some are in success states,
-      # the batch should transition to :done (lines 95-105)
-      # The code checks requests_terminal_count and success_count
-      assert batch_after.state == :done
+      # After processing, all requests are terminal with 1 delivered and 1 delivery_failed (counted as failed),
+      # so the batch transitions to partially_delivered
+      assert batch_after.state == :partially_delivered
     end
 
     test "batch with all terminal requests but all failed transitions to failed", %{

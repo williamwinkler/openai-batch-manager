@@ -97,8 +97,35 @@ defmodule Batcher.Batching.Actions.Deliver do
         request.delivery_config["rabbitmq_queue"] ||
         request.delivery_config["queue"]
 
+    # Check if RabbitMQ Publisher is running BEFORE any state transitions
+    rabbitmq_configured? = GenServer.whereis(Batcher.RabbitMQ.Publisher) != nil
+
     # Validate required fields
     cond do
+      not rabbitmq_configured? ->
+        # Handle as delivery failure, not validation error
+        error_msg =
+          "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
+
+        Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
+
+        # Transition to delivering state first
+        request_updated =
+          request
+          |> Ash.Changeset.for_update(:begin_delivery)
+          |> Ash.update!()
+          |> Ash.load!(:batch)
+
+        batch = request_updated.batch
+
+        if batch.state == :ready_to_deliver do
+          batch
+          |> Ash.Changeset.for_update(:start_delivering)
+          |> Ash.update!()
+        end
+
+        handle_delivery_failure(request_updated, batch, :rabbitmq_not_configured, error_msg)
+
       is_nil(routing_key) ->
         error_msg = "queue or routing_key is required for RabbitMQ delivery"
         Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
@@ -149,6 +176,11 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.update!()
     end
 
+    # RabbitMQ configuration was already validated in deliver_rabbitmq/1
+    do_rabbitmq_publish(request_updated, batch, exchange, routing_key)
+  end
+
+  defp do_rabbitmq_publish(request_updated, batch, exchange, routing_key) do
     # Perform RabbitMQ publish
     case Batcher.RabbitMQ.Publisher.publish(
            exchange,
@@ -259,13 +291,13 @@ defmodule Batcher.Batching.Actions.Deliver do
     end
   end
 
-  defp handle_delivery_result({:ok, request}, batch) do
-    # Check if all requests in batch are delivered/failed
-    check_batch_completion(batch)
+  defp handle_delivery_result({:ok, request}, _batch) do
+    # Batch completion is checked by the check_delivery_completion AshOban trigger
+    # which runs on a queue with concurrency 1 to avoid race conditions
     {:ok, request}
   end
 
-  defp handle_delivery_failure(request, batch, outcome, error_msg) do
+  defp handle_delivery_failure(request, _batch, outcome, error_msg) do
     # Mark request as delivery_failed (not :failed) because this is a delivery error,
     # not an OpenAI processing error. The error is recorded on the delivery_attempt.
     request_after =
@@ -277,8 +309,8 @@ defmodule Batcher.Batching.Actions.Deliver do
       })
       |> Ash.update!()
 
-    # Check if all requests in batch are delivered/delivery_failed
-    check_batch_completion(batch)
+    # Batch completion is checked by the check_delivery_completion AshOban trigger
+    # which runs on a queue with concurrency 1 to avoid race conditions
     {:ok, request_after}
   end
 
@@ -315,20 +347,6 @@ defmodule Batcher.Batching.Actions.Deliver do
       :timeout -> "Publish confirmation timeout"
       :nack -> "Message was nacked by broker"
       other -> "RabbitMQ error: #{inspect(other)}"
-    end
-  end
-
-  defp check_batch_completion(batch) do
-    # Efficiently check if all requests are in terminal states using calculation
-    # This avoids loading all 50k requests into memory
-    batch = Ash.load!(batch, :requests_terminal_count)
-
-    if batch.requests_terminal_count and batch.state == :delivering do
-      batch
-      |> Ash.Changeset.for_update(:done)
-      |> Ash.update!()
-
-      Logger.info("Batch #{batch.id} delivery complete - all requests delivered or failed")
     end
   end
 

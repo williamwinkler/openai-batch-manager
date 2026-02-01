@@ -6,7 +6,7 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
   import Batcher.Generator
 
   describe "check_delivery_completion action" do
-    test "transitions to done when all requests are in terminal states" do
+    test "transitions to partially_delivered when requests have mixed terminal states" do
       batch =
         seeded_batch(state: :delivering)
         |> generate()
@@ -30,7 +30,56 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         |> Map.put(:subject, batch)
         |> Ash.run_action()
 
-      assert batch_after.state == :done
+      assert batch_after.state == :partially_delivered
+    end
+
+    test "transitions to delivered when all requests are delivered successfully" do
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :delivered)
+      )
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivered
+    end
+
+    test "transitions to delivery_failed when all requests failed to deliver" do
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      generate(
+        seeded_request(batch_id: batch.id, url: batch.url, model: batch.model, state: :failed)
+      )
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :delivery_failed
+        )
+      )
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivery_failed
     end
 
     test "stays in delivering when some requests are not in terminal states" do
@@ -122,10 +171,11 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         |> Map.put(:subject, batch)
         |> Ash.run_action()
 
-      assert batch_after.state == :done
+      # Has both delivered (1) and failed states (4) - partially_delivered
+      assert batch_after.state == :partially_delivered
     end
 
-    test "creates transition record when transitioning to done" do
+    test "creates transition record when transitioning to delivered" do
       batch =
         seeded_batch(state: :delivering)
         |> generate()
@@ -142,12 +192,12 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
 
       batch_after = Ash.load!(batch_after, [:transitions])
 
-      assert batch_after.state == :done
+      assert batch_after.state == :delivered
 
-      # Find the transition to done
-      done_transition = Enum.find(batch_after.transitions, &(&1.to == :done))
-      assert done_transition != nil
-      assert done_transition.from == :delivering
+      # Find the transition to delivered
+      delivered_transition = Enum.find(batch_after.transitions, &(&1.to == :delivered))
+      assert delivered_transition != nil
+      assert delivered_transition.from == :delivering
     end
 
     test "handles batch with no requests" do
@@ -164,7 +214,8 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletionTest do
         |> Ash.run_action()
 
       # With no requests, requests_terminal_count should be true (0 non-terminal = all terminal)
-      assert batch_after.state == :done
+      # Empty batch is marked as delivered
+      assert batch_after.state == :delivered
     end
 
     test "stays in delivering when requests are in delivering state" do

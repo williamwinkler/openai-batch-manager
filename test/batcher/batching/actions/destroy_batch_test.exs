@@ -228,7 +228,7 @@ defmodule Batcher.Batching.Actions.DestroyBatchTest do
 
       batch =
         seeded_batch(
-          state: :done,
+          state: :delivered,
           openai_batch_id: openai_batch_id
         )
         |> generate()
@@ -390,7 +390,7 @@ defmodule Batcher.Batching.Actions.DestroyBatchTest do
     test "handles BatchBuilder lookup failure gracefully" do
       # Create a batch that doesn't have a BatchBuilder (not in :building state)
       batch =
-        seeded_batch(state: :done)
+        seeded_batch(state: :delivered)
         |> generate()
 
       # Destroy the batch - should succeed even though no BatchBuilder exists

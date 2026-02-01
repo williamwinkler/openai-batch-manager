@@ -14,7 +14,7 @@ defmodule BatcherWeb.Schemas.RequestResponseSchema do
       custom_id: %Schema{
         type: :string,
         description: "Unique identifier for the created request",
-        example: "7edb3b2e-869c-485b-af70-76a934e0fcfd"
+        example: "ask_capital_550e8400-e29b-41d4-a716-446655440000"
       }
     }
   })

@@ -4,43 +4,69 @@ defmodule Batcher.Batching.Types.BatchStatus do
   """
   use Ash.Type.Enum,
     values: [
-      # Batch is being build
-      :building,
-
-      # Batch file is being uploaded
-      :uploading,
-
-      # Batch file has been uploaded
-      :uploaded,
-
-      # OpenAI is processing the batch
-      :openai_processing,
-
-      # OpenAI has completed the batch
-      :openai_completed,
-
-      # Batch expired on OpenAI and needs to be rescheduled
-      :expired,
-
-      # Batch file is being downloaded
-      :downloading,
-
-      # Batch file has been downloaded
-      :downloaded,
-
-      # Results are ready to be delivered to client
-      :ready_to_deliver,
-
-      # Delivering results to client
-      :delivering,
-
-      # All prompt results have been delivered
-      :done,
-
-      # Batch failed for some reason
-      :failed,
-
-      # Batch was cancelled
-      :cancelled
+      building: [
+        label: "Building",
+        description: "Batch is being built and accepting new requests (auto uploads after 1h)"
+      ],
+      uploading: [
+        label: "Uploading",
+        description: "Batch file is being uploaded to OpenAI"
+      ],
+      uploaded: [
+        label: "Uploaded",
+        description: "Batch file has been uploaded to OpenAI"
+      ],
+      openai_processing: [
+        label: "OpenAI processing",
+        description: "OpenAI is processing the batch"
+      ],
+      openai_completed: [
+        label: "OpenAI completed",
+        description: "OpenAI has finished processing the batch"
+      ],
+      expired: [
+        label: "Expired",
+        description: "Batch expired on OpenAI and needs to be rescheduled"
+      ],
+      downloading: [
+        label: "Downloading",
+        description: "Batch results are being downloaded from OpenAI"
+      ],
+      downloaded: [
+        label: "Downloaded",
+        description: "Batch results have been downloaded"
+      ],
+      ready_to_deliver: [
+        label: "Ready to deliver",
+        description: "Results are ready to be delivered to the client"
+      ],
+      delivering: [
+        label: "Delivering",
+        description: "Results are being delivered to the client"
+      ],
+      delivered: [
+        label: "Delivered",
+        description: "All requests have been delivered successfully"
+      ],
+      partially_delivered: [
+        label: "Partially delivered",
+        description: "Some requests were delivered, but some failed"
+      ],
+      delivery_failed: [
+        label: "Delivery failed",
+        description: "All requests failed to deliver"
+      ],
+      failed: [
+        label: "Failed",
+        description: "Batch failed due to an error"
+      ],
+      cancelled: [
+        label: "Cancelled",
+        description: "Batch was cancelled"
+      ],
+      done: [
+        label: "Done",
+        description: "Batch processing is complete"
+      ]
     ]
 end

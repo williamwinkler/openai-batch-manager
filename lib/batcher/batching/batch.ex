@@ -25,11 +25,18 @@ defmodule Batcher.Batching.Batch do
       transition :upload, from: :uploading, to: :uploaded
       transition :create_openai_batch, from: [:uploaded, :expired], to: :openai_processing
       transition :mark_expired, from: :openai_processing, to: :expired
+      transition :handle_partial_expiration, from: :openai_processing, to: :expired
+      transition :reupload_unprocessed, from: :expired, to: :uploading
       transition :openai_processing_completed, from: :openai_processing, to: :openai_completed
       transition :start_downloading, from: :openai_completed, to: :downloading
-      transition :finalize_processing, from: :downloading, to: :ready_to_deliver
+      transition :finalize_processing, from: [:downloading, :expired], to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
-      transition :done, from: :delivering, to: :done
+      transition :mark_delivered, from: :delivering, to: :delivered
+      transition :mark_partially_delivered, from: :delivering, to: :partially_delivered
+      transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
+      transition :mark_done, from: :delivering, to: :done
+
+      transition :begin_redeliver, from: [:partially_delivered, :delivery_failed], to: :delivering
 
       transition :failed,
         from: [
@@ -41,7 +48,8 @@ defmodule Batcher.Batching.Batch do
           :downloading,
           :downloaded,
           :ready_to_deliver,
-          :delivering
+          :delivering,
+          :expired
         ],
         to: :failed
 
@@ -81,10 +89,29 @@ defmodule Batcher.Batching.Batch do
 
       trigger :create_openai_batch do
         action :create_openai_batch
-        where expr(state == :uploaded or state == :expired)
+
+        where expr(
+                state == :uploaded or
+                  (state == :expired and is_nil(openai_output_file_id) and
+                     is_nil(openai_error_file_id))
+              )
+
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
+      end
+
+      trigger :process_expired_batch do
+        action :process_expired_batch
+
+        where expr(
+                state == :expired and
+                  (not is_nil(openai_output_file_id) or not is_nil(openai_error_file_id))
+              )
+
+        queue :batch_processing
+        worker_module_name Batching.Batch.AshOban.Worker.ProcessExpiredBatch
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessExpiredBatch
       end
 
       trigger :check_batch_status do
@@ -126,7 +153,9 @@ defmodule Batcher.Batching.Batch do
       trigger :check_delivery_completion do
         action :check_delivery_completion
         where expr(state == :delivering)
-        queue :default
+        # Use batch_processing queue (concurrency 1) to prevent race conditions
+        # when multiple jobs try to transition the batch simultaneously
+        queue :batch_processing
         worker_module_name Batching.Batch.AshOban.Worker.CheckDeliveryCompletion
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CheckDeliveryCompletion
       end
@@ -164,6 +193,30 @@ defmodule Batcher.Batching.Batch do
       end
 
       get? true
+    end
+
+    read :search do
+      description "Search for batches by model and url"
+
+      argument :query, :ci_string do
+        description "Filter batches by model and url"
+        constraints allow_empty?: true
+        default ""
+      end
+
+      argument :sort_input, :string do
+        description "Sort field with optional - prefix for descending"
+        default "-created_at"
+      end
+
+      filter expr(contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
+
+      prepare fn query, _context ->
+        sort_input = Ash.Query.get_argument(query, :sort_input)
+        apply_sorting(query, sort_input)
+      end
+
+      pagination offset?: true, default_limit: 12, countable: true
     end
 
     update :start_upload do
@@ -254,9 +307,34 @@ defmodule Batcher.Batching.Batch do
       change transition_state(:delivering)
     end
 
-    update :done do
-      change transition_state(:done)
+    update :mark_delivered do
+      description "Mark batch as delivered - all requests delivered successfully"
       require_atomic? false
+      change transition_state(:delivered)
+    end
+
+    update :mark_partially_delivered do
+      description "Mark batch as partially delivered - some requests delivered, some failed"
+      require_atomic? false
+      change transition_state(:partially_delivered)
+    end
+
+    update :mark_delivery_failed do
+      description "Mark batch as delivery failed - all requests failed to deliver"
+      require_atomic? false
+      change transition_state(:delivery_failed)
+    end
+
+    update :mark_done do
+      description "Mark batch as done - all processing complete"
+      require_atomic? false
+      change transition_state(:done)
+    end
+
+    update :begin_redeliver do
+      description "Transition batch back to delivering state for redelivery"
+      require_atomic? false
+      change transition_state(:delivering)
     end
 
     update :cancel do
@@ -282,11 +360,47 @@ defmodule Batcher.Batching.Batch do
       change run_oban_trigger(:create_openai_batch)
     end
 
+    update :handle_partial_expiration do
+      description "Handle batch expiration with partial results from OpenAI"
+      require_atomic? false
+      accept [:openai_output_file_id, :openai_error_file_id]
+      change set_attribute(:openai_status_last_checked_at, nil)
+      change set_attribute(:openai_batch_id, nil)
+      change set_attribute(:expires_at, nil)
+      change transition_state(:expired)
+      change run_oban_trigger(:process_expired_batch)
+    end
+
+    update :reupload_unprocessed do
+      description "Clear input file and re-upload only unprocessed requests"
+      require_atomic? false
+      change set_attribute(:openai_input_file_id, nil)
+      change set_attribute(:openai_output_file_id, nil)
+      change set_attribute(:openai_error_file_id, nil)
+      change transition_state(:uploading)
+      change run_oban_trigger(:upload)
+    end
+
+    action :process_expired_batch, :struct do
+      description "Process partial results from expired batch and reschedule unprocessed requests"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.ProcessExpiredBatch
+    end
+
     action :check_delivery_completion, :struct do
-      description "Check if all requests are delivered and transition to done"
+      description "Check if all requests are in terminal states and transition to appropriate delivery state"
       constraints instance_of: __MODULE__
       transaction? false
       run Batching.Actions.CheckDeliveryCompletion
+    end
+
+    action :redeliver, :struct do
+      description "Redeliver all failed requests in the batch"
+      argument :id, :integer, allow_nil?: false
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.Redeliver
     end
 
     action :delete_expired_batch, :struct do
@@ -308,6 +422,8 @@ defmodule Batcher.Batching.Batch do
     module BatcherWeb.Endpoint
 
     prefix "batches"
+    publish :create, ["created", :id]
+    publish_all :create, ["created"]
     publish :start_upload, ["started_uploading", :id]
     publish :destroy, ["destroyed", :id]
 
@@ -333,6 +449,7 @@ defmodule Batcher.Batching.Batch do
       description "Current state of the batch"
       allow_nil? false
       default :building
+      public? true
     end
 
     attribute :openai_input_file_id, :string do
@@ -380,8 +497,8 @@ defmodule Batcher.Batching.Batch do
       description "The datetime of when the batch will expire and be deleted"
     end
 
-    create_timestamp :created_at
-    update_timestamp :updated_at
+    create_timestamp :created_at, public?: true
+    update_timestamp :updated_at, public?: true
   end
 
   relationships do
@@ -402,5 +519,33 @@ defmodule Batcher.Batching.Batch do
     calculate :requests_terminal_count,
               :integer,
               Batcher.Batching.Calculations.BatchRequestsTerminal
+
+    calculate :delivery_stats, :map, Batcher.Batching.Calculations.BatchDeliveryStats
   end
+
+  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
+
+  defp apply_sorting(query, sort_by) when is_binary(sort_by) do
+    case parse_sort_by(sort_by) do
+      {field, direction} ->
+        Ash.Query.sort(query, [{field, direction}])
+
+      _ ->
+        Ash.Query.sort(query, created_at: :desc)
+    end
+  end
+
+  defp parse_sort_by("-created_at"), do: {:created_at, :desc}
+  defp parse_sort_by("created_at"), do: {:created_at, :asc}
+  defp parse_sort_by("-updated_at"), do: {:updated_at, :desc}
+  defp parse_sort_by("updated_at"), do: {:updated_at, :asc}
+  defp parse_sort_by("-state"), do: {:state, :desc}
+  defp parse_sort_by("state"), do: {:state, :asc}
+  defp parse_sort_by("-request_count"), do: {:request_count, :desc}
+  defp parse_sort_by("request_count"), do: {:request_count, :asc}
+  defp parse_sort_by("-model"), do: {:model, :desc}
+  defp parse_sort_by("model"), do: {:model, :asc}
+  defp parse_sort_by("-url"), do: {:url, :desc}
+  defp parse_sort_by("url"), do: {:url, :asc}
+  defp parse_sort_by(_), do: {:created_at, :desc}
 end

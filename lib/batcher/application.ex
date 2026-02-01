@@ -4,11 +4,20 @@ defmodule Batcher.Application do
   @moduledoc false
 
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
     # Ensure batch storage directory exists on startup
     ensure_batch_directory()
+
+    # Validate OpenAI API key before starting services.
+    # Crashes on HTTP 401 (invalid key), warns on network errors (OpenAI unreachable).
+    # Skipped when the OpenAI client is not configured (e.g. test environment).
+    if Application.get_env(:batcher, Batcher.OpenaiApiClient) &&
+         Application.get_env(:batcher, :env) != :test do
+      Batcher.OpenaiApiClient.validate_api_key!()
+    end
 
     children =
       [
@@ -66,7 +75,10 @@ defmodule Batcher.Application do
   defp maybe_rabbitmq_publisher do
     case Application.get_env(:batcher, :rabbitmq_publisher) do
       nil ->
-        # Not configured, don't start publisher
+        Logger.info(
+          "RabbitMQ publisher not configured (set RABBITMQ_URL to enable output delivery via RabbitMQ)"
+        )
+
         nil
 
       config ->
@@ -79,7 +91,10 @@ defmodule Batcher.Application do
   defp maybe_rabbitmq_consumer do
     case Application.get_env(:batcher, :rabbitmq_input) do
       nil ->
-        # Not configured, don't start consumer
+        Logger.info(
+          "RabbitMQ consumer not configured (set RABBITMQ_INPUT_QUEUE to enable input via RabbitMQ)"
+        )
+
         nil
 
       config ->

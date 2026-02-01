@@ -17,7 +17,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
           type: :string,
           description:
             "A developer-provided per-request id that will be used to match outputs to inputs. Must be unique for each request in a batch.\nRecommended format: `<action>_<unique_id>` (e.g., `analyzeWebsite_abc123`) to help categorize results by action type when processed.",
-          example: "analyzeWebsite_550e8400-e29b-41d4-a716-446655440000"
+          example: "ask_capital_550e8400-e29b-41d4-a716-446655440000"
         },
         url: %Schema{
           type: :string,
@@ -32,29 +32,38 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
         },
         delivery_config: DeliveryConfigSchema.schema(),
         body: body_schema()
+      },
+      example: %{
+        "method" => "POST",
+        "url" => "/v1/responses",
+        "custom_id" => "ask_capital_550e8400-e29b-41d4-a716-446655440000",
+        "delivery_config" => %{
+          "type" => "webhook",
+          "webhook_url" => "https://api.example.com/webhook?auth=secret"
+        },
+        "body" => %{
+          "model" => "gpt-4o-mini",
+          "input" => "What is the capital of France?",
+          "text" => %{
+            "format" => %{
+              "type" => "json_schema",
+              "name" => "answer",
+              "schema" => %{
+                "type" => "object",
+                "properties" => %{
+                  "answer" => %{"type" => "string"}
+                },
+                "required" => ["answer"],
+                "additionalProperties" => false
+              }
+            }
+          }
+        }
       }
-      # example: %{
-      #   "method" => "POST",
-      #   "url" => "/v1/responses",
-      #   "custom_id" => "2a6c0a28-95d0-412f-bf50-f598dd541630",
-      #   "delivery_config" => %{
-      #     "type" => "webhook",
-      #     "webhook_url" => "https://api.example.com/webhook?auth=secret"
-      #   },
-      #   "body" => %{
-      #     "model" => "gpt-4o-mini",
-      #     "input" => [
-      #       %{"role" => "developer", "content" => "You are a helpful assistant"},
-      #       %{"role" => "user", "content" => "Tell me a joke."}
-      #     ],
-      #     "temperature" => 0.7,
-      #     "max_output_tokens" => 500
-      #   }
-      # }
     }
   end
 
-  # Shared body schema for responses/embeddings/moderations
+  # Shared body schema for all supported endpoints
   defp body_schema do
     %Schema{
       type: :object,
@@ -76,19 +85,19 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
             %Schema{
               type: :array,
               description:
-                "Array input (for /v1/responses, /v1/embeddings, /v1/moderations). For responses: array of message objects; for embeddings/moderations: provider-accepted array.",
+                "Array of message objects for /v1/responses. For /v1/embeddings and /v1/moderations, use an array of strings instead.",
               items: %Schema{
                 type: :object,
-                description: "Message or item object.",
+                description: "Message object.",
                 properties: %{
                   role: %Schema{
                     type: :string,
                     enum: ["system", "user", "assistant", "developer"],
-                    description: "For /v1/responses message arrays."
+                    description: "Message role."
                   },
                   content: %Schema{
                     type: :string,
-                    description: "Content string for message objects."
+                    description: "Message content."
                   }
                 }
               }

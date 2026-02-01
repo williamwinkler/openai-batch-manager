@@ -1,0 +1,105 @@
+<Layouts.app flash={@flash} current_path={@current_path}>
+  <div class="flex flex-col h-full">
+    <!-- Header - fixed height -->
+    <div class="flex items-center pb-4 shrink-0">
+      <div class="flex-1 flex items-center">
+        <div class="shrink-0">
+          <h1 class="text-2xl font-bold">Requests</h1>
+          <p class="text-sm text-base-content/60 mt-1">Manage your requests</p>
+        </div>
+        <.batch_filter_badge :if={@batch_id} batch_id={@batch_id} />
+      </div>
+      <.search_box query={@query_text} />
+      <div class="flex-1 flex items-center justify-end gap-3">
+        <.sort_changer selected={@sort_by} batch_id={@batch_id} />
+      </div>
+    </div>
+    
+<!-- Table container - takes remaining space -->
+    <div class="flex-1 flex flex-col min-h-0">
+      <div class="flex-1 min-h-0 border border-base-300/50 rounded-lg overflow-hidden">
+        <%= if @page.results==[] do %>
+          <div class="h-full flex items-center justify-center">
+            <div class="text-center">
+              <.icon
+                name="hero-chat-bubble"
+                class="w-10 h-10 mx-auto text-base-content/20 mb-3"
+              />
+              <div class="text-base-content/50">No requests found</div>
+            </div>
+          </div>
+        <% else %>
+          <!-- Scrollable table area -->
+          <div class="h-full overflow-auto">
+            <.table
+              id="requests"
+              rows={@page.results}
+              row_navigate={fn request -> ~p"/requests/#{request.id}" end}
+              class="min-w-[1450px]"
+            >
+              <:col :let={request} label="ID" width="w-20">
+                <span class="font-mono text-sm">{request.id}</span>
+              </:col>
+              <:col :let={request} label="Batch" width="w-15">
+                <.link
+                  navigate={~p"/batches/#{request.batch_id}"}
+                  class="font-mono text-sm text-primary hover:underline"
+                >
+                  #{request.batch_id}
+                </.link>
+              </:col>
+              <:col :let={request} label="Custom ID" width="w-72">
+                <span class="font-mono text-sm truncate block">{request.custom_id}</span>
+              </:col>
+              <:col :let={request} label="Model" width="w-44">
+                <span class="font-mono text-sm truncate block">{request.model}</span>
+              </:col>
+              <:col :let={request} label="Endpoint" width="w-42">
+                <span class="font-mono text-sm truncate block">{request.url}</span>
+              </:col>
+              <:col :let={request} label="Status" width="w-32">
+                <.status_badge status={request.state} type={:request} />
+              </:col>
+              <:col :let={request} label="Delivery" width="w-32">
+                <.delivery_config_display config={request.delivery_config} />
+              </:col>
+              <:col :let={request} label="Created" width="w-22">
+                <span
+                  id={"request-created-#{request.id}"}
+                  class="text-sm text-base-content/50"
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(request.created_at)}
+                  data-format="tooltip"
+                  title={Calendar.strftime(request.created_at, "%d/%m/%Y, %H:%M")}
+                >
+                  {Format.time_ago(request.created_at)}
+                </span>
+              </:col>
+              <:col :let={request} label="Updated" width="w-22">
+                <span
+                  id={"request-updated-#{request.id}"}
+                  class="text-sm text-base-content/50"
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(request.updated_at)}
+                  data-format="tooltip"
+                  title={Calendar.strftime(request.updated_at, "%d/%m/%Y, %H:%M")}
+                >
+                  {Format.time_ago(request.updated_at)}
+                </span>
+              </:col>
+            </.table>
+          </div>
+        <% end %>
+      </div>
+      
+<!-- Pagination - always at bottom -->
+      <div class="mt-4 shrink-0">
+        <.numbered_pagination
+          page={@page}
+          base_path="/requests"
+          extra_params={[q: @query_text, sort_by: @sort_by, batch_id: @batch_id]}
+        />
+      </div>
+    </div>
+  </div>
+</Layouts.app>

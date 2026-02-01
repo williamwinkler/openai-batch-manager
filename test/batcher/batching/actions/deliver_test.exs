@@ -97,8 +97,14 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.delivery_config["type"] == "webhook"
       assert attempt.error_msg == nil
 
-      # Verify batch transitioned to delivering
-      assert request_after.batch.state == :delivering
+      # Trigger batch completion check (normally done by AshOban) and verify state
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivered
     end
 
     test "successfully delivers webhook with 201 status", %{server: server} do
@@ -307,8 +313,14 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert attempt.delivery_config["type"] == "rabbitmq"
       assert attempt.error_msg == nil
 
-      # Verify batch transitioned to delivering
-      assert request_after.batch.state == :delivering
+      # Trigger batch completion check (normally done by AshOban) and verify state
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -348,13 +360,21 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert request_after.state == :delivered
       attempt = List.first(request_after.delivery_attempts)
       assert attempt.outcome == :success
-      assert request_after.batch.state == :delivering
+
+      # Trigger batch completion check (normally done by AshOban) and verify state
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
     end
 
-    test "rabbitmq_routing_key takes priority over rabbitmq_queue for routing" do
+    test "delivers to custom exchange with routing_key" do
       # Start fake publisher that returns :ok for all publishes
       {:ok, _pid} = FakePublisher.start_link()
 
@@ -364,7 +384,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
       response_payload = %{"output" => "test response", "status" => "success"}
 
-      # Both rabbitmq_routing_key and rabbitmq_queue provided - routing_key should be used
+      # Custom exchange mode: exchange + routing_key (no queue)
       request =
         seeded_request(
           batch_id: batch.id,
@@ -372,8 +392,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           delivery_config: %{
             "type" => "rabbitmq",
             "rabbitmq_exchange" => "test_exchange",
-            "rabbitmq_routing_key" => "priority.routing.key",
-            "rabbitmq_queue" => "fallback_queue"
+            "rabbitmq_routing_key" => "priority.routing.key"
           },
           response_payload: response_payload
         )
@@ -689,15 +708,20 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
     end
 
-    test "transitions batch to done when all RabbitMQ requests are delivered or delivery_failed" do
+    test "transitions batch to partially_delivered when some RabbitMQ requests succeed and some fail" do
       # Start fake publisher with mixed responses
       {:ok, _pid} =
         FakePublisher.start_link(
@@ -754,9 +778,14 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :partially_delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -798,6 +827,9 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     end
 
     test "raises error when queue is missing for RabbitMQ delivery" do
+      # Start fake publisher so we get past the "not configured" check
+      {:ok, _pid} = FakePublisher.start_link()
+
       batch =
         seeded_batch(state: :ready_to_deliver)
         |> generate()
@@ -820,6 +852,45 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       assert {:error, %Ash.Error.Invalid{}} = result
+
+      # Cleanup
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "fails delivery when RabbitMQ publisher is not configured" do
+      # Do NOT start fake publisher - simulating RabbitMQ not configured
+      batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue"
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      assert request_after.error_msg == nil
+
+      # Error details are stored on delivery_attempt
+      attempt = List.first(request_after.delivery_attempts)
+      assert attempt.outcome == :rabbitmq_not_configured
+      assert attempt.error_msg != nil
+      assert attempt.error_msg =~ "RabbitMQ is not configured"
     end
 
     test "raises error when webhook_url is missing" do
@@ -895,6 +966,20 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         )
         |> generate()
 
+      # Add a second request still waiting for delivery
+      # This ensures the batch stays in :delivering after first request completes
+      _pending_request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
       expect_json_response(server, :post, "/webhook", %{received: true}, 200)
 
       {:ok, _request_after} =
@@ -903,7 +988,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request)
         |> Ash.run_action()
 
-      # Reload batch to check state
+      # Reload batch to check state - should stay in delivering since second request is pending
       batch_after = Batching.get_batch_by_id!(batch.id)
       assert batch_after.state == :delivering
     end
@@ -961,12 +1046,17 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivered
     end
 
-    test "transitions batch to done when all requests are delivered or delivery_failed", %{
+    test "transitions batch to partially_delivered when some requests succeed and some fail", %{
       server: server
     } do
       webhook_url = TestServer.url(server) <> "/webhook"
@@ -1019,9 +1109,14 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Map.put(:subject, request2)
         |> Ash.run_action()
 
-      # Reload batch to check state
-      batch_after = Batching.get_batch_by_id!(batch.id)
-      assert batch_after.state == :done
+      # Trigger batch completion check (normally done by AshOban)
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      assert batch_after.state == :partially_delivered
     end
 
     test "delivery_attempt_count reflects number of attempts", %{server: server} do
@@ -1292,7 +1387,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       # Batch already in delivering state (not ready_to_deliver)
-      # Create a batch with multiple requests so it doesn't transition to :done
+      # Create a batch with multiple requests so it doesn't transition to a terminal state
       batch =
         seeded_batch(state: :delivering)
         |> generate()
@@ -1331,7 +1426,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       # Batch should remain in delivering state (start_delivering only runs if state is ready_to_deliver)
-      # and won't transition to :done because request2 is still pending
+      # and won't transition to a terminal state because request2 is still pending
       batch_after = Batching.get_batch_by_id!(batch.id)
       assert batch_after.state == :delivering
     end

@@ -93,9 +93,45 @@ defmodule Batcher.BatchBuilder do
 
   @doc """
   Force upload of the current batch (marks ready for upload).
+
+  If a BatchBuilder process exists for this url/model, it will be used.
+  If no process exists (e.g., after server restart), a new BatchBuilder
+  will be started to handle the upload.
   """
   def upload_batch(url, model) do
-    GenServer.call(via_tuple(url, model), :finish_building, 30_000)
+    case Registry.lookup(Batcher.BatchRegistry, {url, model}) do
+      [{pid, _}] ->
+        try do
+          GenServer.call(pid, :finish_building, 30_000)
+        catch
+          :exit, _ -> start_and_upload(url, model)
+        end
+
+      [] ->
+        start_and_upload(url, model)
+    end
+  end
+
+  defp start_and_upload(url, model) do
+    # First check if there's actually a building batch to upload
+    case Batcher.Batching.find_building_batch(model, url) do
+      {:ok, _batch} ->
+        # Start a new BatchBuilder (it will find the existing building batch)
+        case DynamicSupervisor.start_child(Batcher.BatchSupervisor, {__MODULE__, {url, model}}) do
+          {:ok, pid} ->
+            GenServer.call(pid, :finish_building, 30_000)
+
+          {:error, {:already_started, pid}} ->
+            GenServer.call(pid, :finish_building, 30_000)
+
+          {:error, reason} ->
+            Logger.error("Failed to start BatchBuilder for upload: #{inspect(reason)}")
+            {:error, reason}
+        end
+
+      {:error, _} ->
+        {:error, :no_building_batch}
+    end
   end
 
   ## Server Callbacks
