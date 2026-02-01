@@ -276,6 +276,12 @@ defmodule BatcherWeb.BatchIndexLive do
         query: [sort_input: sort_by]
       )
 
+    # Subscribe to state changes for any new batches that appeared on the page
+    Enum.each(page.results, fn batch ->
+      BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
+      BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch.id}")
+    end)
+
     assign(socket, :page, page)
   end
 

@@ -310,6 +310,298 @@ defmodule Batcher.Batching.Actions.ProcessExpiredBatchTest do
       assert_enqueued(worker: Batching.Batch.AshOban.Worker.UploadBatch)
     end
 
+    test "e2e: check_batch_status detects expiration, processes partial results, re-uploads only pending requests",
+         %{server: server} do
+      openai_batch_id = "batch_abc123def456"
+      original_input_file_id = "file-8kXqR2nWp4mY7vBc"
+      output_file_id = "file-3jHnKp9sLm2xWqYz"
+      error_file_id = "file-7rTvNx4wQd6sFgAb"
+
+      # Start with a batch in openai_processing (as it would be in production)
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          openai_input_file_id: original_input_file_id
+        )
+        |> generate()
+
+      # 3 requests submitted to OpenAI, all in openai_processing state
+      success_req =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :openai_processing,
+            custom_id: "req-success-001"
+          )
+        )
+
+      failed_req =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :openai_processing,
+            custom_id: "req-failed-002"
+          )
+        )
+
+      unprocessed_req =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :openai_processing,
+            custom_id: "req-pending-003"
+          )
+        )
+
+      # ── Mock 1: OpenAI batch status returns "expired" with partial file IDs ──
+      # This is what OpenAI returns when a batch times out after 24h
+      expired_status_response = %{
+        "id" => openai_batch_id,
+        "object" => "batch",
+        "endpoint" => "/v1/responses",
+        "status" => "expired",
+        "input_file_id" => original_input_file_id,
+        "output_file_id" => output_file_id,
+        "error_file_id" => error_file_id,
+        "created_at" => System.os_time(:second) - 86_400,
+        "expired_at" => System.os_time(:second),
+        "request_counts" => %{
+          "total" => 3,
+          "completed" => 1,
+          "failed" => 1
+        }
+      }
+
+      TestServer.add(server, "/v1/batches/#{openai_batch_id}",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.send_resp(200, JSON.encode!(expired_status_response))
+        end
+      )
+
+      # ── Mock 2: Download partial output file (1 successful request) ──
+      output_jsonl =
+        [
+          JSON.encode!(%{
+            "id" => "resp_5gH2kM8nP3qR",
+            "custom_id" => success_req.custom_id,
+            "response" => %{
+              "status_code" => 200,
+              "request_id" => "req_abc123",
+              "body" => %{
+                "id" => "chatcmpl-9x8w7v6u5t",
+                "object" => "chat.completion",
+                "model" => batch.model,
+                "choices" => [
+                  %{
+                    "index" => 0,
+                    "message" => %{
+                      "role" => "assistant",
+                      "content" => "The answer to your question is 42."
+                    }
+                  }
+                ],
+                "usage" => %{
+                  "prompt_tokens" => 15,
+                  "completion_tokens" => 10,
+                  "total_tokens" => 25
+                }
+              }
+            },
+            "error" => nil
+          })
+        ]
+        |> Enum.join("\n")
+
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, output_jsonl)
+        end
+      )
+
+      # ── Mock 3: Download partial error file (1 failed request) ──
+      error_jsonl =
+        [
+          JSON.encode!(%{
+            "id" => "resp_7jK4mN6pQ8sT",
+            "custom_id" => failed_req.custom_id,
+            "response" => %{
+              "status_code" => 429,
+              "request_id" => "req_def456",
+              "body" => %{
+                "error" => %{
+                  "message" => "Rate limit reached for model",
+                  "type" => "rate_limit_error",
+                  "code" => "rate_limit_exceeded"
+                }
+              }
+            },
+            "error" => nil
+          })
+        ]
+        |> Enum.join("\n")
+
+      TestServer.add(server, "/v1/files/#{error_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, error_jsonl)
+        end
+      )
+
+      # ── Mock 4: File re-upload for unprocessed requests ──
+      test_pid = self()
+      new_expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      TestServer.add(server, "/v1/files",
+        via: :post,
+        to: fn conn ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test_pid, {:uploaded_body, body})
+
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.send_resp(
+            200,
+            JSON.encode!(%{
+              "id" => "file-9nWqYz3kLm8x",
+              "object" => "file",
+              "bytes" => 256,
+              "created_at" => System.os_time(:second),
+              "filename" => "batch_#{batch.id}.jsonl",
+              "purpose" => "batch",
+              "expires_at" => new_expires_at
+            })
+          )
+        end
+      )
+
+      # ── Mock 5: New OpenAI batch creation ──
+      TestServer.add(server, "/v1/batches",
+        via: :post,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.send_resp(
+            200,
+            JSON.encode!(%{
+              "id" => "batch_newXyz789",
+              "object" => "batch",
+              "endpoint" => "/v1/responses",
+              "status" => "validating",
+              "input_file_id" => "file-9nWqYz3kLm8x",
+              "created_at" => System.os_time(:second),
+              "request_counts" => %{"total" => 1, "completed" => 0, "failed" => 0}
+            })
+          )
+        end
+      )
+
+      # ════════════════════════════════════════════════════════════════
+      # Phase 1: check_batch_status detects expiration with partial results
+      # ════════════════════════════════════════════════════════════════
+      {:ok, batch_after_check} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch)
+        |> Ash.run_action()
+
+      # Should transition to :expired with file IDs stored
+      assert batch_after_check.state == :expired
+      assert batch_after_check.openai_output_file_id == output_file_id
+      assert batch_after_check.openai_error_file_id == error_file_id
+      assert batch_after_check.openai_batch_id == nil
+      assert batch_after_check.openai_status_last_checked_at == nil
+
+      # ════════════════════════════════════════════════════════════════
+      # Phase 2: Drain batch_processing queue → runs process_expired_batch
+      #          Downloads files, processes results, resets unprocessed, triggers re-upload
+      # ════════════════════════════════════════════════════════════════
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.ProcessExpiredBatch)
+      Oban.drain_queue(queue: :batch_processing)
+
+      # Verify request states after processing partial results
+      success_after = Ash.get!(Batching.Request, success_req.id)
+      assert success_after.state == :openai_processed
+      assert success_after.response_payload["response"]["body"]["choices"] != nil
+
+      failed_after = Ash.get!(Batching.Request, failed_req.id)
+      assert failed_after.state == :failed
+      assert failed_after.error_msg != nil
+      error_data = JSON.decode!(failed_after.error_msg)
+      assert error_data["response"]["status_code"] == 429
+
+      unprocessed_after = Ash.get!(Batching.Request, unprocessed_req.id)
+      assert unprocessed_after.state == :pending
+
+      batch_after_process = Ash.get!(Batching.Batch, batch.id)
+      assert batch_after_process.state == :uploading
+
+      # ════════════════════════════════════════════════════════════════
+      # Phase 3: Drain batch_uploads queue → re-uploads only the 1 pending request
+      # ════════════════════════════════════════════════════════════════
+      Oban.drain_queue(queue: :batch_uploads)
+
+      # Verify exactly 1 JSONL line was uploaded (the unprocessed request)
+      assert_received {:uploaded_body, uploaded_body}
+
+      jsonl_lines =
+        uploaded_body
+        |> String.split("\n")
+        |> Enum.filter(fn line ->
+          trimmed = String.trim(line)
+          String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
+        end)
+
+      assert length(jsonl_lines) == 1,
+             "Expected exactly 1 JSONL line (the unprocessed request) but got #{length(jsonl_lines)}"
+
+      batch_after_upload = Ash.get!(Batching.Batch, batch.id)
+      assert batch_after_upload.state == :uploaded
+      assert batch_after_upload.openai_input_file_id == "file-9nWqYz3kLm8x"
+      # Old file IDs should be cleared
+      assert batch_after_upload.openai_output_file_id == nil
+      assert batch_after_upload.openai_error_file_id == nil
+
+      # ════════════════════════════════════════════════════════════════
+      # Phase 4: Drain default queue → creates new OpenAI batch
+      # ════════════════════════════════════════════════════════════════
+      Oban.drain_queue(queue: :default)
+
+      batch_final = Ash.get!(Batching.Batch, batch.id, load: [:transitions])
+      assert batch_final.state == :openai_processing
+      assert batch_final.openai_batch_id == "batch_newXyz789"
+
+      # Verify the complete transition trail
+      transition_pairs =
+        batch_final.transitions
+        |> Enum.sort_by(& &1.transitioned_at)
+        |> Enum.map(fn t -> {t.from, t.to} end)
+
+      assert {:openai_processing, :expired} in transition_pairs
+      assert {:expired, :uploading} in transition_pairs
+      assert {:uploading, :uploaded} in transition_pairs
+      assert {:uploaded, :openai_processing} in transition_pairs
+
+      # Processed requests should still have their responses intact throughout
+      success_final = Ash.get!(Batching.Request, success_req.id)
+      assert success_final.state == :openai_processed
+      assert success_final.response_payload["response"]["body"]["model"] == batch.model
+    end
+
     test "all requests failed in partial results transitions batch to failed", %{server: server} do
       output_file_id = "file-expired-all-failed"
       error_file_id = "file-expired-all-error"

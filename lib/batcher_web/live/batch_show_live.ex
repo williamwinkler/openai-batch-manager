@@ -18,7 +18,11 @@ defmodule BatcherWeb.BatchShowLive do
          ) do
       {:ok, batch} ->
         transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
-        {:ok, assign(socket, batch: batch, transitions: transitions)}
+
+        {:ok,
+         socket
+         |> assign(batch: batch, transitions: transitions)
+         |> assign(delivery_bar_width_styles(batch))}
 
       {:error, _} ->
         {:ok,
@@ -47,6 +51,7 @@ defmodule BatcherWeb.BatchShowLive do
         {:noreply,
          socket
          |> assign(batch: updated_batch, transitions: transitions)
+         |> assign(delivery_bar_width_styles(updated_batch))
          |> put_flash(:info, "Batch upload started")}
 
       {:error, error} ->
@@ -77,6 +82,7 @@ defmodule BatcherWeb.BatchShowLive do
         {:noreply,
          socket
          |> assign(batch: updated_batch, transitions: transitions)
+         |> assign(delivery_bar_width_styles(updated_batch))
          |> put_flash(:info, "Batch cancelled successfully")}
 
       {:error, error} ->
@@ -151,7 +157,11 @@ defmodule BatcherWeb.BatchShowLive do
       ) do
     batch = Ash.load!(batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
     transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
-    {:noreply, assign(socket, batch: batch, transitions: transitions)}
+
+    {:noreply,
+     socket
+     |> assign(batch: batch, transitions: transitions)
+     |> assign(delivery_bar_width_styles(batch))}
   end
 
   @impl true
@@ -165,5 +175,25 @@ defmodule BatcherWeb.BatchShowLive do
   @impl true
   def handle_info(_message, socket) do
     {:noreply, socket}
+  end
+
+  defp delivery_bar_width_styles(batch) do
+    total = batch.request_count || 0
+    delivered = batch.delivery_stats[:delivered] || 0
+    delivering = batch.delivery_stats[:delivering] || 0
+    failed = batch.delivery_stats[:failed] || 0
+
+    {delivered_pct, delivering_pct, failed_pct} =
+      if total > 0 do
+        {delivered / total * 100, delivering / total * 100, failed / total * 100}
+      else
+        {0, 0, 0}
+      end
+
+    [
+      delivered_width_style: "width: #{delivered_pct}%",
+      delivering_width_style: "width: #{delivering_pct}%",
+      failed_width_style: "width: #{failed_pct}%"
+    ]
   end
 end
