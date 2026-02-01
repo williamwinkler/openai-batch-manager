@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.1...v0.1.2) (2026-02-01)
+
+
+### Features
+
+* prepare for public ([#9](https://github.com/williamwinkler/openai-batch-manager/issues/9)) ([484e86a](https://github.com/williamwinkler/openai-batch-manager/commit/484e86a2cbc5374ad4615711b8958818355e3ad2))
+
 ## [0.1.1](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.0...v0.1.1) (2026-02-01)
 
 
