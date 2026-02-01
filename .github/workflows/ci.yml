@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
-    name: tests
+  precommit:
+    name: precommit
     runs-on: ubuntu-latest
 
     services:
@@ -63,8 +63,14 @@ jobs:
             build-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}-
             build-${{ runner.os }}-
 
-      - name: Compile code
+      - name: Compile with warnings as errors
         run: mix compile --warnings-as-errors
+
+      - name: Check for unused dependencies
+        run: mix deps.unlock --check-unused
+
+      - name: Check formatting
+        run: mix format --check-formatted
 
       - name: Setup test database
         run: mix ash.setup --quiet

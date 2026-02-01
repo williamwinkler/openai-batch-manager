@@ -49,3 +49,4 @@ npm-debug.log
 .expert
 .lexical
 .vscode/.phoenix-pulse-cache.json
+.DS_Store

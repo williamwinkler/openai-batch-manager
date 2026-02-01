@@ -44,24 +44,12 @@ if config_env() != :test do
   end
 end
 
-# Batch storage configuration
-# Production: /var/lib/batcher/batches (Docker volume mount point)
-# Dev/Test: tmp/batches (local writable directory)
-# Can be overridden with BATCH_STORAGE_PATH environment variable
+# Batch storage: hardcoded paths per environment
 default_batch_path =
   cond do
-    System.get_env("BATCH_STORAGE_PATH") ->
-      System.get_env("BATCH_STORAGE_PATH")
-
-    config_env() == :prod ->
-      "/var/lib/batcher/batches"
-
-    config_env() == :test ->
-      Path.expand("../tmp/test_batches", __DIR__)
-
-    true ->
-      # Dev environment - use local tmp directory
-      Path.expand("../tmp/batches", __DIR__)
+    config_env() == :prod -> "/data/batches"
+    config_env() == :test -> Path.expand("../tmp/test_batches", __DIR__)
+    true -> Path.expand("../tmp/batches", __DIR__)
   end
 
 config :batcher, :batch_storage, base_path: default_batch_path
@@ -80,18 +68,9 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_path =
-    System.get_env("DATABASE_PATH") ||
-      raise """
-      environment variable DATABASE_PATH is missing.
-      For example: /etc/batcher/batcher.db
-      """
-
   config :batcher, Batcher.Repo,
-    database: database_path,
-    # CRITICAL: SQLite only supports one writer at a time. Pool size of 1 serializes writes
-    # and prevents "Database busy" errors. Override with POOL_SIZE env var if needed.
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
+    database: "/data/batcher.db",
+    pool_size: 1,
     # SQLite production optimizations
     timeout: 60_000,
     queue_target: 5_000,
@@ -131,13 +110,12 @@ if config_env() == :prod do
         value
     end
 
-  host = System.get_env("PHX_HOST") || "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :batcher, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :batcher, BatcherWeb.Endpoint,
-    url: [host: host, port: port, scheme: "http"],
+    url: [host: "localhost", port: port, scheme: "http"],
     check_origin: false,
     http: [
       # Enable IPv6 and bind on all interfaces.

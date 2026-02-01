@@ -50,6 +50,12 @@ RUN mix assets.setup
 
 COPY priv priv
 
+# Ensure root-level static files (favicon, etc.) are present so phx.digest
+# includes them in the cache manifest. Production only serves files in the manifest.
+COPY priv/static/favicon.ico priv/static/favicon.svg priv/static/icon.svg \
+  priv/static/robots.txt priv/static/
+COPY priv/static/images priv/static/images/
+
 COPY lib lib
 
 # Compile the release
@@ -57,7 +63,7 @@ RUN mix compile
 
 COPY assets assets
 
-# compile assets
+# compile assets (tailwind, esbuild, phx.digest - digest needs favicon in priv/static)
 RUN mix assets.deploy
 
 # Changes to config/runtime.exs don't require recompiling the code
