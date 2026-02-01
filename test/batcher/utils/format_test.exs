@@ -75,9 +75,9 @@ defmodule Batcher.Utils.FormatTest do
 
     test "shows seconds for recent times" do
       now = DateTime.utc_now()
-      assert Format.time_ago(now) == "0s ago"
-      assert Format.time_ago(DateTime.add(now, -30, :second)) == "30s ago"
-      assert Format.time_ago(DateTime.add(now, -59, :second)) == "59s ago"
+      assert Format.time_ago(now) == "<1m ago"
+      assert Format.time_ago(DateTime.add(now, -30, :second)) == "<1m ago"
+      assert Format.time_ago(DateTime.add(now, -59, :second)) == "<1m ago"
     end
 
     test "shows minutes for times between 1-59 minutes ago" do

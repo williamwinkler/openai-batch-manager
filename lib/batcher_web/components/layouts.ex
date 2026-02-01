@@ -65,6 +65,9 @@ defmodule BatcherWeb.Layouts do
             />
           </nav>
           <div class="flex-1 flex items-center justify-end gap-3">
+            <span class="text-xs text-base-content/20 font-mono select-all">
+              v{Application.spec(:batcher, :vsn)}
+            </span>
             <.rabbitmq_status />
             <.theme_toggle />
           </div>

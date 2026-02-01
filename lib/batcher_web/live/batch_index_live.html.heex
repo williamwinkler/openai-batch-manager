@@ -53,7 +53,11 @@
               </:col>
               <:col :let={batch} label="Created" width="w-40">
                 <span
+                  id={"batch-created-#{batch.id}"}
                   class="text-sm text-base-content/50"
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(batch.created_at)}
+                  data-format="tooltip"
                   title={Calendar.strftime(batch.created_at, "%d/%m/%Y, %H:%M")}
                 >
                   {Format.time_ago(batch.created_at)}

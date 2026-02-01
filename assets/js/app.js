@@ -149,6 +149,94 @@ const ThemeToggle = {
   }
 }
 
+// Fixed-position tooltip hook (escapes overflow containers)
+const Tooltip = {
+  mounted() {
+    this.tooltip = null
+    this.el.addEventListener("mouseenter", () => this.show())
+    this.el.addEventListener("mouseleave", () => this.hide())
+  },
+  destroyed() {
+    this.hide()
+  },
+  show() {
+    const text = this.el.dataset.tip
+    if (!text) return
+
+    this.tooltip = document.createElement("div")
+    this.tooltip.textContent = text
+    this.tooltip.className = "fixed z-[9999] px-2 py-1 text-xs rounded bg-neutral text-neutral-content max-w-xs pointer-events-none"
+    document.body.appendChild(this.tooltip)
+
+    const rect = this.el.getBoundingClientRect()
+    const tipRect = this.tooltip.getBoundingClientRect()
+    let left = rect.left + (rect.width - tipRect.width) / 2
+    let top = rect.bottom + 6
+
+    // Keep tooltip within viewport
+    if (left < 4) left = 4
+    if (left + tipRect.width > window.innerWidth - 4) left = window.innerWidth - tipRect.width - 4
+    if (top + tipRect.height > window.innerHeight - 4) top = rect.top - tipRect.height - 6
+
+    this.tooltip.style.left = left + "px"
+    this.tooltip.style.top = top + "px"
+  },
+  hide() {
+    if (this.tooltip) {
+      this.tooltip.remove()
+      this.tooltip = null
+    }
+  }
+}
+
+// Local time conversion hook - converts UTC timestamps to browser local time
+const LocalTime = {
+  mounted() { this.formatTime() },
+  updated() { this.formatTime() },
+  formatTime() {
+    const utc = this.el.dataset.utc
+    if (!utc) return
+
+    const date = new Date(utc.endsWith('Z') ? utc : utc + 'Z')
+    if (isNaN(date.getTime())) return
+
+    const format = this.el.dataset.format || "datetime"
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = months[date.getMonth()]
+    const monthNum = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+
+    let formatted
+    switch (format) {
+      case "datetime":
+        formatted = `${day} ${month} ${year}, ${hours}:${minutes}`
+        break
+      case "datetime-short":
+        formatted = `${day} ${month} ${hours}:${minutes}`
+        break
+      case "time":
+        formatted = `${hours}:${minutes}:${seconds}`
+        break
+      case "tooltip":
+        formatted = `${day}/${monthNum}/${year}, ${hours}:${minutes}`
+        break
+      default:
+        return
+    }
+
+    if (format === "tooltip") {
+      this.el.title = formatted
+    } else {
+      this.el.textContent = formatted
+    }
+  }
+}
+
 // RabbitMQ Modal hook
 const RabbitMQModal = {
   mounted() {
@@ -183,7 +271,9 @@ const liveSocket = new LiveSocket("/live", Socket, {
     ClickableRow,
     ThemeToggle,
     JsonSyntaxHighlight,
-    RabbitMQModal
+    LocalTime,
+    RabbitMQModal,
+    Tooltip
   },
 })
 

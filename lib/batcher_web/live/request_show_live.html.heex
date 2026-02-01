@@ -54,11 +54,25 @@
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Created</div>
-              <div>{Calendar.strftime(@request.created_at, "%d %b %Y, %H:%M")}</div>
+              <div
+                id="request-created-at"
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(@request.created_at)}
+                data-format="datetime"
+              >
+                {Calendar.strftime(@request.created_at, "%d %b %Y, %H:%M")}
+              </div>
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Updated</div>
-              <div>{Calendar.strftime(@request.updated_at, "%d %b %Y, %H:%M")}</div>
+              <div
+                id="request-updated-at"
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(@request.updated_at)}
+                data-format="datetime"
+              >
+                {Calendar.strftime(@request.updated_at, "%d %b %Y, %H:%M")}
+              </div>
             </div>
           </div>
         </div>
@@ -234,7 +248,14 @@
           <:col :let={{_id, attempt}} label="Time" width="w-1/12">
             <span class="text-xs text-base-content/50">
               <%= if attempt.attempted_at do %>
-                {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
+                <span
+                  id={"attempt-time-#{attempt.id}"}
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(attempt.attempted_at)}
+                  data-format="time"
+                >
+                  {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
+                </span>
               <% else %>
                 —
               <% end %>

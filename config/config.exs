@@ -7,6 +7,9 @@
 # General application configuration
 import Config
 
+# Store env for runtime (e.g. Application.start); config_env() is only valid during config load.
+config :batcher, :env, config_env()
+
 config :batcher, Batcher.OpenaiApiClient, base_url: "https://api.openai.com"
 
 config :mime,

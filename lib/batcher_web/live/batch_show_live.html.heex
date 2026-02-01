@@ -73,11 +73,25 @@
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Created</div>
-              <div>{Calendar.strftime(@batch.created_at, "%d %b %Y, %H:%M")}</div>
+              <div
+                id="batch-created-at"
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(@batch.created_at)}
+                data-format="datetime"
+              >
+                {Calendar.strftime(@batch.created_at, "%d %b %Y, %H:%M")}
+              </div>
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Updated</div>
-              <div>{Calendar.strftime(@batch.updated_at, "%d %b %Y, %H:%M")}</div>
+              <div
+                id="batch-updated-at"
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(@batch.updated_at)}
+                data-format="datetime"
+              >
+                {Calendar.strftime(@batch.updated_at, "%d %b %Y, %H:%M")}
+              </div>
             </div>
             <div
               class={[
@@ -89,7 +103,14 @@
               <div class="text-base-content/50 mb-1">Last checked on OpenAI</div>
               <div>
                 <%= if @batch.openai_status_last_checked_at do %>
-                  {Calendar.strftime(@batch.openai_status_last_checked_at, "%d %b %Y, %H:%M")}
+                  <span
+                    id="batch-last-checked"
+                    phx-hook="LocalTime"
+                    data-utc={DateTime.to_iso8601(@batch.openai_status_last_checked_at)}
+                    data-format="datetime"
+                  >
+                    {Calendar.strftime(@batch.openai_status_last_checked_at, "%d %b %Y, %H:%M")}
+                  </span>
                 <% else %>
                   —
                 <% end %>
@@ -102,7 +123,14 @@
               <div class="text-base-content/50 mb-1">Expires at</div>
               <div>
                 <%= if @batch.expires_at do %>
-                  {Calendar.strftime(@batch.expires_at, "%d %b %Y, %H:%M")}
+                  <span
+                    id="batch-expires-at"
+                    phx-hook="LocalTime"
+                    data-utc={DateTime.to_iso8601(@batch.expires_at)}
+                    data-format="datetime"
+                  >
+                    {Calendar.strftime(@batch.expires_at, "%d %b %Y, %H:%M")}
+                  </span>
                 <% else %>
                   —
                 <% end %>
@@ -135,14 +163,50 @@
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Input file</div>
-              <div class="font-mono text-xs break-all">
-                {@batch.openai_input_file_id || "—"}
+              <div class="flex items-center gap-2">
+                <div class="font-mono text-xs break-all">
+                  {@batch.openai_input_file_id || "—"}
+                </div>
+                <a
+                  :if={@batch.openai_input_file_id}
+                  href={~p"/batches/#{@batch.id}/files/input/download"}
+                  class="btn btn-ghost btn-xs"
+                  title="Download input file"
+                >
+                  <.icon name="hero-arrow-down-tray" class="w-3.5 h-3.5" />
+                </a>
               </div>
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Output file</div>
-              <div class="font-mono text-xs break-all">
-                {@batch.openai_output_file_id || "—"}
+              <div class="flex items-center gap-2">
+                <div class="font-mono text-xs break-all">
+                  {@batch.openai_output_file_id || "—"}
+                </div>
+                <a
+                  :if={@batch.openai_output_file_id}
+                  href={~p"/batches/#{@batch.id}/files/output/download"}
+                  class="btn btn-ghost btn-xs"
+                  title="Download output file"
+                >
+                  <.icon name="hero-arrow-down-tray" class="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Error file</div>
+              <div class="flex items-center gap-2">
+                <div class="font-mono text-xs break-all">
+                  {@batch.openai_error_file_id || "—"}
+                </div>
+                <a
+                  :if={@batch.openai_error_file_id}
+                  href={~p"/batches/#{@batch.id}/files/error/download"}
+                  class="btn btn-ghost btn-xs"
+                  title="Download error file"
+                >
+                  <.icon name="hero-arrow-down-tray" class="w-3.5 h-3.5" />
+                </a>
               </div>
             </div>
           </div>
@@ -272,11 +336,11 @@
           idx -> Enum.drop(happy_path, idx + 1)
         end
       end %>
-    <div class="border border-base-300/50 rounded-lg overflow-visible">
+    <div class="border border-base-300/50 rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 rounded-t-lg">
         <span class="font-medium">Timeline</span>
       </div>
-      <div class="p-4 pb-10 flex justify-center">
+      <div class="p-4 pb-10 overflow-x-auto flex justify-center">
         <ul class="timeline timeline-horizontal">
           <%!-- Render actual transitions that have happened --%>
           <%= for {transition, index} <- Enum.with_index(@transitions) do %>
@@ -293,13 +357,21 @@
               <%= if index > 0 do %>
                 <hr class={if is_error, do: "bg-error", else: "bg-primary"} />
               <% end %>
-              <div class="timeline-start text-xs text-base-content/50 min-h-5">
+              <div
+                class="timeline-start text-xs text-base-content/50 min-h-5"
+                id={"transition-time-#{index}"}
+                phx-hook="LocalTime"
+                data-utc={DateTime.to_iso8601(transition.transitioned_at)}
+                data-format="datetime-short"
+              >
                 {Calendar.strftime(transition.transitioned_at, "%d %b %H:%M")}
               </div>
               <div class="timeline-middle">
                 <%= cond do %>
                   <% is_last_transition and is_error -> %>
                     <.timeline_icon type={:error} />
+                  <% is_last_transition and current_state in terminal_states -> %>
+                    <.timeline_icon type={:completed} />
                   <% is_current -> %>
                     <.timeline_icon type={:current} />
                   <% is_last_transition -> %>
@@ -310,7 +382,12 @@
                     <.timeline_icon type={:completed} />
                 <% end %>
               </div>
-              <div class="timeline-end tooltip tooltip-bottom" data-tip={state_description}>
+              <div
+                class="timeline-end"
+                id={"transition-#{index}"}
+                phx-hook="Tooltip"
+                data-tip={state_description}
+              >
                 <div class={[
                   "timeline-box text-xs",
                   if(is_error, do: "text-error")
@@ -344,7 +421,12 @@
               <div class="timeline-middle">
                 <.timeline_icon type={:future} />
               </div>
-              <div class="timeline-end tooltip tooltip-bottom" data-tip={state_description}>
+              <div
+                class="timeline-end"
+                id={"future-#{index}"}
+                phx-hook="Tooltip"
+                data-tip={state_description}
+              >
                 <div class="timeline-box text-xs opacity-40">
                   {state_label}
                 </div>

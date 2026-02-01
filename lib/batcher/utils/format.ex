@@ -68,7 +68,7 @@ defmodule Batcher.Utils.Format do
         "in the future"
 
       diff < 60 ->
-        "#{diff}s ago"
+        "<1m ago"
 
       diff < 3600 ->
         minutes = div(diff, 60)

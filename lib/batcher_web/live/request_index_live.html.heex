@@ -22,7 +22,7 @@
           <div class="h-full flex items-center justify-center">
             <div class="text-center">
               <.icon
-                name="hero-document-text"
+                name="hero-chat-bubble"
                 class="w-10 h-10 mx-auto text-base-content/20 mb-3"
               />
               <div class="text-base-content/50">No requests found</div>
@@ -65,7 +65,11 @@
               </:col>
               <:col :let={request} label="Created" width="w-22">
                 <span
+                  id={"request-created-#{request.id}"}
                   class="text-sm text-base-content/50"
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(request.created_at)}
+                  data-format="tooltip"
                   title={Calendar.strftime(request.created_at, "%d/%m/%Y, %H:%M")}
                 >
                   {Format.time_ago(request.created_at)}
@@ -73,7 +77,11 @@
               </:col>
               <:col :let={request} label="Updated" width="w-22">
                 <span
+                  id={"request-updated-#{request.id}"}
                   class="text-sm text-base-content/50"
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(request.updated_at)}
+                  data-format="tooltip"
                   title={Calendar.strftime(request.updated_at, "%d/%m/%Y, %H:%M")}
                 >
                   {Format.time_ago(request.updated_at)}

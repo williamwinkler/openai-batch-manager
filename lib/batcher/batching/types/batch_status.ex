@@ -6,7 +6,7 @@ defmodule Batcher.Batching.Types.BatchStatus do
     values: [
       building: [
         label: "Building",
-        description: "Batch is being built and accepting new requests"
+        description: "Batch is being built and accepting new requests (auto uploads after 1h)"
       ],
       uploading: [
         label: "Uploading",

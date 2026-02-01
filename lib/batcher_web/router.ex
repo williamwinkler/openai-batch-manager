@@ -24,6 +24,8 @@ defmodule BatcherWeb.Router do
   scope "/", BatcherWeb do
     pipe_through :browser
 
+    get "/batches/:batch_id/files/:file_type/download", BatchFileController, :download
+
     live_session :default, on_mount: [{BatcherWeb.NavHooks, :default}] do
       live "/", HomeLive, :index
       live "/batches", BatchIndexLive, :index

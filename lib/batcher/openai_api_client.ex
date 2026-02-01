@@ -116,6 +116,50 @@ defmodule Batcher.OpenaiApiClient do
   end
 
   @doc """
+  Downloads file content from OpenAI as an in-memory binary.
+
+  Returns:
+    {:ok, binary}
+    {:error, reason}
+  """
+  def get_file_content(file_id) do
+    url = "#{base_url()}/v1/files/#{file_id}/content"
+    timeout_opts = timeout_options()
+    retry_opts = retry_options()
+
+    case Req.get(url,
+           headers: headers(),
+           pool_timeout: timeout_opts[:pool_timeout],
+           receive_timeout: timeout_opts[:receive_timeout],
+           connect_options: [timeout: timeout_opts[:connect_timeout]],
+           retry: retry_opts[:retry],
+           max_retries: retry_opts[:max_retries],
+           retry_delay: retry_opts[:retry_delay]
+         ) do
+      {:ok, %{status: status, body: body}} when status >= 200 and status < 300 ->
+        {:ok, body}
+
+      {:ok, %{status: 404}} ->
+        {:error, :not_found}
+
+      {:ok, %{status: 401}} ->
+        {:error, :unauthorized}
+
+      {:ok, %{status: status}} when status >= 500 ->
+        Logger.error("OpenAI file content download failed with server error: HTTP #{status}")
+        {:error, :server_error}
+
+      {:ok, %{status: status}} ->
+        Logger.error("OpenAI file content download failed: HTTP #{status}")
+        {:error, {:http_error, status}}
+
+      {:error, reason} ->
+        Logger.error("OpenAI file content request failed: #{inspect(reason)}")
+        {:error, :request_failed}
+    end
+  end
+
+  @doc """
   Deletes a file on OpenAI's platform given its file ID.
   """
   def delete_file(file_id) do
@@ -203,6 +247,59 @@ defmodule Batcher.OpenaiApiClient do
       reasoning_tokens: reasoning_tokens || 0,
       output_tokens: output_tokens || 0
     }
+  end
+
+  @doc """
+  Validates the OpenAI API key by making a lightweight API call.
+
+  - On success (HTTP 200): logs confirmation and returns :ok
+  - On auth failure (HTTP 401): logs error details and raises, stopping the application
+  - On other HTTP status: logs a warning and returns :ok (key may still be valid)
+  - On network error: logs a warning and returns :ok (OpenAI may be temporarily unreachable)
+  """
+  def validate_api_key! do
+    Logger.info("Validating OpenAI API key against OpenAI API...")
+
+    url = "#{base_url()}/v1/models"
+
+    case Req.get(url,
+           headers: headers(),
+           params: [limit: 1],
+           connect_options: [timeout: 5_000],
+           receive_timeout: 10_000,
+           retry: false
+         ) do
+      {:ok, %{status: 200}} ->
+        Logger.info("OpenAI API key is valid")
+        :ok
+
+      {:ok, %{status: 401, body: body}} ->
+        Logger.error("""
+        OpenAI API key validation failed: unauthorized (HTTP 401)
+        Response body: #{inspect(body)}
+        Please verify your OPENAI_API_KEY environment variable is set to a valid key.
+        """)
+
+        raise "Invalid OpenAI API key: authentication failed (HTTP 401). " <>
+                "The application cannot function without a valid key. " <>
+                "Check your OPENAI_API_KEY environment variable."
+
+      {:ok, %{status: status, body: body}} ->
+        Logger.warning(
+          "OpenAI API key validation returned unexpected status #{status}: #{inspect(body)}. " <>
+            "Continuing startup — the key may still be valid."
+        )
+
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "Could not reach OpenAI to validate API key: #{inspect(reason)}. " <>
+            "Continuing startup — OpenAI may be temporarily unreachable."
+        )
+
+        :ok
+    end
   end
 
   defp handle_response(response) do
