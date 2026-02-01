@@ -1,7 +1,6 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
 .elixir_ls
-.DS_Store
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
@@ -49,4 +48,4 @@ npm-debug.log
 .expert
 .lexical
 .vscode/.phoenix-pulse-cache.json
-.DS_Store
+**/.DS_Store
