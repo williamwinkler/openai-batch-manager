@@ -33,7 +33,7 @@ docker run -d --name openai-batch-manager \
   -p 4000:4000 \
   -v "$(pwd)/data:/data" \ # for SQlite DB
   -e OPENAI_API_KEY="sk-your-key-here" \
-  openai-batch-manager:latest
+  williamwinkler/openai-batch-manager:latest
 ```
 
 Or with Docker Compose—save as `docker-compose.yml` (with RabbitMQ):
@@ -41,7 +41,7 @@ Or with Docker Compose—save as `docker-compose.yml` (with RabbitMQ):
 ```yaml
 services:
   openai-batch-manager:
-    image: openai-batch-manager:latest
+    image: williamwinkler/openai-batch-manager:latest
     ports:
       - "4000:4000"
     environment:
