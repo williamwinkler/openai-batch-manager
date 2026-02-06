@@ -35,7 +35,7 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-latest
           - platform: linux/arm64
-            runner: ubuntu-latest
+            runner: ubuntu-latest-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,7 +71,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ matrix.runner }}
+          name: digest-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
