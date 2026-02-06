@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.5...v0.1.6) (2026-02-06)
+
+
+### Bug Fixes
+
+* broken ui links and swagger server port ([#20](https://github.com/williamwinkler/openai-batch-manager/issues/20)) ([1c72fbf](https://github.com/williamwinkler/openai-batch-manager/commit/1c72fbf4a7192d89641d48d365db38855daf46c0))
+
 ## [0.1.5](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.4...v0.1.5) (2026-02-06)
 
 
