@@ -26,13 +26,13 @@ You just send it requests, choose how you want results delivered, and it takes c
 
 ## How to use
 
-Run this project with Docker (without RabbitMQ):
+Run this project with Docker:
 
 ```bash
 docker run -d --name openai-batch-manager \
   -p 4000:4000 \
-  -v "$(pwd)/data:/data" \ # for SQlite DB
   -e OPENAI_API_KEY="sk-your-key-here" \
+  -v "$(pwd)/data:/data" \
   williamwinkler/openai-batch-manager:latest
 ```
 
