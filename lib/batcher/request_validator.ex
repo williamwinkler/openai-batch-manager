@@ -4,7 +4,6 @@ defmodule Batcher.RequestValidator do
   Uses the same OpenApiSpex schema as the HTTP CastAndValidate plug.
   """
 
-  alias BatcherWeb.Schemas.RequestInputObject
   alias BatcherWeb.ApiSpec
   alias Batcher.Batching.Types.OpenaiBatchEndpoints
 
@@ -27,8 +26,8 @@ defmodule Batcher.RequestValidator do
   Same validation as HTTP plug but callable programmatically.
   """
   def validate(data) when is_map(data) do
-    schema = RequestInputObject.schema()
     spec = ApiSpec.spec()
+    schema = spec.components.schemas["RequestInputObject"]
 
     # OpenApiSpex.cast_value validates and converts string keys to atoms
     case OpenApiSpex.cast_value(data, schema, spec, []) do

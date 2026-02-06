@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.4](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.3...v0.1.4) (2026-02-06)
+
+
+### Bug Fixes
+
+* issue in readme ([#16](https://github.com/williamwinkler/openai-batch-manager/issues/16)) ([9c1a881](https://github.com/williamwinkler/openai-batch-manager/commit/9c1a881fec3168de2edb498d5a08138ae8434eb1))
+
+## [0.1.3](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.2...v0.1.3) (2026-02-06)
+
+
+### Bug Fixes
+
+* readme docker run cmd ([#12](https://github.com/williamwinkler/openai-batch-manager/issues/12)) ([10a844f](https://github.com/williamwinkler/openai-batch-manager/commit/10a844f2301b68aaf26be63233ecd74927c0e427))
+
 ## [0.1.2](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.1...v0.1.2) (2026-02-01)
 
 
