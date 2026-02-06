@@ -91,6 +91,31 @@ RabbitMQ is **optional**. The app can ingest requests via the REST API only, or 
 - **Output delivery:** With `RABBITMQ_URL` set, each completed request can be published to a RabbitMQ queue (you specify the queue when creating the request). Useful for feeding results into other services.
 - **Input:** With both `RABBITMQ_URL` and `RABBITMQ_INPUT_QUEUE` set, the app subscribes to that queue and creates batch requests from messages it receives, so producers can push work via RabbitMQ instead of (or in addition to) the REST API.
 
+### API Documentation
+
+The app serves an OpenAPI specification and interactive Swagger UI:
+
+- **OpenAPI spec (JSON):** http://localhost:4000/api/openapi
+- **Swagger UI:** http://localhost:4000/api/swaggerui
+
+You can use the spec to generate typed API clients. For example:
+
+**TypeScript:**
+```bash
+npx @openapitools/openapi-generator-cli generate \
+  -i http://localhost:4000/api/openapi \
+  -g typescript-fetch \
+  -o ./generated/typescript-client
+```
+
+**Python:**
+```bash
+npx @openapitools/openapi-generator-cli generate \
+  -i http://localhost:4000/api/openapi \
+  -g python \
+  -o ./generated/python-client
+```
+
 ## How to setup
 
 **You need:** Elixir/Erlang (e.g. [asdf](https://asdf-vm.com/) with `.tool-versions`), SQLite, and an OpenAI API key.
