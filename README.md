@@ -35,6 +35,7 @@ docker run -d --name openai-batch-manager \
   -v "$(pwd)/data:/data" \
   williamwinkler/openai-batch-manager:latest
 ```
+> The volume is the SQLite database, where it stores requests and responses (for 30 days).
 
 Or with Docker Compose—save as `docker-compose.yml` (with RabbitMQ):
 
