@@ -69,7 +69,7 @@ end
 
 if config_env() == :prod do
   config :batcher, Batcher.Repo,
-    database: "/data/batcher.db",
+    database: System.get_env("DATABASE_PATH", "/data/openai-batch-manager.db"),
     pool_size: 1,
     # SQLite production optimizations
     timeout: 60_000,

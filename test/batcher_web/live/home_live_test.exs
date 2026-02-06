@@ -26,8 +26,7 @@ defmodule BatcherWeb.HomeLiveTest do
       {:ok, view, _html} = live(conn, ~p"/")
 
       assert has_element?(view, ~s|a[href="/api/swaggerui"][target="_blank"]|)
-      assert has_element?(view, ~s|a[href="/oban"][target="_blank"]|)
-      assert has_element?(view, ~s|a[href="/dev/dashboard"][target="_blank"]|)
+      assert has_element?(view, ~s|a[href="/api/openapi"][target="_blank"]|)
     end
   end
 end

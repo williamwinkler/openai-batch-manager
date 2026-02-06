@@ -5,7 +5,7 @@ defmodule BatcherWeb.ApiSpec do
   Defines the API spec with proper anyOf discriminator for the three
   different request body types: /v1/responses, /v1/embeddings, /v1/moderations.
   """
-  alias OpenApiSpex.{Info, OpenApi, Paths}
+  alias OpenApiSpex.{Info, OpenApi, Paths, Server}
   alias BatcherWeb.Router
   @behaviour OpenApi
 
@@ -22,11 +22,18 @@ defmodule BatcherWeb.ApiSpec do
         """
       },
       servers: [
-        %{url: "http://localhost:4000", description: "Local development server"}
+        %Server{url: server_url()}
       ],
       paths: Paths.from_router(Router)
     }
     # Populate the #/components/schemas from the modules
     |> OpenApiSpex.resolve_schema_modules()
+  end
+
+  defp server_url do
+    endpoint_config = Application.get_env(:batcher, BatcherWeb.Endpoint)
+    host = endpoint_config[:url][:host] || "localhost"
+    port = endpoint_config[:http][:port] || 4000
+    "http://#{host}:#{port}"
   end
 end

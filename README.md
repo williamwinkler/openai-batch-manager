@@ -11,7 +11,7 @@ OpenAI Batch Manager helps you reduce OpenAI API costs for non-urgent workloads 
 5. **Download** — When done, it fetches the result file and parses per-request outputs.
 6. **Deliver** — Each result is sent back to your program (webhook or RabbitMQ).
 
-It also includes an interactive UI, where you can manage your batches, requests and delivery attempts.
+You can see all req [interactive UI](http://localhost:4000), where you can manage your batches, requests and delivery attempts
 
 ## Why use this project?
 
@@ -35,7 +35,7 @@ docker run -d --name openai-batch-manager \
   -v "$(pwd)/data:/data" \
   williamwinkler/openai-batch-manager:latest
 ```
-> The volume is the SQLite database, where it stores requests and responses (for 30 days).
+> The volume for the SQLite database, where requests and responses are stored.
 
 Or with Docker Compose—save as `docker-compose.yml` (with RabbitMQ):
 
@@ -116,6 +116,16 @@ npx @openapitools/openapi-generator-cli generate \
   -g python \
   -o ./generated/python-client
 ```
+
+### Data retention
+
+Batches and their requests are automatically cleaned up:
+
+- **Completed batches** are deleted once their OpenAI file expires (typically 24 hours after upload).
+- **Stale building batches** that have been idle for over 1 hour are either uploaded (if they contain requests) or deleted (if empty).
+- **Expired OpenAI batches** (24h processing timeout) have their partial results downloaded and unprocessed requests resubmitted in a new batch.
+
+When a batch is deleted, its associated OpenAI files (input, output, error) are also cleaned up.
 
 ## How to setup
 
