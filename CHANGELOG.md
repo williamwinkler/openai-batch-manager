@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.4...v0.1.5) (2026-02-06)
+
+
+### Bug Fixes
+
+* build arm runner name in pipeline ([#18](https://github.com/williamwinkler/openai-batch-manager/issues/18)) ([444ebda](https://github.com/williamwinkler/openai-batch-manager/commit/444ebdaa1ed5044dfa21ba2e7e7176716278410c))
+
 ## [0.1.4](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.3...v0.1.4) (2026-02-06)
 
 
