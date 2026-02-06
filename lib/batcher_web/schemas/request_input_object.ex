@@ -30,7 +30,7 @@ defmodule BatcherWeb.Schemas.RequestInputObject do
           description:
             "The HTTP method to be used for the request. Currently only 'POST' is supported."
         },
-        delivery_config: DeliveryConfigSchema.schema(),
+        delivery_config: DeliveryConfigSchema,
         body: body_schema()
       },
       example: %{

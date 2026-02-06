@@ -15,8 +15,8 @@ defmodule BatcherWeb.Schemas.DeliveryConfigSchema do
       }
     },
     oneOf: [
-      DeliveryWebhookSchema.schema(),
-      DeliveryRabbitMQSchema.schema()
+      DeliveryWebhookSchema,
+      DeliveryRabbitMQSchema
     ]
   })
 end
