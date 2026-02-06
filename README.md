@@ -121,7 +121,7 @@ npx @openapitools/openapi-generator-cli generate \
 
 Batches and their requests are automatically cleaned up:
 
-- **Completed batches** are deleted once their OpenAI file expires (typically 24 hours after upload).
+- **Completed batches** are deleted once their OpenAI file expires (30 days after upload).
 - **Stale building batches** that have been idle for over 1 hour are either uploaded (if they contain requests) or deleted (if empty).
 - **Expired OpenAI batches** (24h processing timeout) have their partial results downloaded and unprocessed requests resubmitted in a new batch.
 
