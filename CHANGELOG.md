@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.6...v0.1.7) (2026-02-07)
+
+
+### Bug Fixes
+
+* batches breadcrumb button go to /batches ([#22](https://github.com/williamwinkler/openai-batch-manager/issues/22)) ([526b797](https://github.com/williamwinkler/openai-batch-manager/commit/526b797d665da83162a3655d678ef9d112c7ef85))
+* db connection pool issue during deliver ([#24](https://github.com/williamwinkler/openai-batch-manager/issues/24)) ([958573f](https://github.com/williamwinkler/openai-batch-manager/commit/958573fbdd8c49e4014963b05e1f5668eb5c6c6d))
+
 ## [0.1.6](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.5...v0.1.6) (2026-02-06)
 
 
