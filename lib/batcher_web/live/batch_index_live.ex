@@ -15,6 +15,7 @@ defmodule BatcherWeb.BatchIndexLive do
     socket =
       socket
       |> assign(:page_title, "Batches")
+      |> assign(:subscribed_batch_ids, MapSet.new())
 
     {:ok, socket}
   end
@@ -34,19 +35,12 @@ defmodule BatcherWeb.BatchIndexLive do
         query: [sort_input: sort_by]
       )
 
-    # Subscribe to state changes for batches on current page
-    if connected?(socket) do
-      Enum.each(page.results, fn batch ->
-        BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
-        BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch.id}")
-      end)
-    end
-
     socket =
       socket
       |> assign(:query_text, query_text)
       |> assign(:sort_by, sort_by)
       |> assign(:page, page)
+      |> subscribe_to_batches(page.results)
 
     {:noreply, socket}
   end
@@ -276,13 +270,30 @@ defmodule BatcherWeb.BatchIndexLive do
         query: [sort_input: sort_by]
       )
 
-    # Subscribe to state changes for any new batches that appeared on the page
-    Enum.each(page.results, fn batch ->
-      BatcherWeb.Endpoint.subscribe("batches:state_changed:#{batch.id}")
-      BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch.id}")
-    end)
+    socket
+    |> assign(:page, page)
+    |> subscribe_to_batches(page.results)
+  end
 
-    assign(socket, :page, page)
+  defp subscribe_to_batches(socket, batches) do
+    if connected?(socket) do
+      already_subscribed = socket.assigns.subscribed_batch_ids
+
+      new_ids =
+        batches
+        |> Enum.map(& &1.id)
+        |> Enum.reject(&MapSet.member?(already_subscribed, &1))
+
+      Enum.each(new_ids, fn id ->
+        BatcherWeb.Endpoint.subscribe("batches:state_changed:#{id}")
+        BatcherWeb.Endpoint.subscribe("batches:destroyed:#{id}")
+      end)
+
+      new_subscribed = Enum.reduce(new_ids, already_subscribed, &MapSet.put(&2, &1))
+      assign(socket, :subscribed_batch_ids, new_subscribed)
+    else
+      socket
+    end
   end
 
   defp sort_options do

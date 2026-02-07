@@ -25,7 +25,7 @@ config :ash_oban, pro?: false
 config :batcher, Oban,
   engine: Oban.Engines.Lite,
   notifier: Oban.Notifiers.PG,
-  queues: [default: 10, batch_uploads: 1, batch_processing: 1, delivery: 50],
+  queues: [default: 10, batch_uploads: 1, batch_processing: 1, delivery: 5],
   repo: Batcher.Repo,
   # Reduce polling frequency to avoid hammering SQLite database
   # SQLite with pool_size=1 serializes writes, so aggressive polling causes contention
