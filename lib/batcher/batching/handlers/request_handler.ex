@@ -27,7 +27,7 @@ defmodule Batcher.Batching.Handlers.RequestHandler do
         {:error, :custom_id_already_taken}
 
       error ->
-        Logger.error("Failed to add request to batch", inspect(error))
+        Logger.error("Failed to add request to batch: #{inspect(error)}")
         {:error, {:batch_assignment_error, inspect(error)}}
     end
   end
