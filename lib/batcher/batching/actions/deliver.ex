@@ -118,12 +118,6 @@ defmodule Batcher.Batching.Actions.Deliver do
 
         batch = request_updated.batch
 
-        if batch.state == :ready_to_deliver do
-          batch
-          |> Ash.Changeset.for_update(:start_delivering)
-          |> Ash.update!()
-        end
-
         handle_delivery_failure(request_updated, batch, :rabbitmq_not_configured, error_msg)
 
       is_nil(routing_key) ->
@@ -167,14 +161,7 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.update!()
       |> Ash.load!(:batch)
 
-    # Check if batch needs to transition to :delivering
     batch = request_updated.batch
-
-    if batch.state == :ready_to_deliver do
-      batch
-      |> Ash.Changeset.for_update(:start_delivering)
-      |> Ash.update!()
-    end
 
     # RabbitMQ configuration was already validated in deliver_rabbitmq/1
     do_rabbitmq_publish(request_updated, batch, exchange, routing_key)
@@ -222,14 +209,7 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.update!()
       |> Ash.load!(:batch)
 
-    # Check if batch needs to transition to :delivering
     batch = request_updated.batch
-
-    if batch.state == :ready_to_deliver do
-      batch
-      |> Ash.Changeset.for_update(:start_delivering)
-      |> Ash.update!()
-    end
 
     # Perform webhook POST
     case post_webhook(webhook_url, request_updated.response_payload) do

@@ -28,6 +28,10 @@ defmodule BatcherWeb.Layouts do
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :current_path, :string, default: nil, doc: "the current request path for nav highlighting"
 
+  attr :rabbitmq_connected, :any,
+    default: nil,
+    doc: "nil=not configured, true=connected, false=disconnected"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -68,7 +72,7 @@ defmodule BatcherWeb.Layouts do
             <span class="text-xs text-base-content/20 font-mono select-all">
               v{Application.spec(:batcher, :vsn)}
             </span>
-            <.rabbitmq_status />
+            <.rabbitmq_status rabbitmq_connected={@rabbitmq_connected} />
             <.theme_toggle />
           </div>
         </div>
@@ -154,9 +158,13 @@ defmodule BatcherWeb.Layouts do
 
   @doc """
   Renders the RabbitMQ connection status indicator.
-  Shows a green circle when RabbitMQ is configured, grey when not.
-  When connected, clicking opens a modal with connection details.
+  Shows a green dot when connected, grey when disconnected or not configured.
+  When configured, clicking opens a modal with connection details.
   """
+  attr :rabbitmq_connected, :any,
+    default: nil,
+    doc: "nil=not configured, true=connected, false=disconnected"
+
   def rabbitmq_status(assigns) do
     publisher_config = Application.get_env(:batcher, :rabbitmq_publisher)
     consumer_config = Application.get_env(:batcher, :rabbitmq_input)
@@ -178,7 +186,15 @@ defmodule BatcherWeb.Layouts do
             %URI{host: host, port: port} -> "#{host}:#{port}"
           end
 
-        details = [%{label: "Connected to", value: host_info}]
+        # Status row based on live connection state
+        status_detail =
+          case assigns.rabbitmq_connected do
+            true -> %{label: "Status", value: "Connected"}
+            false -> %{label: "Status", value: "Disconnected"}
+            _ -> %{label: "Status", value: "Unknown"}
+          end
+
+        details = [status_detail, %{label: "Host", value: host_info}]
 
         # Add publisher status
         details =
@@ -235,7 +251,12 @@ defmodule BatcherWeb.Layouts do
               ]
           end
 
-        {details, "RabbitMQ Connected"}
+        tooltip =
+          if assigns.rabbitmq_connected == true,
+            do: "RabbitMQ Connected",
+            else: "RabbitMQ Disconnected"
+
+        {details, tooltip}
       else
         {[], "RabbitMQ not configured"}
       end
@@ -254,7 +275,7 @@ defmodule BatcherWeb.Layouts do
       <div
         :if={@configured?}
         class="tooltip tooltip-bottom"
-        data-tip="Click to view connection details"
+        data-tip={@tooltip_text}
       >
         <button
           type="button"
@@ -264,7 +285,12 @@ defmodule BatcherWeb.Layouts do
           data-modal-id={@modal_id}
         >
           <img src="/images/rabbitmq.svg" class="w-4 h-3.5" alt="RabbitMQ" />
-          <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+          <span class={[
+            "w-1.5 h-1.5 rounded-full",
+            @rabbitmq_connected == true && "bg-success",
+            @rabbitmq_connected != true && "bg-base-content/30"
+          ]}>
+          </span>
         </button>
       </div>
       <div

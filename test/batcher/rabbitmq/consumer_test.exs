@@ -303,30 +303,21 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
   end
 
   describe "connection handling" do
-    test "fails to start when connection fails on startup" do
-      # The consumer raises when it can't connect (fail-fast behavior)
-      # This ensures the application doesn't start with a broken RabbitMQ connection
-      # When init raises, GenServer.start_link causes the calling process to exit
-      # We use spawn_monitor to catch the process exit
-      {pid, ref} =
-        spawn_monitor(fn ->
-          Consumer.start_link(
-            url: "amqp://invalid:invalid@nonexistent:5672/",
-            queue: "test_queue"
-          )
-        end)
+    test "starts in disconnected state when connection fails on startup" do
+      # The consumer should start successfully but in disconnected state
+      # and schedule a reconnection attempt
+      {:ok, pid} =
+        Consumer.start_link(
+          url: "amqp://invalid:invalid@nonexistent:5672/",
+          queue: "test_queue"
+        )
 
-      # Wait for the DOWN message
-      receive do
-        {:DOWN, ^ref, :process, ^pid, {%RuntimeError{message: message}, _stacktrace}} ->
-          assert message =~ "RabbitMQ connection failed"
+      # Consumer should be alive but not connected
+      assert Process.alive?(pid)
+      refute Consumer.connected?()
 
-        {:DOWN, ^ref, :process, ^pid, reason} ->
-          flunk("Expected RuntimeError, got: #{inspect(reason)}")
-      after
-        5000 ->
-          flunk("Expected process to exit, but it didn't")
-      end
+      # Clean up
+      GenServer.stop(pid, :normal, 5000)
     end
   end
 
@@ -351,7 +342,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
       stop_consumer()
     end
 
-    test "handles basic_cancel message and stops", context do
+    test "handles basic_cancel message and schedules reconnect", context do
       require_rabbitmq(context)
       %{queue: queue, rabbitmq_url: rabbitmq_url} = context
 
@@ -359,18 +350,16 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
       {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
       Process.sleep(200)
 
-      # Monitor the consumer
-      ref = Process.monitor(pid)
-
       # Send basic_cancel message (simulating broker cancellation)
       send(pid, {:basic_cancel, %{consumer_tag: "test_tag"}})
 
-      # Consumer should stop
-      receive do
-        {:DOWN, ^ref, :process, ^pid, :normal} -> :ok
-      after
-        5000 -> flunk("Expected consumer to stop after basic_cancel")
-      end
+      # Give it time to process
+      Process.sleep(100)
+
+      # Consumer should still be alive (reconnecting instead of stopping)
+      assert Process.alive?(pid)
+
+      stop_consumer()
     end
 
     test "handles basic_cancel_ok message", context do
@@ -465,64 +454,42 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
       # We can't easily verify this without consuming, but the test at least exercises the code path
     end
 
-    test "fails to start when queue bind fails", context do
+    test "starts in disconnected state when queue bind fails", context do
       require_rabbitmq(context)
       %{rabbitmq_url: rabbitmq_url} = context
 
       # Try to start consumer with non-existent exchange
-      # This will fail during bind
-      {pid, ref} =
-        spawn_monitor(fn ->
-          Consumer.start_link(
-            url: rabbitmq_url,
-            queue: "non_existent_queue_#{System.unique_integer([:positive])}",
-            exchange: "non_existent_exchange_#{System.unique_integer([:positive])}",
-            routing_key: "test.key"
-          )
-        end)
+      # Consumer should start but be disconnected
+      {:ok, pid} =
+        Consumer.start_link(
+          url: rabbitmq_url,
+          queue: "non_existent_queue_#{System.unique_integer([:positive])}",
+          exchange: "non_existent_exchange_#{System.unique_integer([:positive])}",
+          routing_key: "test.key"
+        )
 
-      # Wait for the DOWN message
-      receive do
-        {:DOWN, ^ref, :process, ^pid, {%RuntimeError{message: message}, _stacktrace}} ->
-          assert message =~ "RabbitMQ connection failed"
+      assert Process.alive?(pid)
+      refute Consumer.connected?()
 
-        {:DOWN, ^ref, :process, ^pid, reason} ->
-          # Accept any error that indicates failure to start
-          # (could be RuntimeError or other error formats)
-          assert is_tuple(reason) or is_exception(reason)
-      after
-        5000 ->
-          flunk("Expected process to exit, but it didn't")
-      end
+      stop_consumer()
     end
 
-    test "fails to start when consume fails", context do
+    test "starts in disconnected state when consume fails", context do
       require_rabbitmq(context)
       %{rabbitmq_url: rabbitmq_url} = context
 
       # Try to start consumer with non-existent queue
-      # This will fail during consume
-      {pid, ref} =
-        spawn_monitor(fn ->
-          Consumer.start_link(
-            url: rabbitmq_url,
-            queue: "non_existent_queue_#{System.unique_integer([:positive])}"
-          )
-        end)
+      # Consumer should start but be disconnected
+      {:ok, pid} =
+        Consumer.start_link(
+          url: rabbitmq_url,
+          queue: "non_existent_queue_#{System.unique_integer([:positive])}"
+        )
 
-      # Wait for the DOWN message
-      receive do
-        {:DOWN, ^ref, :process, ^pid, {%RuntimeError{message: message}, _stacktrace}} ->
-          assert message =~ "RabbitMQ connection failed"
+      assert Process.alive?(pid)
+      refute Consumer.connected?()
 
-        {:DOWN, ^ref, :process, ^pid, reason} ->
-          # Accept any error that indicates failure to start
-          # (could be RuntimeError or other error formats)
-          assert is_tuple(reason) or is_exception(reason)
-      after
-        5000 ->
-          flunk("Expected process to exit, but it didn't")
-      end
+      stop_consumer()
     end
   end
 end

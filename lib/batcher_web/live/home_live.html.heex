@@ -1,8 +1,8 @@
-<Layouts.app flash={@flash} current_path={@current_path}>
+<Layouts.app flash={@flash} current_path={@current_path} rabbitmq_connected={@rabbitmq_connected}>
   <div class="flex flex-col h-full">
     <!-- Hero Section -->
-    <div class="text-center py-12">
-      <h1 class="text-4xl font-bold mb-4">OpenAI Batch Manager</h1>
+    <div class="text-center mt-4 mb-8 ">
+      <h1 class="text-4xl font-bold mb-8">OpenAI Batch Manager</h1>
       <p class="text-lg text-base-content/70 max-w-2xl mx-auto">
         Submit requests and get the processed results back within 24h - using the Batch API to save you 50% on costs 💰
       </p>
@@ -46,7 +46,7 @@
     </div>
     
 <!-- How It Works Section -->
-    <div class="bg-base-200 py-12 px-4 -mx-6">
+    <div class="bg-base-200 py-6 px-4 -mx-6">
       <div class="max-w-4xl mx-auto">
         <h2 class="text-2xl font-bold text-center mb-8">How It Works</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -123,7 +123,7 @@
     </div>
     
 <!-- API Documentation & Contribute Section -->
-    <div class="bg-base-200 py-8 px-4 -mx-6">
+    <div class="bg-base-200 py-8 px-4 -mx-6 -mb-6 mt-auto">
       <div class="flex flex-col md:flex-row gap-4 justify-center max-w-3xl mx-auto">
         <a
           href="/api/swaggerui"

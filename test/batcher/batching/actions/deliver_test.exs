@@ -60,7 +60,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response", "status" => "success"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -112,7 +112,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -145,7 +145,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -192,7 +192,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -236,7 +236,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -276,7 +276,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       {:ok, _pid} = FakePublisher.start_link()
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       response_payload = %{"output" => "test response", "status" => "success"}
@@ -331,7 +331,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       {:ok, _pid} = FakePublisher.start_link()
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       response_payload = %{"output" => "test response", "status" => "success"}
@@ -379,7 +379,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       {:ok, _pid} = FakePublisher.start_link()
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       response_payload = %{"output" => "test response", "status" => "success"}
@@ -418,7 +418,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         )
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -463,7 +463,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         )
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -503,7 +503,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :not_connected}})
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -543,7 +543,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :timeout}})
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -583,7 +583,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :nack}})
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -623,7 +623,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         FakePublisher.start_link(responses: %{{"", "test_queue"} => {:error, :unknown_error}})
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -662,7 +662,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       {:ok, _pid} = FakePublisher.start_link()
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       response_payload = %{"output" => "test response"}
@@ -732,7 +732,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         )
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       response_payload = %{"output" => "test response"}
@@ -796,7 +796,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       {:ok, _pid} = FakePublisher.start_link()
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       # Legacy format with routing_key (not rabbitmq_routing_key) still works
@@ -831,7 +831,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       {:ok, _pid} = FakePublisher.start_link()
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -860,7 +860,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     test "fails delivery when RabbitMQ publisher is not configured" do
       # Do NOT start fake publisher - simulating RabbitMQ not configured
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -895,7 +895,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
 
     test "raises error when webhook_url is missing" do
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -922,7 +922,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       webhook_url = TestServer.url(server) <> "/webhook"
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -951,7 +951,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -998,7 +998,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       # Create two requests
@@ -1063,7 +1063,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       # Create two requests
@@ -1124,7 +1124,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -1156,7 +1156,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -1191,7 +1191,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -1229,7 +1229,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -1272,7 +1272,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -1308,7 +1308,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =
@@ -1352,7 +1352,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       response_payload = %{"output" => "test response"}
 
       batch =
-        seeded_batch(state: :ready_to_deliver)
+        seeded_batch(state: :delivering)
         |> generate()
 
       request =

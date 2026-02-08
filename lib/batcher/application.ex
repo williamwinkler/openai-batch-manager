@@ -34,15 +34,14 @@ defmodule Batcher.Application do
            Application.fetch_env!(:batcher, :ash_domains),
            Application.fetch_env!(:batcher, Oban)
          )},
+        # PubSub must start before RabbitMQ so status broadcasts work during init
+        {Phoenix.PubSub, name: Batcher.PubSub},
         # RabbitMQ publisher (optional - only starts if configured)
         maybe_rabbitmq_publisher(),
         # RabbitMQ input consumer (optional - only starts if configured)
         maybe_rabbitmq_consumer(),
-        # Start a worker by calling: Batcher.Worker.start_link(arg)
-        # {Batcher.Worker, arg},
         # Start to serve requests, typically the last entry
         {DNSCluster, query: Application.get_env(:batcher, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: Batcher.PubSub},
         BatcherWeb.Endpoint
       ]
       |> Enum.reject(&is_nil/1)
@@ -99,8 +98,7 @@ defmodule Batcher.Application do
 
       config ->
         # Configured - start consumer
-        # If connection fails, init/1 will raise an error
-        # causing the supervisor and application to shut down (fail-fast behavior)
+        # If connection fails, consumer enters disconnected state and retries with backoff
         {Batcher.RabbitMQ.Consumer, config}
     end
   end

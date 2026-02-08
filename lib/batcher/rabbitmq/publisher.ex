@@ -17,6 +17,8 @@ defmodule Batcher.RabbitMQ.Publisher do
   require Logger
 
   @failure_cache_ttl_ms :timer.minutes(5)
+  @initial_backoff_ms 1_000
+  @max_backoff_ms 30_000
 
   ## Client API
 
@@ -67,6 +69,19 @@ defmodule Batcher.RabbitMQ.Publisher do
     GenServer.cast(__MODULE__, :clear_all_cache)
   end
 
+  @doc """
+  Returns whether the publisher is currently connected to RabbitMQ.
+  Returns false if the process is not running.
+  """
+  def connected? do
+    case GenServer.whereis(__MODULE__) do
+      nil -> false
+      pid when is_pid(pid) -> GenServer.call(pid, :connected?)
+    end
+  catch
+    :exit, _ -> false
+  end
+
   ## Server Callbacks
 
   @impl true
@@ -77,14 +92,39 @@ defmodule Batcher.RabbitMQ.Publisher do
     case connect(url) do
       {:ok, conn, chan} ->
         Logger.info("RabbitMQ Publisher started and connected")
-        {:ok, %{url: url, conn: conn, chan: chan, destinations: %{}}}
+        broadcast_status(:connected)
+
+        {:ok,
+         %{
+           url: url,
+           conn: conn,
+           chan: chan,
+           destinations: %{},
+           backoff_ms: @initial_backoff_ms,
+           reconnect_ref: nil
+         }}
 
       {:error, reason} ->
         Logger.error("Publisher failed to connect to RabbitMQ: #{inspect(reason)}")
-        Logger.info("Publisher will retry connection on first publish")
-        # Start anyway with nil connection - will retry on first publish
-        {:ok, %{url: url, conn: nil, chan: nil, destinations: %{}}}
+        Logger.info("Publisher will retry connection in #{@initial_backoff_ms}ms")
+        broadcast_status(:disconnected)
+        ref = Process.send_after(self(), :reconnect, @initial_backoff_ms)
+
+        {:ok,
+         %{
+           url: url,
+           conn: nil,
+           chan: nil,
+           destinations: %{},
+           backoff_ms: @initial_backoff_ms,
+           reconnect_ref: ref
+         }}
     end
+  end
+
+  @impl true
+  def handle_call(:connected?, _from, state) do
+    {:reply, state.conn != nil && state.chan != nil, state}
   end
 
   @impl true
@@ -159,14 +199,44 @@ defmodule Batcher.RabbitMQ.Publisher do
     cond do
       state.conn && state.conn.pid == pid ->
         Logger.warning("Publisher connection died: #{inspect(reason)}")
-        {:noreply, %{state | conn: nil, chan: nil}}
+        broadcast_status(:disconnected)
+        ref = Process.send_after(self(), :reconnect, state.backoff_ms)
+        {:noreply, %{state | conn: nil, chan: nil, reconnect_ref: ref}}
 
       state.chan && state.chan.pid == pid ->
         Logger.warning("Publisher channel died: #{inspect(reason)}")
-        {:noreply, %{state | chan: nil}}
+        broadcast_status(:disconnected)
+        ref = Process.send_after(self(), :reconnect, state.backoff_ms)
+        {:noreply, %{state | chan: nil, reconnect_ref: ref}}
 
       true ->
         {:noreply, state}
+    end
+  end
+
+  @impl true
+  def handle_info(:reconnect, %{conn: conn} = state) when conn != nil do
+    # Already reconnected (e.g., via a publish call), skip
+    {:noreply, %{state | reconnect_ref: nil}}
+  end
+
+  def handle_info(:reconnect, state) do
+    Logger.info("Publisher attempting to reconnect to RabbitMQ...")
+
+    case connect(state.url) do
+      {:ok, conn, chan} ->
+        Logger.info("Publisher successfully reconnected to RabbitMQ")
+        broadcast_status(:connected)
+
+        {:noreply,
+         %{state | conn: conn, chan: chan, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
+
+      {:error, reason} ->
+        next_backoff = min(state.backoff_ms * 2, @max_backoff_ms)
+        Logger.error("Publisher failed to reconnect to RabbitMQ: #{inspect(reason)}")
+        Logger.info("Publisher will retry in #{next_backoff}ms")
+        ref = Process.send_after(self(), :reconnect, next_backoff)
+        {:noreply, %{state | backoff_ms: next_backoff, reconnect_ref: ref}}
     end
   end
 
@@ -206,7 +276,11 @@ defmodule Batcher.RabbitMQ.Publisher do
     case connect(url) do
       {:ok, conn, chan} ->
         Logger.info("Successfully connected to RabbitMQ")
-        {:ok, %{state | conn: conn, chan: chan}}
+        broadcast_status(:connected)
+        cancel_reconnect_timer(state)
+
+        {:ok,
+         %{state | conn: conn, chan: chan, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
 
       {:error, reason} ->
         Logger.error("Failed to connect to RabbitMQ: #{inspect(reason)}")
@@ -371,5 +445,24 @@ defmodule Batcher.RabbitMQ.Publisher do
 
   defp format_destination(exchange, routing_key) do
     "exchange=#{exchange} routing_key=#{routing_key}"
+  end
+
+  defp cancel_reconnect_timer(%{reconnect_ref: nil}), do: :ok
+
+  defp cancel_reconnect_timer(%{reconnect_ref: ref}) do
+    Process.cancel_timer(ref)
+    :ok
+  end
+
+  defp broadcast_status(status) do
+    try do
+      Phoenix.PubSub.broadcast(
+        Batcher.PubSub,
+        "rabbitmq:status",
+        {:rabbitmq_status, %{process: :publisher, status: status}}
+      )
+    catch
+      _, _ -> :ok
+    end
   end
 end
