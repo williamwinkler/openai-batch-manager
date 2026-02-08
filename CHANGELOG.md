@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.7...v0.1.8) (2026-02-08)
+
+
+### Features
+
+* add rabbitmq disconnected/connected status feedback ([#25](https://github.com/williamwinkler/openai-batch-manager/issues/25)) ([fe299e9](https://github.com/williamwinkler/openai-batch-manager/commit/fe299e99a5ea06185534192159b3375a8f5d07fd))
+
 ## [0.1.7](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.6...v0.1.7) (2026-02-07)
 
 
