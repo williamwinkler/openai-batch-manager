@@ -289,7 +289,8 @@ defmodule BatcherWeb.Layouts do
             "w-1.5 h-1.5 rounded-full",
             @rabbitmq_connected == true && "bg-success",
             @rabbitmq_connected != true && "bg-base-content/30"
-          ]}></span>
+          ]}>
+          </span>
         </button>
       </div>
       <div
@@ -302,7 +303,7 @@ defmodule BatcherWeb.Layouts do
           <span class="w-1.5 h-1.5 rounded-full bg-base-content/30"></span>
         </div>
       </div>
-
+      
     <!-- Modal -->
       <div
         id={@modal_id}

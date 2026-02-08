@@ -93,14 +93,32 @@ defmodule Batcher.RabbitMQ.Publisher do
       {:ok, conn, chan} ->
         Logger.info("RabbitMQ Publisher started and connected")
         broadcast_status(:connected)
-        {:ok, %{url: url, conn: conn, chan: chan, destinations: %{}, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
+
+        {:ok,
+         %{
+           url: url,
+           conn: conn,
+           chan: chan,
+           destinations: %{},
+           backoff_ms: @initial_backoff_ms,
+           reconnect_ref: nil
+         }}
 
       {:error, reason} ->
         Logger.error("Publisher failed to connect to RabbitMQ: #{inspect(reason)}")
         Logger.info("Publisher will retry connection in #{@initial_backoff_ms}ms")
         broadcast_status(:disconnected)
         ref = Process.send_after(self(), :reconnect, @initial_backoff_ms)
-        {:ok, %{url: url, conn: nil, chan: nil, destinations: %{}, backoff_ms: @initial_backoff_ms, reconnect_ref: ref}}
+
+        {:ok,
+         %{
+           url: url,
+           conn: nil,
+           chan: nil,
+           destinations: %{},
+           backoff_ms: @initial_backoff_ms,
+           reconnect_ref: ref
+         }}
     end
   end
 
@@ -209,7 +227,9 @@ defmodule Batcher.RabbitMQ.Publisher do
       {:ok, conn, chan} ->
         Logger.info("Publisher successfully reconnected to RabbitMQ")
         broadcast_status(:connected)
-        {:noreply, %{state | conn: conn, chan: chan, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
+
+        {:noreply,
+         %{state | conn: conn, chan: chan, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
 
       {:error, reason} ->
         next_backoff = min(state.backoff_ms * 2, @max_backoff_ms)
@@ -258,7 +278,9 @@ defmodule Batcher.RabbitMQ.Publisher do
         Logger.info("Successfully connected to RabbitMQ")
         broadcast_status(:connected)
         cancel_reconnect_timer(state)
-        {:ok, %{state | conn: conn, chan: chan, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
+
+        {:ok,
+         %{state | conn: conn, chan: chan, backoff_ms: @initial_backoff_ms, reconnect_ref: nil}}
 
       {:error, reason} ->
         Logger.error("Failed to connect to RabbitMQ: #{inspect(reason)}")
