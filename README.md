@@ -11,10 +11,13 @@ OpenAI Batch Manager helps you reduce OpenAI API costs for non-urgent workloads 
 5. **Download** — When done, it fetches the result file and parses per-request outputs.
 6. **Deliver** — Each result is sent back to your program (webhook or RabbitMQ).
 
-You can see all req [interactive UI](http://localhost:4000), where you can manage your batches, requests and delivery attempts
+![diagram](/docs/how_it_works_diagram.png)
+
+It comes with an [interactive UI](http://localhost:4000), where you can manage your batches, requests and delivery attempts.
+
+![ui](/docs/ui.png)
 
 ## Why use this project?
-
 
 Sending large volumes of requests to OpenAI’s models can get expensive. For high-throughput workloads, OpenAI offers the [Batch API](https://platform.openai.com/docs/guides/batch), which can reduce cost and lets OpenAI process requests asynchronously in the background, often improving throughput by scheduling work when capacity is available.
 
@@ -26,7 +29,7 @@ You just send it requests, choose how you want results delivered, and it takes c
 
 ## How to use
 
-Run this project with Docker:
+A build [docker image](https://hub.docker.com/r/williamwinkler/openai-batch-manager) is already available. Simple start it with Docker:
 
 ```bash
 docker run -d --name openai-batch-manager \
@@ -35,9 +38,9 @@ docker run -d --name openai-batch-manager \
   -v "$(pwd)/data:/data" \
   williamwinkler/openai-batch-manager:latest
 ```
-> The volume for the SQLite database, where requests and responses are stored.
+> The volume is for the SQLite database, where requests and responses are stored locally.
 
-Or with Docker Compose—save as `docker-compose.yml` (with RabbitMQ):
+Or with Docker Compose — save as `docker-compose.yml`:
 
 ```yaml
 services:
@@ -121,11 +124,11 @@ npx @openapitools/openapi-generator-cli generate \
 
 Batches and their requests are automatically cleaned up:
 
-- **Completed batches** are deleted once their OpenAI file expires (30 days after upload).
+- **Completed batches** are deleted locally once their OpenAI file expires (30 days after upload).
 - **Stale building batches** that have been idle for over 1 hour are either uploaded (if they contain requests) or deleted (if empty).
 - **Expired OpenAI batches** (24h processing timeout) have their partial results downloaded and unprocessed requests resubmitted in a new batch.
 
-When a batch is deleted, its associated OpenAI files (input, output, error) are also cleaned up.
+When a batch is deleted locally, its associated OpenAI files (input, output, error) are also cleaned up on the OpenAI platform.
 
 ## How to setup
 

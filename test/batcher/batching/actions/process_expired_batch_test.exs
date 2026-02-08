@@ -146,8 +146,8 @@ defmodule Batcher.Batching.Actions.ProcessExpiredBatchTest do
         |> Map.put(:subject, batch)
         |> Ash.run_action()
 
-      # All requests were processed, so batch should finalize to ready_to_deliver
-      assert batch_after.state == :ready_to_deliver
+      # All requests were processed, so batch should finalize to delivering
+      assert batch_after.state == :delivering
 
       # Verify both requests are processed
       req1_after = Ash.get!(Batching.Request, req1.id)

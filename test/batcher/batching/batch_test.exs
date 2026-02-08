@@ -413,7 +413,7 @@ defmodule Batcher.Batching.BatchTest do
   end
 
   describe "Batcher.Batching.Batch.process_downloaded_file/0" do
-    test "downloads file, updates requests, and sets state to :ready_to_deliver", %{
+    test "downloads file, updates requests, and sets state to :delivering", %{
       server: server
     } do
       output_file_id = "file-2AbcDNE3rPZezkuRuGuXbB"
@@ -470,12 +470,12 @@ defmodule Batcher.Batching.BatchTest do
       # Reload to check relationships (Transitions & Requests)
       batch_after = Ash.load!(batch_after, [:transitions, :requests])
 
-      assert batch_after.state == :ready_to_deliver
+      assert batch_after.state == :delivering
 
-      # Check Transitions (downloading -> ready_to_deliver)
+      # Check Transitions (downloading -> ready_to_deliver -> delivering)
       last_transition = List.last(batch_after.transitions)
-      assert last_transition.from == :downloading
-      assert last_transition.to == :ready_to_deliver
+      assert last_transition.from == :ready_to_deliver
+      assert last_transition.to == :delivering
       assert last_transition.transitioned_at
 
       # Check Requests

@@ -129,7 +129,13 @@ defmodule Batcher.Batching.FileProcessing do
           |> Ash.update()
       end
     else
-      {:ok, updated_batch}
+      # Requests still need delivery — transition to delivering now
+      # so concurrent delivery jobs don't each race to call start_delivering
+      Logger.info("Batch #{batch.id} has requests pending delivery, transitioning to delivering")
+
+      updated_batch
+      |> Ash.Changeset.for_update(:start_delivering)
+      |> Ash.update()
     end
   end
 
