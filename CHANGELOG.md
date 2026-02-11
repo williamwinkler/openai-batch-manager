@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.9...v0.1.10) (2026-02-11)
+
+
+### Bug Fixes
+
+* make request custom_id constraint unique ([#29](https://github.com/williamwinkler/openai-batch-manager/issues/29)) ([f851967](https://github.com/williamwinkler/openai-batch-manager/commit/f8519673287e0bb48aa8d949bf835834a73523ce))
+
 ## [0.1.9](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.8...v0.1.9) (2026-02-11)
 
 
