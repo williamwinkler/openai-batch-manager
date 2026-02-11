@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.10...v0.1.11) (2026-02-11)
+
+
+### Features
+
+* enhance request cancellation and redelivery logic ([#31](https://github.com/williamwinkler/openai-batch-manager/issues/31)) ([111c6ac](https://github.com/williamwinkler/openai-batch-manager/commit/111c6ac4bfd377df116317001dc497195619139c))
+
 ## [0.1.10](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.9...v0.1.10) (2026-02-11)
 
 
