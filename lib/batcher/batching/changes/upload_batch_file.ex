@@ -47,7 +47,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
     File.mkdir_p!(Path.dirname(batch_file_path))
     Logger.debug("Started building #{Path.basename(batch_file_path)}")
 
-    file = File.open!(batch_file_path, [:write])
+    file = File.open!(batch_file_path, [:write, :binary])
 
     try do
       Batcher.Batching.Request
