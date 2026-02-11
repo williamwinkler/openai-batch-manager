@@ -110,7 +110,7 @@ defmodule Batcher.Batching.RequestTest do
       end
     end
 
-    test "can create request with same custom_id in different batch" do
+    test "can't create request with same custom_id in different batch" do
       batch1 = generate(batch())
       batch2 = generate(batch())
       custom_id = "same_id"
@@ -133,8 +133,8 @@ defmodule Batcher.Batching.RequestTest do
           }
         })
 
-      {:ok, request2} =
-        Batching.create_request(%{
+      assert_raise Ash.Error.Invalid, fn ->
+        Batching.create_request!(%{
           batch_id: batch2.id,
           custom_id: custom_id,
           url: batch2.url,
@@ -150,9 +150,9 @@ defmodule Batcher.Batching.RequestTest do
             "webhook_url" => "https://example.com/webhook"
           }
         })
+      end
 
-      assert request1.custom_id == request2.custom_id
-      assert request1.batch_id != request2.batch_id
+      assert request1.batch_id == batch1.id
     end
 
     test "can't create request when batch is not in building state" do

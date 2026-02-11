@@ -141,7 +141,7 @@ defmodule BatcherWeb.RequestController do
               code: "ambiguous_custom_id",
               title: "Multiple Requests Found",
               detail:
-                "Found #{length(requests)} requests with custom_id=#{custom_id}. custom_id is only unique within a batch."
+                "Found #{length(requests)} requests with custom_id=#{custom_id}. custom_id should be globally unique."
             }
           ]
         })
@@ -220,7 +220,7 @@ defmodule BatcherWeb.RequestController do
               code: "ambiguous_custom_id",
               title: "Multiple Requests Found",
               detail:
-                "Found #{length(requests)} requests with custom_id=#{custom_id}. custom_id is only unique within a batch."
+                "Found #{length(requests)} requests with custom_id=#{custom_id}. custom_id should be globally unique."
             }
           ]
         })
