@@ -69,6 +69,10 @@ config :batcher, :http_timeouts,
   receive_timeout: 200,
   connect_timeout: 100
 
+# Set delivery to 1 attempt in tests by default (existing tests expect single-attempt behavior).
+# Individual retry tests override via Application.put_env(:batcher, :delivery_max_attempts, 3).
+config :batcher, :delivery_max_attempts, 1
+
 # Disable RabbitMQ consumer and publisher in tests - tests manage their own instances
 # This prevents the Application from starting them automatically
 config :batcher, :rabbitmq_input, nil

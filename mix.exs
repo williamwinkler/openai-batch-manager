@@ -13,6 +13,7 @@ defmodule Batcher.MixProject do
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
       consolidate_protocols: Mix.env() != :dev,
+      usage_rules: usage_rules(),
       test_coverage: [
         ignore_modules: [
           # Auto-generated AshOban schedulers
@@ -76,6 +77,36 @@ defmodule Batcher.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
+  defp usage_rules do
+    [
+      file: "AGENTS.md",
+
+      # If your CLAUDE.md is getting too big, link instead of inlining:
+      usage_rules: [:ash, {~r/^ash_/, link: :at}],
+      usage_rules: [:phoenix, {~r/^phoenix_/, link: :at}],
+      # or use skills
+      skills: [
+        location: ".agents/skills",
+        # build skills that combine multiple usage rules
+        build: [
+          "ash-framework": [
+            # The description tells people how to use this skill.
+            description:
+              "Use this skill working with Ash Framework or any of its extensions. Always consult this when making any domain changes, features or fixes.",
+            # Include all Ash dependencies
+            usage_rules: [:ash, ~r/^ash_/]
+          ],
+          "phoenix-framework": [
+            description:
+              "Use this skill working with Phoenix Framework. Consult this when working with the web layer, controllers, views, liveviews etc.",
+            # Include all Phoenix dependencies
+            usage_rules: [:phoenix, ~r/^phoenix_/]
+          ]
+        ]
+      ]
+    ]
+  end
+
   # Specifies your project dependencies.
   #
   # Type `mix help deps` for examples and options.
@@ -84,7 +115,7 @@ defmodule Batcher.MixProject do
       {:open_api_spex, "~> 3.11"},
       {:sourceror, "~> 1.8", only: [:dev, :test]},
       {:oban, "~> 2.0"},
-      {:usage_rules, "~> 0.1", only: [:dev]},
+      {:usage_rules, "~> 1.0", only: [:dev]},
       {:live_debugger, "~> 0.4", only: [:dev]},
       {:ash_state_machine, "~> 0.2"},
       {:oban_web, "~> 2.0"},

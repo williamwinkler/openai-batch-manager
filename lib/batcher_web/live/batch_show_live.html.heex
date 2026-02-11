@@ -1,6 +1,9 @@
 <Layouts.app flash={@flash} current_path={@current_path} rabbitmq_connected={@rabbitmq_connected}>
   <div class="max-w-6xl mx-auto space-y-6">
-    <.breadcrumb items={[{"Batches", "/"}, {"Batch #{@batch.id}", ~p"/batches/#{@batch.id}"}]} />
+    <.breadcrumb items={[
+      {"Batches", "/batches"},
+      {"Batch #{@batch.id}", ~p"/batches/#{@batch.id}"}
+    ]} />
 
     <%!-- Page header --%>
     <div class="flex items-center justify-between">
