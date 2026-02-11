@@ -998,22 +998,23 @@ defmodule Batcher.Batching.RequestTest do
   end
 
   describe "Batcher.Batching.Request.cancel" do
-    test "transitions request from pending to cancelled" do
-      request = generate(seeded_request(state: :pending))
+    test "can cancel from active states" do
+      cancellable_states = [:pending, :openai_processing, :openai_processed, :delivering]
 
-      updated_request =
-        request
-        |> Ash.Changeset.for_update(:cancel)
-        |> Ash.update!()
+      for state <- cancellable_states do
+        request = generate(seeded_request(state: state))
 
-      assert updated_request.state == :cancelled
+        updated_request =
+          request
+          |> Ash.Changeset.for_update(:cancel)
+          |> Ash.update!()
+
+        assert updated_request.state == :cancelled
+      end
     end
 
     test "can't cancel from invalid state" do
       invalid_states = [
-        :openai_processing,
-        :openai_processed,
-        :delivering,
         :delivered,
         :failed,
         :expired,

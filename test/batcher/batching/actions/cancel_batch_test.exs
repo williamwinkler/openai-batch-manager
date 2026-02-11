@@ -270,5 +270,95 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
       assert DateTime.compare(latest_transition.transitioned_at, before_time) != :lt
       assert DateTime.compare(latest_transition.transitioned_at, after_time) != :gt
     end
+
+    test "cancels non-terminal requests when cancelling a batch", %{server: server} do
+      openai_batch_id = "batch_with_requests_123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id
+        )
+        |> generate()
+
+      pending_request =
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :pending
+        )
+        |> generate()
+
+      processing_request =
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :openai_processing
+        )
+        |> generate()
+
+      processed_request =
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :openai_processed
+        )
+        |> generate()
+
+      delivering_request =
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :delivering
+        )
+        |> generate()
+
+      delivered_request =
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :delivered
+        )
+        |> generate()
+
+      failed_request =
+        seeded_request(
+          batch_id: batch_before.id,
+          url: batch_before.url,
+          model: batch_before.model,
+          state: :failed
+        )
+        |> generate()
+
+      cancel_response = %{
+        "id" => openai_batch_id,
+        "status" => "cancelling",
+        "object" => "batch"
+      }
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/batches/#{openai_batch_id}/cancel",
+        cancel_response,
+        200
+      )
+
+      {:ok, batch_after} = Batching.cancel_batch(batch_before)
+      assert batch_after.state == :cancelled
+
+      assert Batching.get_request_by_id!(pending_request.id).state == :cancelled
+      assert Batching.get_request_by_id!(processing_request.id).state == :cancelled
+      assert Batching.get_request_by_id!(processed_request.id).state == :cancelled
+      assert Batching.get_request_by_id!(delivering_request.id).state == :cancelled
+
+      assert Batching.get_request_by_id!(delivered_request.id).state == :delivered
+      assert Batching.get_request_by_id!(failed_request.id).state == :failed
+    end
   end
 end

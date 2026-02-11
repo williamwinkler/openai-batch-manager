@@ -216,8 +216,6 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.Changeset.put_context(:delivery_attempt, %{outcome: :success})
       |> Ash.update!()
 
-    # Batch completion is checked by the check_delivery_completion AshOban trigger
-    # which runs on a queue with concurrency 1 to avoid race conditions
     {:ok, request_after}
   end
 
@@ -233,8 +231,6 @@ defmodule Batcher.Batching.Actions.Deliver do
       })
       |> Ash.update!()
 
-    # Batch completion is checked by the check_delivery_completion AshOban trigger
-    # which runs on a queue with concurrency 1 to avoid race conditions
     {:ok, request_after}
   end
 
