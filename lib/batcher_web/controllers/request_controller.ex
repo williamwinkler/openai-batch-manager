@@ -187,7 +187,8 @@ defmodule BatcherWeb.RequestController do
   Triggers redelivery for a request by custom_id if the request state allows it.
   """
   def redeliver_by_custom_id(conn, %{"custom_id" => custom_id}) do
-    with {:ok, [request]} <- Batching.list_requests_by_custom_id(custom_id),
+    with {:ok, [request]} <- Batching.list_requests_by_custom_id(custom_id, load: [:batch]),
+         {:ok, _batch} <- ensure_batch_ready_for_request_redelivery(request.batch),
          {:ok, updated_request} <- Batching.retry_request_delivery(request) do
       conn
       |> put_status(:accepted)
@@ -234,6 +235,20 @@ defmodule BatcherWeb.RequestController do
               code: "invalid_state",
               title: "Invalid Request State",
               detail: Exception.message(error)
+            }
+          ]
+        })
+
+      {:error, :invalid_batch_state} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          errors: [
+            %{
+              code: "invalid_batch_state",
+              title: "Invalid Batch State",
+              detail:
+                "Batch must be in delivering, partially_delivered, or delivery_failed state for request redelivery"
             }
           ]
         })
@@ -289,6 +304,21 @@ defmodule BatcherWeb.RequestController do
       delivery_attempt_count: length(attempts),
       delivery_attempts: attempts
     }
+  end
+
+  defp ensure_batch_ready_for_request_redelivery(batch) do
+    case batch.state do
+      :delivering ->
+        {:ok, batch}
+
+      state when state in [:partially_delivered, :delivery_failed] ->
+        batch
+        |> Ash.Changeset.for_update(:begin_redeliver)
+        |> Ash.update()
+
+      _ ->
+        {:error, :invalid_batch_state}
+    end
   end
 
   defp cast_and_validate(conn, _opts) do

@@ -1,5 +1,6 @@
 defmodule Batcher.Batching.Changes.CancelBatch do
   use Ash.Resource.Change
+  require Ash.Query
   require Logger
 
   @impl true
@@ -37,6 +38,19 @@ defmodule Batcher.Batching.Changes.CancelBatch do
       else
         changeset
       end
+    end)
+    |> Ash.Changeset.before_action(fn changeset ->
+      batch = changeset.data
+      cancellable_request_states = [:pending, :openai_processing, :openai_processed, :delivering]
+
+      Logger.info("Cancelling requests for batch #{batch.id}")
+
+      Batcher.Batching.Request
+      |> Ash.Query.filter(batch_id == ^batch.id)
+      |> Ash.Query.filter(state in ^cancellable_request_states)
+      |> Ash.bulk_update!(:cancel, %{}, strategy: :stream)
+
+      changeset
     end)
   end
 end

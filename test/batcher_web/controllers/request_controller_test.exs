@@ -430,7 +430,7 @@ defmodule BatcherWeb.RequestControllerTest do
   describe "POST /api/requests/:custom_id/redeliver" do
     test "triggers redelivery when request is in a retryable state", %{conn: conn} do
       batch =
-        seeded_batch(state: :delivering, model: "gpt-4o-mini", url: "/v1/responses")
+        seeded_batch(state: :partially_delivered, model: "gpt-4o-mini", url: "/v1/responses")
         |> generate()
 
       request =
@@ -450,11 +450,14 @@ defmodule BatcherWeb.RequestControllerTest do
       assert body["custom_id"] == request.custom_id
       assert body["state"] == "openai_processed"
       assert body["message"] == "Redelivery triggered"
+
+      batch_after = Batching.get_batch_by_id!(batch.id)
+      assert batch_after.state == :delivering
     end
 
     test "returns 422 when request is not in a retryable state", %{conn: conn} do
       batch =
-        seeded_batch(state: :building, model: "gpt-4o-mini", url: "/v1/responses")
+        seeded_batch(state: :delivering, model: "gpt-4o-mini", url: "/v1/responses")
         |> generate()
 
       request =
@@ -474,6 +477,30 @@ defmodule BatcherWeb.RequestControllerTest do
       assert body["errors"]
       error = hd(body["errors"])
       assert error["code"] == "invalid_state"
+    end
+
+    test "returns 422 when batch is not in a redelivery-compatible state", %{conn: conn} do
+      batch =
+        seeded_batch(state: :ready_to_deliver, model: "gpt-4o-mini", url: "/v1/responses")
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          custom_id: "redeliver_req_invalid_batch",
+          state: :delivery_failed,
+          model: "gpt-4o-mini",
+          url: "/v1/responses"
+        )
+        |> generate()
+
+      conn = post(conn, ~p"/api/requests/#{request.custom_id}/redeliver")
+      assert response(conn, 422)
+
+      body = JSON.decode!(conn.resp_body)
+      assert body["errors"]
+      error = hd(body["errors"])
+      assert error["code"] == "invalid_batch_state"
     end
 
     test "returns 404 when custom_id does not exist", %{conn: conn} do

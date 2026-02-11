@@ -59,7 +59,10 @@ defmodule Batcher.Batching.Request do
       transition :bulk_reset_to_pending, from: :openai_processing, to: :pending
 
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
-      transition :cancel, from: :pending, to: :cancelled
+
+      transition :cancel,
+        from: [:pending, :openai_processing, :openai_processed, :delivering],
+        to: :cancelled
     end
   end
 
