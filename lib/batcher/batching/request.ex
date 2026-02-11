@@ -15,8 +15,8 @@ defmodule Batcher.Batching.Request do
     repo Batcher.Repo
 
     custom_indexes do
-      # Ensure custom_id is unique within a batch
-      index [:custom_id, :batch_id], unique: true
+      # Ensure custom_id is globally unique across all requests
+      index [:custom_id], unique: true
       index [:batch_id]
     end
 
@@ -289,7 +289,7 @@ defmodule Batcher.Batching.Request do
     integer_primary_key :id
 
     attribute :custom_id, :string do
-      description "Custom identifier for the request (must be unique in it's batch)"
+      description "Custom identifier for the request (must be globally unique)"
       allow_nil? false
       public? true
     end
