@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.8...v0.1.9) (2026-02-11)
+
+
+### Features
+
+* add endpoints to GET and redeliver requests + retries on delivery ([74143ea](https://github.com/williamwinkler/openai-batch-manager/commit/74143eaeff5a1b3a26d8ad1c51064b26485fe712))
+
 ## [0.1.8](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.7...v0.1.8) (2026-02-08)
 
 
