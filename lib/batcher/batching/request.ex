@@ -46,6 +46,10 @@ defmodule Batcher.Batching.Request do
       # :mark_delivery_failed = Webhook delivery failed (delivery error, not a request error)
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
 
+      # Safety net for Oban on_error — transitions to delivery_failed if the
+      # deliver action crashes unexpectedly on the final Oban attempt
+      transition :handle_delivery_error, from: :delivering, to: :delivery_failed
+
       # Redeliver - allows redelivery from any state that has a response
       transition :retry_delivery,
         from: [:openai_processed, :delivered, :delivery_failed],
@@ -65,7 +69,9 @@ defmodule Batcher.Batching.Request do
         action :deliver
         where expr(state == :openai_processed)
         queue :delivery
-        max_attempts 1
+        max_attempts 3
+        backoff 10
+        on_error :handle_delivery_error
         worker_module_name Batching.Request.AshOban.Worker.Deliver
         scheduler_module_name Batching.Request.AshOban.Scheduler.Deliver
       end
@@ -95,6 +101,16 @@ defmodule Batcher.Batching.Request do
       argument :custom_id, :string, allow_nil?: false
       filter expr(batch_id == ^arg(:batch_id) and custom_id == ^arg(:custom_id))
       get? true
+    end
+
+    read :list_by_custom_id do
+      description "List requests by custom ID across all batches"
+      argument :custom_id, :string, allow_nil?: false
+      filter expr(custom_id == ^arg(:custom_id))
+
+      prepare fn query, _ ->
+        Ash.Query.sort(query, created_at: :desc)
+      end
     end
 
     read :list_requests_in_batch do
@@ -200,6 +216,13 @@ defmodule Batcher.Batching.Request do
       require_atomic? false
       change transition_state(:delivery_failed)
       change Batching.Changes.CreateDeliveryAttempt
+    end
+
+    update :handle_delivery_error do
+      description "Safety net for Oban on_error — transitions to delivery_failed if the deliver action crashes on the final attempt"
+      require_atomic? false
+      argument :error, :string, allow_nil?: true
+      change transition_state(:delivery_failed)
     end
 
     update :mark_expired do

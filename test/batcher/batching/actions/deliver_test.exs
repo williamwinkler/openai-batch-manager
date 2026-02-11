@@ -1432,16 +1432,390 @@ defmodule Batcher.Batching.Actions.DeliverTest do
     end
   end
 
+  describe "delivery retries" do
+    setup do
+      # Enable 3 attempts for retry tests (default test config is 1)
+      original = Application.get_env(:batcher, :delivery_max_attempts)
+      Application.put_env(:batcher, :delivery_max_attempts, 3)
+
+      on_exit(fn ->
+        if original do
+          Application.put_env(:batcher, :delivery_max_attempts, original)
+        else
+          Application.delete_env(:batcher, :delivery_max_attempts)
+        end
+      end)
+
+      :ok
+    end
+
+    # Helper to run the deliver action (simulates what Oban does on each attempt)
+    defp run_deliver(request) do
+      Batching.Request
+      |> Ash.ActionInput.for_action(:deliver, %{})
+      |> Map.put(:subject, request)
+      |> Ash.run_action()
+    end
+
+    test "retries webhook delivery 3 times then marks as delivery_failed", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Attempt 1: fails — intermediate, returns error for Oban retry
+      expect_json_response(server, :post, "/webhook", %{error: "fail 1"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      # Request should be in :delivering state (not delivery_failed yet)
+      request_reloaded = Batching.get_request_by_id!(request.id)
+      assert request_reloaded.state == :delivering
+
+      # Attempt 2: fails — intermediate, returns error for Oban retry
+      expect_json_response(server, :post, "/webhook", %{error: "fail 2"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 3: fails — final attempt, transitions to delivery_failed
+      expect_json_response(server, :post, "/webhook", %{error: "fail 3"}, 500)
+      assert {:ok, request_after} = run_deliver(request)
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      # 3 attempts total: 2 intermediate + 1 final (via CreateDeliveryAttempt change)
+      assert request_after.delivery_attempt_count == 3
+      assert length(request_after.delivery_attempts) == 3
+
+      # All attempts should be failures
+      Enum.each(request_after.delivery_attempts, fn attempt ->
+        assert attempt.outcome == :http_status_not_2xx
+      end)
+    end
+
+    test "DISABLE_DELIVERY_RETRY forces single delivery attempt", %{server: server} do
+      original_disable = Application.get_env(:batcher, :disable_delivery_retry)
+      Application.put_env(:batcher, :disable_delivery_retry, true)
+
+      on_exit(fn ->
+        if is_nil(original_disable) do
+          Application.delete_env(:batcher, :disable_delivery_retry)
+        else
+          Application.put_env(:batcher, :disable_delivery_retry, original_disable)
+        end
+      end)
+
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Setup in this describe block sets delivery_max_attempts=3.
+      # DISABLE_DELIVERY_RETRY should override that and fail on first attempt.
+      expect_json_response(server, :post, "/webhook", %{error: "fail once"}, 500)
+      assert {:ok, request_after} = run_deliver(request)
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+      assert request_after.state == :delivery_failed
+      assert request_after.delivery_attempt_count == 1
+      assert length(request_after.delivery_attempts) == 1
+    end
+
+    test "retries webhook delivery and succeeds on third attempt", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Attempt 1: fails
+      expect_json_response(server, :post, "/webhook", %{error: "fail 1"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 2: fails
+      expect_json_response(server, :post, "/webhook", %{error: "fail 2"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 3: succeeds
+      expect_json_response(server, :post, "/webhook", %{received: true}, 200)
+      assert {:ok, request_after} = run_deliver(request)
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after.state == :delivered
+      # 3 attempts: 2 intermediate failures + 1 final success
+      assert request_after.delivery_attempt_count == 3
+      assert length(request_after.delivery_attempts) == 3
+
+      # Check outcomes: 2 failures then 1 success (sorted by attempted_at)
+      sorted = Enum.sort_by(request_after.delivery_attempts, & &1.attempted_at, DateTime)
+      assert Enum.at(sorted, 0).outcome == :http_status_not_2xx
+      assert Enum.at(sorted, 1).outcome == :http_status_not_2xx
+      assert Enum.at(sorted, 2).outcome == :success
+    end
+
+    test "retries webhook delivery and succeeds on second attempt", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Attempt 1: fails
+      expect_json_response(server, :post, "/webhook", %{error: "fail"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 2: succeeds
+      expect_json_response(server, :post, "/webhook", %{received: true}, 200)
+      assert {:ok, request_after} = run_deliver(request)
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after.state == :delivered
+      # 2 attempts: 1 intermediate failure + 1 final success
+      assert request_after.delivery_attempt_count == 2
+      assert length(request_after.delivery_attempts) == 2
+    end
+
+    test "retries RabbitMQ delivery 3 times then marks as delivery_failed" do
+      # Start fake publisher with response sequence: 3 failures
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{
+            {"", "test_queue"} => [
+              {:error, :timeout},
+              {:error, :timeout},
+              {:error, :timeout}
+            ]
+          }
+        )
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      # Attempt 1: fails — intermediate
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 2: fails — intermediate
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 3: fails — final, transitions to delivery_failed
+      assert {:ok, request_after} = run_deliver(request)
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after.state == :delivery_failed
+      assert request_after.delivery_attempt_count == 3
+      assert length(request_after.delivery_attempts) == 3
+
+      Enum.each(request_after.delivery_attempts, fn attempt ->
+        assert attempt.outcome == :timeout
+      end)
+
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "retries RabbitMQ delivery and succeeds on third attempt" do
+      # Start fake publisher with response sequence: 2 failures then success
+      {:ok, _pid} =
+        FakePublisher.start_link(
+          responses: %{
+            {"", "test_queue"} => [
+              {:error, :not_connected},
+              {:error, :not_connected},
+              :ok
+            ]
+          }
+        )
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "rabbitmq",
+            "rabbitmq_queue" => "test_queue",
+            "rabbitmq_exchange" => ""
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      # Attempt 1: fails
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 2: fails
+      assert {:error, _} = run_deliver(request)
+
+      # Attempt 3: succeeds
+      assert {:ok, request_after} = run_deliver(request)
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after.state == :delivered
+      assert request_after.delivery_attempt_count == 3
+      assert length(request_after.delivery_attempts) == 3
+
+      sorted = Enum.sort_by(request_after.delivery_attempts, & &1.attempted_at, DateTime)
+      assert Enum.at(sorted, 0).outcome == :connection_error
+      assert Enum.at(sorted, 1).outcome == :connection_error
+      assert Enum.at(sorted, 2).outcome == :success
+
+      GenServer.stop(Batcher.RabbitMQ.Publisher)
+    end
+
+    test "request stays in delivering state during intermediate retries", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # Attempt 1: fails — request transitions to :delivering and stays there
+      expect_json_response(server, :post, "/webhook", %{error: "fail"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      # Verify request is in :delivering (not delivery_failed)
+      request_between = Batching.get_request_by_id!(request.id)
+      assert request_between.state == :delivering
+
+      # Intermediate attempt recorded
+      request_between = Ash.load!(request_between, [:delivery_attempt_count])
+      assert request_between.delivery_attempt_count == 1
+
+      # Attempt 2: also fails — still in :delivering
+      expect_json_response(server, :post, "/webhook", %{error: "fail"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      request_between = Batching.get_request_by_id!(request.id)
+      assert request_between.state == :delivering
+
+      # Attempt 3: final failure — NOW transitions to delivery_failed
+      expect_json_response(server, :post, "/webhook", %{error: "fail"}, 500)
+      assert {:ok, request_after} = run_deliver(request)
+      assert request_after.state == :delivery_failed
+    end
+
+    test "validation errors are not retried for webhook" do
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook"
+            # Missing webhook_url
+          },
+          response_payload: %{"output" => "test"}
+        )
+        |> generate()
+
+      result = run_deliver(request)
+
+      # Should fail immediately with validation error, no retries
+      assert {:error, %Ash.Error.Invalid{}} = result
+
+      # No delivery attempts should be recorded
+      request_after = Ash.load!(request, [:delivery_attempt_count])
+      assert request_after.delivery_attempt_count == 0
+    end
+  end
+
   describe "oban configuration" do
-    test "deliver trigger is configured with max_attempts of 1 (no retries)" do
-      # Verify the Oban trigger configuration for the deliver action
-      # This ensures webhook delivery only attempts once and doesn't retry on failure
+    test "deliver trigger is configured with max_attempts of 3" do
       triggers = Batching.Request |> AshOban.Info.oban_triggers()
 
       deliver_trigger = Enum.find(triggers, fn trigger -> trigger.action == :deliver end)
 
       assert deliver_trigger != nil, "Expected :deliver trigger to exist"
-      assert deliver_trigger.max_attempts == 1, "Expected max_attempts to be 1 (no retries)"
+      assert deliver_trigger.max_attempts == 3, "Expected max_attempts to be 3"
     end
   end
 end

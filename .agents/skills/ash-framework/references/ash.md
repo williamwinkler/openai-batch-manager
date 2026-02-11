@@ -1,74 +1,3 @@
-# OpenAI Batch Manager
-
-This is a **Phoenix 1.8.1** web application built with the **Ash Framework** for managing batching of LLM prompts for processing by providers like OpenAI. The application provides state machine-based workflow management with audit trails for both batches and individual prompts.
-
-**Tech Stack:**
-- Phoenix 1.8.1 + Ash Framework 3.0 (domain-driven development)
-- Database: SQLite with AshSqlite adapter
-- Job Queue: Oban 2.0 for background processing
-- State Management: AshStateMachine extension
-- Styling: Tailwind v4 + daisyUI
-
-## Project Overview
-
-The application manages two primary resources:
-- **Batches** - Collections of prompts with 11-state workflow (draft → upload → processing → download → completed/failed/etc)
-- **Prompts** - Individual LLM prompts with 8-state workflow (pending → processing → delivery → delivered/failed/etc)
-
-Both resources use state machines with automatic audit trails tracking every state transition.
-
-## Project Guidelines
-
-- Use `mix precommit` alias when you are done with all changes and fix any pending issues
-- Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
-- **Never** create traditional Phoenix Contexts - this app uses Ash Framework domains instead (see Ash Framework guidelines below)
-
-### Phoenix v1.8 guidelines
-
-- **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content
-- The `MyAppWeb.Layouts` module is aliased in the `my_app_web.ex` file, so you can use it without needing to alias it again
-- Anytime you run into errors with no `current_scope` assign:
-  - You failed to follow the Authenticated Routes guidelines, or you failed to pass `current_scope` to `<Layouts.app>`
-  - **Always** fix the `current_scope` error by moving your routes to the proper `live_session` and ensure you pass `current_scope` as needed
-- Phoenix v1.8 moved the `<.flash_group>` component to the `Layouts` module. You are **forbidden** from calling `<.flash_group>` outside of the `layouts.ex` module
-- Out of the box, `core_components.ex` imports an `<.icon name="hero-x-mark" class="w-5 h-5"/>` component for for hero icons. **Always** use the `<.icon>` component for icons, **never** use `Heroicons` modules or similar
-- **Always** use the imported `<.input>` component for form inputs from `core_components.ex` when available. `<.input>` is imported and using it will will save steps and prevent errors
-- If you override the default input classes (`<.input class="myclass px-2 py-1 rounded-lg">)`) class with your own values, no default classes are inherited, so your
-custom classes must fully style the input
-
-### JS and CSS guidelines
-
-- **Use Tailwind CSS classes and custom CSS rules** to create polished, responsive, and visually stunning interfaces.
-- Tailwindcss v4 **no longer needs a tailwind.config.js** and uses a new import syntax in `app.css`:
-
-      @import "tailwindcss" source(none);
-      @source "../css";
-      @source "../js";
-      @source "../../lib/batcher_web";
-
-- **Always use and maintain this import syntax** in the [app.css](assets/css/app.css) file
-- **Never** use `@apply` when writing raw css
-- This project includes **daisyUI** for component library - you can use daisyUI components alongside custom Tailwind classes
-- **Heroicons** are available via the `<.icon name="hero-x-mark" />` component from [core_components.ex](lib/batcher_web/components/core_components.ex)
-- The app supports **light and dark themes** - use daisyUI theme classes and test both themes
-- Out of the box **only the app.js and app.css bundles are supported**
-  - You cannot reference an external vendor'd script `src` or link `href` in the layouts
-  - You must import the vendor deps into app.js and app.css to use them
-  - **Never write inline <script>custom js</script> tags within templates**
-
-### UI/UX & design guidelines
-
-- **Produce world-class UI designs** with a focus on usability, aesthetics, and modern design principles
-- Implement **subtle micro-interactions** (e.g., button hover effects, and smooth transitions)
-- Ensure **clean typography, spacing, and layout balance** for a refined, premium look
-- Focus on **delightful details** like hover effects, loading states, and smooth page transitions
-
-
-<!-- usage-rules-start -->
-<!-- ash-start -->
-## ash usage
-_A declarative, extensible framework for building Elixir applications._
-
 # Rules for working with Ash
 
 ## Understanding Ash
@@ -315,7 +244,7 @@ actions do
   create :sign_up do
     validate present([:email, :password])  # Only for this action
   end
-
+  
   read :search do
     argument :email, :string
     validate match(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/)  # Validates query arguments
@@ -1158,11 +1087,11 @@ aggregates do
   count :matching_profiles_count, Profile do
     filter expr(name == parent(name))
   end
-
+  
   sum :total_report_score, Report, :score do
     filter expr(author_name == parent(name))
   end
-
+  
   exists :has_reports, Report do
     filter expr(author_name == parent(name))
   end
@@ -1265,8 +1194,8 @@ Ash.Query.filter(User, exists(Profile, name == parent(name)))
 Ash.Query.filter(User, exists(Report, author_name == parent(name)))
 
 # Complex existence checks
-Ash.Query.filter(User,
-  active == true and
+Ash.Query.filter(User, 
+  active == true and 
   exists(Profile, active == true and name == parent(name))
 )
 ```
@@ -1332,24 +1261,3 @@ end
 ```
 
 This applies to ANY field used in identity constraints, not just primary keys. Using globally unique values prevents frustrating intermittent test failures in CI environments.
-
-<!-- ash-end -->
-<!-- ash_phoenix-start -->
-## ash_phoenix usage
-_Utilities for integrating Ash and Phoenix_
-
-@deps/ash_phoenix/usage-rules.md
-<!-- ash_phoenix-end -->
-<!-- ash_json_api-start -->
-## ash_json_api usage
-_The JSON:API extension for the Ash Framework._
-
-@deps/ash_json_api/usage-rules.md
-<!-- ash_json_api-end -->
-<!-- ash_oban-start -->
-## ash_oban usage
-_The extension for integrating Ash resources with Oban._
-
-@deps/ash_oban/usage-rules.md
-<!-- ash_oban-end -->
-<!-- usage-rules-end -->

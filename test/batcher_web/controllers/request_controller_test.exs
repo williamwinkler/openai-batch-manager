@@ -2,6 +2,7 @@ defmodule BatcherWeb.RequestControllerTest do
   use BatcherWeb.ConnCase, async: false
 
   alias Batcher.Batching
+  import Batcher.Generator
 
   setup do
     {:ok, server} = TestServer.start()
@@ -375,6 +376,109 @@ defmodule BatcherWeb.RequestControllerTest do
       assert response(conn, 202)
       body = JSON.decode!(conn.resp_body)
       assert body["custom_id"] == "simple_request"
+    end
+  end
+
+  describe "GET /api/requests/:custom_id" do
+    test "returns request by custom_id including delivery_attempt history", %{conn: conn} do
+      batch =
+        seeded_batch(state: :delivering, model: "gpt-4o-mini", url: "/v1/responses")
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          custom_id: "lookup_req_1",
+          state: :delivery_failed,
+          model: "gpt-4o-mini",
+          url: "/v1/responses",
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        )
+        |> generate()
+
+      Ash.create!(Batcher.Batching.RequestDeliveryAttempt, %{
+        request_id: request.id,
+        delivery_config: request.delivery_config,
+        outcome: :timeout,
+        error_msg: "request timed out"
+      })
+
+      conn = get(conn, ~p"/api/requests/#{request.custom_id}")
+      assert response(conn, 200)
+
+      body = JSON.decode!(conn.resp_body)
+      assert body["id"] == request.id
+      assert body["custom_id"] == request.custom_id
+      assert body["state"] == "delivery_failed"
+      assert is_list(body["delivery_attempts"])
+      assert length(body["delivery_attempts"]) == 1
+
+      attempt = hd(body["delivery_attempts"])
+      assert attempt["outcome"] == "timeout"
+      assert attempt["error_msg"] == "request timed out"
+    end
+
+    test "returns 404 when custom_id does not exist", %{conn: conn} do
+      conn = get(conn, ~p"/api/requests/does_not_exist")
+      assert response(conn, 404)
+    end
+  end
+
+  describe "POST /api/requests/:custom_id/redeliver" do
+    test "triggers redelivery when request is in a retryable state", %{conn: conn} do
+      batch =
+        seeded_batch(state: :delivering, model: "gpt-4o-mini", url: "/v1/responses")
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          custom_id: "redeliver_req_1",
+          state: :delivery_failed,
+          model: "gpt-4o-mini",
+          url: "/v1/responses"
+        )
+        |> generate()
+
+      conn = post(conn, ~p"/api/requests/#{request.custom_id}/redeliver")
+      assert response(conn, 202)
+
+      body = JSON.decode!(conn.resp_body)
+      assert body["custom_id"] == request.custom_id
+      assert body["state"] == "openai_processed"
+      assert body["message"] == "Redelivery triggered"
+    end
+
+    test "returns 422 when request is not in a retryable state", %{conn: conn} do
+      batch =
+        seeded_batch(state: :building, model: "gpt-4o-mini", url: "/v1/responses")
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          custom_id: "redeliver_req_invalid",
+          state: :pending,
+          model: "gpt-4o-mini",
+          url: "/v1/responses"
+        )
+        |> generate()
+
+      conn = post(conn, ~p"/api/requests/#{request.custom_id}/redeliver")
+      assert response(conn, 422)
+
+      body = JSON.decode!(conn.resp_body)
+      assert body["errors"]
+      error = hd(body["errors"])
+      assert error["code"] == "invalid_state"
+    end
+
+    test "returns 404 when custom_id does not exist", %{conn: conn} do
+      conn = post(conn, ~p"/api/requests/does_not_exist/redeliver")
+      assert response(conn, 404)
     end
   end
 end

@@ -2,11 +2,19 @@ defmodule BatcherWeb.RequestController do
   use BatcherWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
+  alias Batcher.Batching
   alias Batcher.Batching.Handlers
-  alias BatcherWeb.Schemas.{RequestInputObject, ErrorResponseSchema, RequestResponseSchema}
+
+  alias BatcherWeb.Schemas.{
+    ErrorResponseSchema,
+    RequestByCustomIdResponseSchema,
+    RequestInputObject,
+    RequestRedeliverResponseSchema,
+    RequestResponseSchema
+  }
 
   # OpenApiSpex plugs automatically validate and cast the request
-  plug OpenApiSpex.Plug.CastAndValidate, json_render_error_v2: true
+  plug :cast_and_validate when action in [:create]
 
   operation(:create,
     summary: "Send a request for batch processing",
@@ -87,5 +95,206 @@ defmodule BatcherWeb.RequestController do
           ]
         })
     end
+  end
+
+  operation(:show_by_custom_id,
+    summary: "Get a request by custom_id",
+    parameters: [
+      custom_id: [in: :path, description: "Request custom_id", type: :string, required: true]
+    ],
+    responses: [
+      ok: {"Request with delivery history", "application/json", RequestByCustomIdResponseSchema},
+      not_found: {"Request not found", "application/json", ErrorResponseSchema},
+      conflict: {"Multiple requests found for custom_id", "application/json", ErrorResponseSchema}
+    ]
+  )
+
+  @doc """
+  Fetches a request by custom_id and includes delivery attempt history.
+  """
+  def show_by_custom_id(conn, %{"custom_id" => custom_id}) do
+    case Batching.list_requests_by_custom_id(custom_id, load: [:delivery_attempts]) do
+      {:ok, []} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{
+          errors: [
+            %{
+              code: "not_found",
+              title: "Request Not Found",
+              detail: "No request found with custom_id=#{custom_id}"
+            }
+          ]
+        })
+
+      {:ok, [request]} ->
+        conn
+        |> put_status(:ok)
+        |> json(serialize_request(request))
+
+      {:ok, requests} ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{
+          errors: [
+            %{
+              code: "ambiguous_custom_id",
+              title: "Multiple Requests Found",
+              detail:
+                "Found #{length(requests)} requests with custom_id=#{custom_id}. custom_id is only unique within a batch."
+            }
+          ]
+        })
+
+      {:error, error} ->
+        require Logger
+
+        Logger.error("Failed to fetch request by custom_id",
+          custom_id: custom_id,
+          error: inspect(error, pretty: true)
+        )
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{
+          errors: [
+            %{
+              code: "internal_error",
+              title: "Internal Server Error",
+              detail: "An error occurred while fetching the request."
+            }
+          ]
+        })
+    end
+  end
+
+  operation(:redeliver_by_custom_id,
+    summary: "Trigger redelivery by custom_id",
+    parameters: [
+      custom_id: [in: :path, description: "Request custom_id", type: :string, required: true]
+    ],
+    responses: [
+      accepted: {"Redelivery triggered", "application/json", RequestRedeliverResponseSchema},
+      not_found: {"Request not found", "application/json", ErrorResponseSchema},
+      conflict:
+        {"Multiple requests found for custom_id", "application/json", ErrorResponseSchema},
+      unprocessable_entity:
+        {"Invalid state for redelivery", "application/json", ErrorResponseSchema}
+    ]
+  )
+
+  @doc """
+  Triggers redelivery for a request by custom_id if the request state allows it.
+  """
+  def redeliver_by_custom_id(conn, %{"custom_id" => custom_id}) do
+    with {:ok, [request]} <- Batching.list_requests_by_custom_id(custom_id),
+         {:ok, updated_request} <- Batching.retry_request_delivery(request) do
+      conn
+      |> put_status(:accepted)
+      |> json(%{
+        id: updated_request.id,
+        custom_id: updated_request.custom_id,
+        state: updated_request.state,
+        message: "Redelivery triggered"
+      })
+    else
+      {:ok, []} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{
+          errors: [
+            %{
+              code: "not_found",
+              title: "Request Not Found",
+              detail: "No request found with custom_id=#{custom_id}"
+            }
+          ]
+        })
+
+      {:ok, requests} when is_list(requests) ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{
+          errors: [
+            %{
+              code: "ambiguous_custom_id",
+              title: "Multiple Requests Found",
+              detail:
+                "Found #{length(requests)} requests with custom_id=#{custom_id}. custom_id is only unique within a batch."
+            }
+          ]
+        })
+
+      {:error, %Ash.Error.Invalid{} = error} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          errors: [
+            %{
+              code: "invalid_state",
+              title: "Invalid Request State",
+              detail: Exception.message(error)
+            }
+          ]
+        })
+
+      {:error, error} ->
+        require Logger
+
+        Logger.error("Failed to redeliver request by custom_id",
+          custom_id: custom_id,
+          error: inspect(error, pretty: true)
+        )
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{
+          errors: [
+            %{
+              code: "internal_error",
+              title: "Internal Server Error",
+              detail: "An error occurred while triggering redelivery."
+            }
+          ]
+        })
+    end
+  end
+
+  defp serialize_request(request) do
+    attempts =
+      request.delivery_attempts
+      |> Enum.sort_by(& &1.attempted_at, {:desc, DateTime})
+      |> Enum.map(fn attempt ->
+        %{
+          id: attempt.id,
+          outcome: attempt.outcome,
+          error_msg: attempt.error_msg,
+          delivery_config: attempt.delivery_config,
+          attempted_at: attempt.attempted_at
+        }
+      end)
+
+    %{
+      id: request.id,
+      batch_id: request.batch_id,
+      custom_id: request.custom_id,
+      url: request.url,
+      model: request.model,
+      state: request.state,
+      delivery_config: request.delivery_config,
+      error_msg: request.error_msg,
+      created_at: request.created_at,
+      updated_at: request.updated_at,
+      request_payload_size: request.request_payload_size,
+      delivery_attempt_count: length(attempts),
+      delivery_attempts: attempts
+    }
+  end
+
+  defp cast_and_validate(conn, _opts) do
+    OpenApiSpex.Plug.CastAndValidate.call(
+      conn,
+      OpenApiSpex.Plug.CastAndValidate.init(json_render_error_v2: true)
+    )
   end
 end

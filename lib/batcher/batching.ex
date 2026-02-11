@@ -29,6 +29,10 @@ defmodule Batcher.Batching do
         action: :get_request_by_custom_id,
         args: [:batch_id, :custom_id]
 
+      define :list_requests_by_custom_id,
+        action: :list_by_custom_id,
+        args: [:custom_id]
+
       define :list_requests_in_batch, action: :list_requests_in_batch, args: [:batch_id]
       define :list_requests_paginated, action: :list_paginated, args: [:batch_id, :skip, :limit]
 

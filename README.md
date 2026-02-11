@@ -152,8 +152,11 @@ Then you should see the frontedn at: **http://localhost:4000**
 | `RABBITMQ_INPUT_QUEUE` | No | — |
 | `RABBITMQ_INPUT_EXCHANGE` | No | — |
 | `RABBITMQ_INPUT_ROUTING_KEY` | No | — |
+| `DISABLE_DELIVERY_RETRY` | No | `false` |
 
 Data lives at `/data/batcher.db` and `/data/batches` (mount a volume at `/data` in Docker).
+
+When `DISABLE_DELIVERY_RETRY=true` (also accepts `1`/`yes`), failed delivery attempts are **not retried** and each request gets only one delivery attempt.
 
 ## Development
 

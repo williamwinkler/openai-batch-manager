@@ -44,6 +44,16 @@ if config_env() != :test do
   end
 end
 
+# Delivery retry toggle
+# - DISABLE_DELIVERY_RETRY=true: force delivery to a single attempt (no retries)
+disable_delivery_retry? =
+  case System.get_env("DISABLE_DELIVERY_RETRY") do
+    value when value in ["1", "true", "TRUE", "yes", "YES"] -> true
+    _ -> false
+  end
+
+config :batcher, :disable_delivery_retry, disable_delivery_retry?
+
 # Batch storage: hardcoded paths per environment
 default_batch_path =
   cond do

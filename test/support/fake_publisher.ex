@@ -73,8 +73,29 @@ defmodule Batcher.RabbitMQ.FakePublisher do
   @impl true
   def handle_call({:publish, exchange, routing_key, _payload, _opts}, _from, state) do
     destination = {exchange, routing_key}
-    response = Map.get(state.responses, destination, state.default_response)
-    {:reply, response, state}
+
+    {response, new_responses} =
+      get_next_response(state.responses, destination, state.default_response)
+
+    {:reply, response, %{state | responses: new_responses}}
+  end
+
+  # Supports both single values and lists (consumed in order, last element repeats).
+  defp get_next_response(responses, destination, default) do
+    case Map.fetch(responses, destination) do
+      :error ->
+        {default, responses}
+
+      {:ok, [response, _ | _] = list} ->
+        [_ | rest] = list
+        {response, Map.put(responses, destination, rest)}
+
+      {:ok, [response]} ->
+        {response, responses}
+
+      {:ok, response} ->
+        {response, responses}
+    end
   end
 
   @impl true

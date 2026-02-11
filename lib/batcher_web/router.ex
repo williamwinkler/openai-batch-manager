@@ -48,6 +48,8 @@ defmodule BatcherWeb.Router do
 
     # API endpoints
     post "/requests", BatcherWeb.RequestController, :create
+    get "/requests/:custom_id", BatcherWeb.RequestController, :show_by_custom_id
+    post "/requests/:custom_id/redeliver", BatcherWeb.RequestController, :redeliver_by_custom_id
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
