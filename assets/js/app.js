@@ -191,8 +191,41 @@ const Tooltip = {
 
 // Local time conversion hook - converts UTC timestamps to browser local time
 const LocalTime = {
-  mounted() { this.formatTime() },
+  mounted() {
+    this.startAutoRefresh()
+    this.formatTime()
+  },
   updated() { this.formatTime() },
+  destroyed() { this.stopAutoRefresh() },
+  disconnected() { this.stopAutoRefresh() },
+  reconnected() {
+    this.startAutoRefresh()
+    this.formatTime()
+  },
+  startAutoRefresh() {
+    this.stopAutoRefresh()
+    if (this.el.dataset.format === "time-ago-tooltip") {
+      this.refreshTimer = setInterval(() => this.formatTime(), 30_000)
+    }
+  },
+  stopAutoRefresh() {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer)
+      this.refreshTimer = null
+    }
+  },
+  formatRelativeTime(date) {
+    const diffSeconds = Math.floor((Date.now() - date.getTime()) / 1000)
+
+    if (diffSeconds < 0) return "in the future"
+    if (diffSeconds < 60) return "<1m ago"
+    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`
+    if (diffSeconds < 86_400) return `${Math.floor(diffSeconds / 3600)}h ago`
+    if (diffSeconds < 604_800) return `${Math.floor(diffSeconds / 86_400)}d ago`
+    if (diffSeconds < 2_592_000) return `${Math.floor(diffSeconds / 604_800)}w ago`
+    if (diffSeconds < 31_536_000) return `${Math.floor(diffSeconds / 2_592_000)}mo ago`
+    return `${Math.floor(diffSeconds / 31_536_000)}y ago`
+  },
   formatTime() {
     const utc = this.el.dataset.utc
     if (!utc) return
@@ -225,6 +258,10 @@ const LocalTime = {
       case "tooltip":
         formatted = `${day}/${monthNum}/${year}, ${hours}:${minutes}`
         break
+      case "time-ago-tooltip":
+        this.el.title = `${day}/${monthNum}/${year}, ${hours}:${minutes}`
+        this.el.textContent = this.formatRelativeTime(date)
+        return
       default:
         return
     }
