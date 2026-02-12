@@ -69,7 +69,7 @@
                   class="text-sm text-base-content/50"
                   phx-hook="LocalTime"
                   data-utc={DateTime.to_iso8601(request.created_at)}
-                  data-format="tooltip"
+                  data-format="time-ago-tooltip"
                   title={Calendar.strftime(request.created_at, "%d/%m/%Y, %H:%M")}
                 >
                   {Format.time_ago(request.created_at)}
@@ -81,7 +81,7 @@
                   class="text-sm text-base-content/50"
                   phx-hook="LocalTime"
                   data-utc={DateTime.to_iso8601(request.updated_at)}
-                  data-format="tooltip"
+                  data-format="time-ago-tooltip"
                   title={Calendar.strftime(request.updated_at, "%d/%m/%Y, %H:%M")}
                 >
                   {Format.time_ago(request.updated_at)}
