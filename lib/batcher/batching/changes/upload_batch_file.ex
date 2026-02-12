@@ -55,7 +55,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
       |> Ash.Query.filter(state == :pending)
       |> Ash.Query.select([:request_payload])
       |> Ash.stream!(batch_size: 100)
-      |> Stream.each(&IO.write(file, &1.request_payload <> "\n"))
+      |> Stream.each(&IO.binwrite(file, &1.request_payload <> "\n"))
       |> Stream.run()
     after
       File.close(file)

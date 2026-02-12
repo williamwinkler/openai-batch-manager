@@ -64,6 +64,48 @@ defmodule Batcher.Batching.Changes.UploadBatchFileTest do
       refute File.exists?(batch_file_path)
     end
 
+    test "handles unicode payload content during file build and upload", %{server: server} do
+      batch = generate(batch())
+
+      {:ok, _request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_unicode_1",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_unicode_1",
+            body: %{input: "text with em dash — and unicode", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      {:ok, batch} = Batching.start_batch_upload(batch)
+
+      expires_at = System.os_time(:second) + 30 * 24 * 60 * 60
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/files",
+        %{"id" => "file-unicode-123", "expires_at" => expires_at},
+        200
+      )
+
+      {:ok, updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:upload)
+        |> Ash.update()
+
+      assert updated_batch.openai_input_file_id == "file-unicode-123"
+      assert updated_batch.state == :uploaded
+    end
+
     test "handles file upload failure", %{server: server} do
       batch = generate(batch())
 

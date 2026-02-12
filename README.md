@@ -54,6 +54,11 @@ services:
       - RABBITMQ_INPUT_QUEUE=${RABBITMQ_INPUT_QUEUE}  # Optional
     volumes:
       - ./data:/data
+    logging: # Optional
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/"]
