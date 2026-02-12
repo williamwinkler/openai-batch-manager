@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.12...v0.1.13) (2026-02-12)
+
+
+### Bug Fixes
+
+* stale time ago display ([#35](https://github.com/williamwinkler/openai-batch-manager/issues/35)) ([01d9563](https://github.com/williamwinkler/openai-batch-manager/commit/01d956384e714a45bbbc312f12ea57d9ff888472))
+
 ## [0.1.12](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.11...v0.1.12) (2026-02-12)
 
 
