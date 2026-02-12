@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.11...v0.1.12) (2026-02-12)
+
+
+### Bug Fixes
+
+* unicode IO.write failed translation =&gt; IO.binwrite ([#33](https://github.com/williamwinkler/openai-batch-manager/issues/33)) ([6af4186](https://github.com/williamwinkler/openai-batch-manager/commit/6af418697569147872f84cedf8268326ec91e889))
+
 ## [0.1.11](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.10...v0.1.11) (2026-02-11)
 
 
