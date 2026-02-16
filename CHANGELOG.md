@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.14](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.13...v0.1.14) (2026-02-16)
+
+
+### Bug Fixes
+
+* auto upload batches when close to 100MB ([32e1b1c](https://github.com/williamwinkler/openai-batch-manager/commit/32e1b1ce201ca7e206e3207b97b679205f78934a))
+* auto upload batches when they are close to 100MB ([3d93fb7](https://github.com/williamwinkler/openai-batch-manager/commit/3d93fb7b9b0b01b9672947de4b47f3c22b09c31d))
+* delete oban jobs for batch when cancelled ([62f26c1](https://github.com/williamwinkler/openai-batch-manager/commit/62f26c1c8ea7128e240bbe46afcf6a862161225d))
+
 ## [0.1.13](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.12...v0.1.13) (2026-02-12)
 
 
