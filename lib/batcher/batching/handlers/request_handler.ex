@@ -14,9 +14,9 @@ defmodule Batcher.Batching.Handlers.RequestHandler do
       {:ok, request} ->
         {:ok, request}
 
-      {:error, :batch_full} ->
+      {:error, reason} when reason in [:batch_full, :batch_not_building] ->
         Logger.info(
-          "Batch for url=#{url} model=#{model} was full. Will try to add request #{custom_id} to a new batch"
+          "Batch for url=#{url} model=#{model} is rotating (#{reason}). Will try to add request #{custom_id} to a new batch"
         )
 
         # Try again

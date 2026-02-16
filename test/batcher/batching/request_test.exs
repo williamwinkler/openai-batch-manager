@@ -177,7 +177,7 @@ defmodule Batcher.Batching.RequestTest do
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :batch_id and String.contains?(err.message, "not in building state")
+               err.field == :batch_id and error_reason(err) == :batch_not_building
              end)
     end
 
@@ -201,7 +201,7 @@ defmodule Batcher.Batching.RequestTest do
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :batch_id and String.contains?(err.message, "batch not found")
+               err.field == :batch_id and error_reason(err) == :batch_not_found
              end)
     end
 
@@ -249,16 +249,13 @@ defmodule Batcher.Batching.RequestTest do
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :batch_id and String.contains?(err.message, "full")
+               err.field == :batch_id and error_reason(err) == :batch_full
              end)
     end
 
-    test "can't create request when batch size exceeds limit (using test limit of 1MB)" do
+    test "can't create request when incoming payload would exceed batch size limit (using test limit of 1MB)" do
       batch = generate(batch())
 
-      # Create requests with large payloads to exceed 1MB limit
-      # Each request payload is ~350KB, so 3 requests = ~1.05MB > 1MB limit
-      # This stays under the 5 request count limit
       large_payload_base = %{
         body: %{
           input: String.duplicate("x", 350_000),
@@ -268,8 +265,8 @@ defmodule Batcher.Batching.RequestTest do
         url: batch.url
       }
 
-      # Create 3 requests with large payloads (total ~1.05MB > 1MB limit)
-      for i <- 1..3 do
+      # Keep the current batch below 1MB.
+      for i <- 1..2 do
         {:ok, _} =
           Batching.create_request(%{
             batch_id: batch.id,
@@ -284,14 +281,14 @@ defmodule Batcher.Batching.RequestTest do
           })
       end
 
-      # Try to create one more request - should fail due to size limit
+      # This request would push the batch over the size limit.
       {:error, %Ash.Error.Invalid{} = error} =
         Batching.create_request(%{
           batch_id: batch.id,
-          custom_id: "large_4",
+          custom_id: "large_3",
           url: batch.url,
           model: batch.model,
-          request_payload: Map.put(large_payload_base, :custom_id, "large_4"),
+          request_payload: Map.put(large_payload_base, :custom_id, "large_3"),
           delivery_config: %{
             "type" => "webhook",
             "webhook_url" => "https://example.com/webhook"
@@ -299,7 +296,7 @@ defmodule Batcher.Batching.RequestTest do
         })
 
       assert Enum.any?(error.errors, fn err ->
-               err.field == :batch_id and String.contains?(err.message, "exceeds")
+               err.field == :batch_id and error_reason(err) == :batch_size_would_exceed
              end)
     end
 
@@ -1118,4 +1115,12 @@ defmodule Batcher.Batching.RequestTest do
       assert request.batch.url == batch.url
     end
   end
+
+  defp error_reason(%{private_vars: vars}) when is_map(vars), do: Map.get(vars, :reason)
+  defp error_reason(%{private_vars: vars}) when is_list(vars), do: Keyword.get(vars, :reason)
+
+  defp error_reason(%{vars: vars}) when is_map(vars), do: Map.get(vars, :reason)
+  defp error_reason(%{vars: vars}) when is_list(vars), do: Keyword.get(vars, :reason)
+
+  defp error_reason(_), do: nil
 end

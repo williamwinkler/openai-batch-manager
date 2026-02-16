@@ -1,7 +1,9 @@
 defmodule Batcher.Batching.Actions.CancelBatchTest do
   use Batcher.DataCase, async: false
+  use Oban.Testing, repo: Batcher.Repo
 
   alias Batcher.Batching
+  alias Oban.Job
 
   import Batcher.Generator
   import Batcher.TestServer
@@ -9,6 +11,7 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
   setup do
     {:ok, server} = TestServer.start()
     Process.put(:openai_base_url, TestServer.url(server))
+    Repo.delete_all(Job)
     {:ok, server: server}
   end
 
@@ -360,5 +363,51 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
       assert Batching.get_request_by_id!(delivered_request.id).state == :delivered
       assert Batching.get_request_by_id!(failed_request.id).state == :failed
     end
+
+    test "cancels enqueued upload jobs for a batch and prevents queue drain progression", %{
+      server: _server
+    } do
+      batch = generate(batch())
+      generate(seeded_request(batch_id: batch.id, url: batch.url, model: batch.model))
+
+      {:ok, uploading_batch} = Batching.start_batch_upload(batch)
+      assert uploading_batch.state == :uploading
+      assert_enqueued(worker: Batcher.Batching.Batch.AshOban.Worker.UploadBatch)
+
+      upload_job_before_cancel = find_upload_job_for_batch(uploading_batch.id)
+
+      assert upload_job_before_cancel
+      assert upload_job_before_cancel.state == "available"
+
+      {:ok, cancelled_batch} = Batching.cancel_batch(uploading_batch)
+      assert cancelled_batch.state == :cancelled
+
+      upload_job_after_cancel = find_upload_job_for_batch(cancelled_batch.id)
+
+      assert upload_job_after_cancel
+      assert upload_job_after_cancel.state == "cancelled"
+
+      Oban.drain_queue(queue: :batch_uploads)
+      Oban.drain_queue(queue: :default)
+      Oban.drain_queue(queue: :batch_processing)
+
+      batch_after_drain = Batching.get_batch_by_id!(cancelled_batch.id)
+      assert batch_after_drain.state == :cancelled
+    end
+  end
+
+  defp find_upload_job_for_batch(batch_id) do
+    target_batch_id = Integer.to_string(batch_id)
+
+    Repo.all(from job in Job, where: job.queue == "batch_uploads")
+    |> Enum.find(fn job ->
+      extracted_id =
+        get_in(job.args, ["params", "primary_key", "id"]) ||
+          get_in(job.args, ["primary_key", "id"]) ||
+          get_in(job.args, [:params, :primary_key, :id]) ||
+          get_in(job.args, [:primary_key, :id])
+
+      "#{extracted_id}" == target_batch_id
+    end)
   end
 end

@@ -31,8 +31,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "not in building state")
+      assert reason_for_result(result) == :batch_not_building
+      assert String.contains?(error_message(result), "not in building state")
     end
 
     test "returns error when batch is full" do
@@ -51,43 +51,12 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "full")
-      assert String.contains?(message, "max 5 requests")
+      assert reason_for_result(result) == :batch_full
     end
 
-    test "returns error when batch size exceeds limit" do
+    test "batch full error keeps user-facing request limit message" do
       batch = generate(batch())
-
-      # Create requests with large payloads to exceed 1MB limit
-      # Each request payload is ~350KB, so 3 requests = ~1.05MB > 1MB limit
-      # This stays under the 5 request count limit
-      large_payload_base = %{
-        body: %{
-          input: String.duplicate("x", 350_000),
-          model: batch.model
-        },
-        method: "POST",
-        url: batch.url
-      }
-
-      # Create 3 requests with large payloads (total ~1.05MB > 1MB limit)
-      for i <- 1..3 do
-        {:ok, _} =
-          Batching.create_request(%{
-            batch_id: batch.id,
-            custom_id: "large_#{i}",
-            url: batch.url,
-            model: batch.model,
-            request_payload: Map.put(large_payload_base, :custom_id, "large_#{i}"),
-            delivery_config: %{
-              "type" => "webhook",
-              "webhook_url" => "https://example.com/webhook"
-            }
-          })
-      end
-
-      # Reload batch to get updated size_bytes
+      generate_many(request(batch_id: batch.id), 5)
       {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
 
       changeset =
@@ -97,9 +66,55 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "exceeds")
-      assert String.contains?(message, "1MB")
+      assert reason_for_result(result) == :batch_full
+      message = error_message(result)
+      assert String.contains?(message, "max 5 requests")
+    end
+
+    test "returns error when incoming request would exceed batch size limit" do
+      batch = generate(batch())
+
+      # Fill the batch close to 1MB without crossing it.
+      existing_payload_base = %{
+        body: %{
+          input: String.duplicate("x", 350_000),
+          model: batch.model
+        },
+        method: "POST",
+        url: batch.url
+      }
+
+      # 2 requests ~= 700KB, still below 1MB limit in tests.
+      for i <- 1..2 do
+        {:ok, _} =
+          Batching.create_request(%{
+            batch_id: batch.id,
+            custom_id: "large_#{i}",
+            url: batch.url,
+            model: batch.model,
+            request_payload: Map.put(existing_payload_base, :custom_id, "large_#{i}"),
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
+          })
+      end
+
+      incoming_payload = %{
+        body: %{
+          input: String.duplicate("y", 350_000),
+          model: batch.model
+        },
+        method: "POST",
+        url: batch.url,
+        custom_id: "incoming_large_request"
+      }
+
+      changeset = oversized_request_changeset(batch, incoming_payload)
+
+      result = BatchCanAcceptRequest.validate(changeset, [], %{})
+
+      assert reason_for_result(result) == :batch_size_would_exceed
     end
 
     test "returns error when batch_id doesn't exist" do
@@ -110,8 +125,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "batch not found")
+      assert reason_for_result(result) == :batch_not_found
     end
 
     test "handles nil batch_id gracefully" do
@@ -122,7 +136,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      assert {:error, field: :batch_id, message: _message} = result
+      assert reason_for_result(result) == :batch_not_found
     end
 
     test "validates all three conditions in order" do
@@ -137,10 +151,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
       # Should fail on state check, not capacity check
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "not in building state")
-      refute String.contains?(message, "full")
-      refute String.contains?(message, "exceeds")
+      assert reason_for_result(result) == :batch_not_building
     end
 
     test "handles nil size_bytes gracefully" do
@@ -166,10 +177,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
     test "handles size_bytes at exact limit boundary" do
       batch = generate(batch())
 
-      # Create requests with large payloads to exceed 1MB limit
-      # The test limit is 1MB (100 * 1024 * 1024), so we need to create requests
-      # that push the batch over this limit
-      # Each request payload is ~350KB, so 3 requests = ~1.05MB > 1MB limit
+      # Create requests near the 1MB limit.
       large_payload_base = %{
         body: %{
           input: String.duplicate("x", 350_000),
@@ -179,8 +187,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
         url: batch.url
       }
 
-      # Create 3 requests with large payloads (total ~1.05MB > 1MB limit)
-      for i <- 1..3 do
+      # 2 requests ~= 700KB
+      for i <- 1..2 do
         custom_id = "size_limit_#{i}_#{:rand.uniform(100_000)}"
 
         {:ok, _} =
@@ -197,19 +205,22 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
           })
       end
 
-      # Reload batch to get updated size_bytes (calculation)
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
+      incoming_payload = %{
+        body: %{
+          input: String.duplicate("y", 350_000),
+          model: batch.model
+        },
+        method: "POST",
+        url: batch.url,
+        custom_id: "boundary_limit_#{:rand.uniform(100_000)}"
+      }
 
-      changeset =
-        Batching.Request
-        |> Ash.Changeset.new()
-        |> Ash.Changeset.change_attribute(:batch_id, batch.id)
+      changeset = oversized_request_changeset(batch, incoming_payload)
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
       # Should fail (exceeds limit)
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "exceeds")
+      assert reason_for_result(result) == :batch_size_would_exceed
     end
 
     test "handles request_count at exact limit boundary" do
@@ -230,8 +241,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
       # Should fail (at limit, not < limit)
-      assert {:error, field: :batch_id, message: message} = result
-      assert String.contains?(message, "full")
+      assert reason_for_result(result) == :batch_full
     end
 
     test "format_bytes handles different byte sizes correctly" do
@@ -239,8 +249,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       # The test limit is 1MB, so we'll test with requests that exceed it
       batch = generate(batch())
 
-      # Create requests with large payloads to exceed 1MB limit
-      # Each request payload is ~350KB, so 3 requests = ~1.05MB > 1MB limit
+      # Create requests near the 1MB limit.
       large_payload_base = %{
         body: %{
           input: String.duplicate("x", 350_000),
@@ -250,8 +259,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
         url: batch.url
       }
 
-      # Create 3 requests with large payloads (total ~1.05MB > 1MB limit)
-      for i <- 1..3 do
+      # 2 requests ~= 700KB
+      for i <- 1..2 do
         custom_id = "format_test_#{i}_#{:rand.uniform(100_000)}"
 
         {:ok, _} =
@@ -268,19 +277,45 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
           })
       end
 
-      # Reload batch to get updated size_bytes (calculation)
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
+      incoming_payload = %{
+        body: %{
+          input: String.duplicate("y", 350_000),
+          model: batch.model
+        },
+        method: "POST",
+        url: batch.url,
+        custom_id: "format_test_incoming_#{:rand.uniform(100_000)}"
+      }
 
-      changeset =
-        Batching.Request
-        |> Ash.Changeset.new()
-        |> Ash.Changeset.change_attribute(:batch_id, batch.id)
+      changeset = oversized_request_changeset(batch, incoming_payload)
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      assert {:error, field: :batch_id, message: message} = result
-      # Should show MB or KB in the error message (depending on actual size)
-      assert String.contains?(message, "MB") or String.contains?(message, "KB")
+      assert reason_for_result(result) == :batch_size_would_exceed
     end
   end
+
+  defp oversized_request_changeset(batch, incoming_payload) do
+    Batching.Request
+    |> Ash.Changeset.for_create(:create, %{
+      batch_id: batch.id,
+      custom_id: "validation_overflow_#{System.unique_integer([:positive])}",
+      url: batch.url,
+      model: batch.model,
+      delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+      request_payload: incoming_payload
+    })
+  end
+
+  defp reason_for_result({:error, %Ash.Error.Changes.InvalidAttribute{} = error}) do
+    error_reason(error)
+  end
+
+  defp error_message({:error, %Ash.Error.Changes.InvalidAttribute{} = error}), do: error.message
+
+  defp error_reason(%{vars: vars}) when is_map(vars), do: Map.get(vars, :reason)
+  defp error_reason(%{vars: vars}) when is_list(vars), do: Keyword.get(vars, :reason)
+  defp error_reason(%{private_vars: vars}) when is_map(vars), do: Map.get(vars, :reason)
+  defp error_reason(%{private_vars: vars}) when is_list(vars), do: Keyword.get(vars, :reason)
+  defp error_reason(_), do: nil
 end

@@ -241,55 +241,54 @@ defmodule Batcher.BatchBuilderTest do
       assert Registry.lookup(Batcher.BatchRegistry, {url, model}) == []
     end
 
-    test "handles batch size limit correctly" do
+    test "rolls over to a new batch when adding request would exceed size limit" do
       url = "/v1/responses"
       model = "gpt-4o-mini"
 
-      # Create requests up to the test limit (5 requests)
+      # Use payloads large enough to hit the 1MB test limit by size, not by count.
       request_data_base = %{
         url: url,
-        body: %{input: "test", model: model},
+        body: %{input: String.duplicate("x", 350_000), model: model},
         method: "POST",
         delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
       }
 
-      # Add 4 requests (one less than limit)
-      for i <- 1..4 do
-        request_data = Map.put(request_data_base, :custom_id, "size_limit_#{i}")
-        {:ok, _} = BatchBuilder.add_request(url, model, request_data)
-      end
-
-      # 5th request should still succeed (at limit)
-      {:ok, request5} =
+      # First two requests should stay in the same building batch.
+      {:ok, request1} =
         BatchBuilder.add_request(
           url,
           model,
-          Map.put(request_data_base, :custom_id, "size_limit_5")
+          Map.put(request_data_base, :custom_id, "size_limit_1")
         )
 
-      assert request5.custom_id == "size_limit_5"
-
-      # 6th request should create a new batch (over limit)
-      # Note: This may return an error if validation runs before BatchBuilder can handle it
-      result6 =
+      {:ok, request2} =
         BatchBuilder.add_request(
           url,
           model,
-          Map.put(request_data_base, :custom_id, "size_limit_6")
+          Map.put(request_data_base, :custom_id, "size_limit_2")
         )
 
-      case result6 do
-        {:ok, request6} ->
-          # Should be in a different batch
-          {:ok, batch5} = Batching.get_batch_by_id(request5.batch_id)
-          {:ok, batch6} = Batching.get_batch_by_id(request6.batch_id)
-          assert batch6.id != batch5.id
+      assert request1.batch_id == request2.batch_id
+      original_batch_id = request1.batch_id
 
-        {:error, _} ->
-          # Validation may catch this before BatchBuilder can create new batch
-          # This is acceptable behavior
-          :ok
-      end
+      # Third request should force size-based rollover and succeed automatically
+      # after internal retry into a new building batch.
+      {:ok, request3} =
+        BatchBuilder.add_request(
+          url,
+          model,
+          Map.put(request_data_base, :custom_id, "size_limit_3")
+        )
+
+      assert request3.batch_id != original_batch_id
+
+      # Upload transition is triggered asynchronously in the BatchBuilder.
+      Process.sleep(200)
+      {:ok, original_batch} = Batching.get_batch_by_id(original_batch_id)
+      assert original_batch.state == :uploading
+
+      {:ok, new_batch} = Batching.get_batch_by_id(request3.batch_id)
+      assert new_batch.state == :building
     end
 
     test "handles finish_building when batch not found" do
