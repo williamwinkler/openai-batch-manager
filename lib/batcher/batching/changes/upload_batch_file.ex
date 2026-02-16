@@ -2,44 +2,58 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
   use Ash.Resource.Change
   require Logger
 
+  alias Batcher.Batching
   alias Batcher.{OpenaiApiClient}
 
   @impl true
   def change(changeset, _opts, _context) do
     batch = changeset.data
 
-    Logger.info("Processing batch #{batch.id}: building and uploading file")
+    latest_batch = Batching.get_batch_by_id!(batch.id)
 
-    batches_dir = Application.get_env(:batcher, :batches_dir) || "./data/batches"
-    batch_file_path = Path.join(batches_dir, "batch_#{batch.id}.jsonl")
+    if latest_batch.state != :uploading do
+      Logger.info(
+        "Skipping upload for batch #{batch.id}, expected :uploading but found #{inspect(latest_batch.state)}"
+      )
 
-    try do
-      with :ok <- build_batch_file(batch_file_path, batch),
-           {:ok, upload_result} <- upload_file(batch_file_path) do
-        cleanup_file(batch_file_path)
+      Ash.Changeset.add_error(
+        changeset,
+        "Batch #{batch.id} is no longer uploading (current state: #{latest_batch.state})"
+      )
+    else
+      Logger.info("Processing batch #{batch.id}: building and uploading file")
 
-        Logger.info(
-          "Batch #{batch.id} uploaded successfully (OpenAI File ID: #{upload_result.file_id})"
-        )
+      batches_dir = Application.get_env(:batcher, :batches_dir) || "./data/batches"
+      batch_file_path = Path.join(batches_dir, "batch_#{batch.id}.jsonl")
 
-        changeset
-        |> Ash.Changeset.force_change_attribute(:openai_input_file_id, upload_result.file_id)
-        |> Ash.Changeset.force_change_attribute(
-          :expires_at,
-          DateTime.from_unix!(upload_result.expires_at)
-        )
-      else
-        {:error, reason} ->
-          Logger.error("Batch #{batch.id} upload failed: #{inspect(reason)}")
+      try do
+        with :ok <- build_batch_file(batch_file_path, batch),
+             {:ok, upload_result} <- upload_file(batch_file_path) do
           cleanup_file(batch_file_path)
-          Ash.Changeset.add_error(changeset, "Batch upload failed: #{reason}")
+
+          Logger.info(
+            "Batch #{batch.id} uploaded successfully (OpenAI File ID: #{upload_result.file_id})"
+          )
+
+          changeset
+          |> Ash.Changeset.force_change_attribute(:openai_input_file_id, upload_result.file_id)
+          |> Ash.Changeset.force_change_attribute(
+            :expires_at,
+            DateTime.from_unix!(upload_result.expires_at)
+          )
+        else
+          {:error, reason} ->
+            Logger.error("Batch #{batch.id} upload failed: #{inspect(reason)}")
+            cleanup_file(batch_file_path)
+            Ash.Changeset.add_error(changeset, "Batch upload failed: #{reason}")
+        end
+      rescue
+        error ->
+          Logger.error("Batch #{batch.id} upload crashed: #{inspect(error)}")
+          cleanup_file(batch_file_path)
+          changeset = cleanup_existing_openai_file(changeset)
+          Ash.Changeset.add_error(changeset, "Upload crashed: #{inspect(error)}")
       end
-    rescue
-      error ->
-        Logger.error("Batch #{batch.id} upload crashed: #{inspect(error)}")
-        cleanup_file(batch_file_path)
-        changeset = cleanup_existing_openai_file(changeset)
-        Ash.Changeset.add_error(changeset, "Upload crashed: #{inspect(error)}")
     end
   end
 

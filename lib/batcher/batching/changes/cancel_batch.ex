@@ -3,6 +3,8 @@ defmodule Batcher.Batching.Changes.CancelBatch do
   require Ash.Query
   require Logger
 
+  alias Batcher.Batching.ObanJobs
+
   @impl true
   def change(changeset, _opts, _ctx) do
     changeset
@@ -45,12 +47,21 @@ defmodule Batcher.Batching.Changes.CancelBatch do
 
       Logger.info("Cancelling requests for batch #{batch.id}")
 
-      Batcher.Batching.Request
-      |> Ash.Query.filter(batch_id == ^batch.id)
-      |> Ash.Query.filter(state in ^cancellable_request_states)
-      |> Ash.bulk_update!(:cancel, %{}, strategy: :stream)
+      case ObanJobs.cancel_batch_jobs(batch.id) do
+        :ok ->
+          Batcher.Batching.Request
+          |> Ash.Query.filter(batch_id == ^batch.id)
+          |> Ash.Query.filter(state in ^cancellable_request_states)
+          |> Ash.bulk_update!(:cancel, %{}, strategy: :stream)
 
-      changeset
+          changeset
+
+        {:error, errors} ->
+          Ash.Changeset.add_error(
+            changeset,
+            "Failed to cancel Oban jobs for batch #{batch.id}: #{inspect(errors)}"
+          )
+      end
     end)
   end
 end
