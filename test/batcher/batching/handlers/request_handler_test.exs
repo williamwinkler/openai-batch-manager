@@ -314,29 +314,10 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
         }
       }
 
-      result = RequestHandler.handle(request_data)
-
-      # Should succeed on retry (creates new batch)
-      # The retry logic should handle :batch_full and create a new batch
-      case result do
-        {:ok, request} ->
-          assert request.custom_id == "batch_full_retry_success"
-          # Should be in a new batch (retry created one)
-          assert request.batch_id != nil
-
-        {:error, {:batch_assignment_error, _}} ->
-          # If retry also fails, it gets wrapped - this shouldn't happen in normal flow
-          # but we handle it for completeness
-          :ok
-
-        {:error, :batch_full} ->
-          # Retry failed again - this is an edge case
-          :ok
-
-        {:error, :batch_not_building} ->
-          # Batch state changed between lookups - edge case in concurrent scenarios
-          :ok
-      end
+      {:ok, request} = RequestHandler.handle(request_data)
+      assert request.custom_id == "batch_full_retry_success"
+      # Should be in a new batch (retry created one)
+      assert request.batch_id != nil
     end
 
     test "handles request with tag field" do

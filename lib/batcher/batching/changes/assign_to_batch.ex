@@ -106,7 +106,7 @@ defmodule Batcher.Batching.Changes.AssignToBatch do
           {:ok, prompt}
         end)
 
-      {:error, :batch_full} ->
+      {:error, reason} when reason in [:batch_full, :batch_not_building] ->
         # Retry once (will create new BatchBuilder for new batch)
         case Batcher.BatchBuilder.add_request(url, model, prompt_data) do
           {:ok, prompt} ->
