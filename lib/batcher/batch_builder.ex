@@ -22,6 +22,7 @@ defmodule Batcher.BatchBuilder do
 
   require Ash.Query
   alias Batcher.Utils.Format
+  @metrics_delta_topic "batches:metrics_delta"
 
   ## Client API
 
@@ -276,26 +277,7 @@ defmodule Batcher.BatchBuilder do
 
   @impl true
   def handle_call({:add_request, request_data}, _from, state) do
-    # Verify batch is still in building state before adding requests
-    case Batcher.Batching.get_batch_by_id(state.batch_id) do
-      {:ok, batch} ->
-        if batch.state != :building do
-          Logger.warning(
-            "BatchBuilder [#{state.batch_id}] received request but batch is in #{batch.state} state, shutting down"
-          )
-
-          # Unregister before terminating
-          Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
-          state = Map.put(state, :terminating, true)
-          {:stop, :normal, {:error, :batch_not_building}, state}
-        else
-          add_request_to_batch(request_data, state)
-        end
-
-      {:error, error} ->
-        Logger.error("BatchBuilder [#{state.batch_id}] failed to get batch: #{inspect(error)}")
-        {:reply, {:error, error}, state}
-    end
+    add_request_to_batch(request_data, state)
   end
 
   defp add_request_to_batch(request_data, state) do
@@ -315,6 +297,8 @@ defmodule Batcher.BatchBuilder do
            request_payload: request_data
          }) do
       {:ok, request} ->
+        publish_batch_metrics_delta(request)
+
         Logger.debug(
           "[Batch #{state.batch_id}] Request added successfully with custom_id=#{request.custom_id}"
         )
@@ -330,6 +314,7 @@ defmodule Batcher.BatchBuilder do
 
         # Check if this requires rotating to a new batch (count full or size overflow)
         needs_batch_rotation = Enum.any?(error.errors, &batch_rotation_required_error?/1)
+        stale_batch_reference = transient_batch_reference_error?(error)
 
         cond do
           is_duplicate ->
@@ -339,6 +324,15 @@ defmodule Batcher.BatchBuilder do
             )
 
             {:reply, {:error, :custom_id_already_taken}, state}
+
+          stale_batch_reference ->
+            Logger.warning(
+              "Batch #{state.batch_id} no longer exists, rotating BatchBuilder to a new batch"
+            )
+
+            Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
+            state = Map.put(state, :terminating, true)
+            {:stop, :normal, {:error, :batch_not_building}, state}
 
           needs_batch_rotation ->
             Logger.info(
@@ -463,7 +457,7 @@ defmodule Batcher.BatchBuilder do
   end
 
   defp get_building_batch(url, model) do
-    case Batcher.Batching.find_building_batch(model, url, load: [:request_count, :size_bytes]) do
+    case Batcher.Batching.find_building_batch(model, url) do
       {:ok, existing_batch} ->
         Logger.info(
           "BatchBuilder reusing existing building batch: url=#{url} model=#{model} batch_id=#{existing_batch.id}"
@@ -475,9 +469,6 @@ defmodule Batcher.BatchBuilder do
         # No draft batch found, create a new one
         {:ok, new_batch} = Batcher.Batching.create_batch(model, url)
 
-        # Load calculations for logging
-        new_batch = Ash.load!(new_batch, [:request_count, :size_bytes])
-
         Logger.info(
           "BatchBuilder created new batch: url=#{url} model=#{model} batch_id=#{new_batch.id}"
         )
@@ -488,6 +479,19 @@ defmodule Batcher.BatchBuilder do
 
   defp via_tuple(url, model) do
     {:via, Registry, {Batcher.BatchRegistry, {url, model}}}
+  end
+
+  defp publish_batch_metrics_delta(request) do
+    BatcherWeb.Endpoint.broadcast(
+      @metrics_delta_topic,
+      "delta",
+      %{
+        batch_id: request.batch_id,
+        request_count_delta: 1,
+        size_bytes_delta: request.request_payload_size,
+        ts: DateTime.utc_now()
+      }
+    )
   end
 
   defp stringify_keys(struct) when is_struct(struct) do

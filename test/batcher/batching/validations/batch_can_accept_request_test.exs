@@ -42,7 +42,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       generate_many(request(batch_id: batch.id), 5)
 
       # Reload batch to get updated request_count
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
+      {:ok, batch} = Batching.get_batch_by_id(batch.id)
 
       changeset =
         Batching.Request
@@ -57,7 +57,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
     test "batch full error keeps user-facing request limit message" do
       batch = generate(batch())
       generate_many(request(batch_id: batch.id), 5)
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
+      {:ok, batch} = Batching.get_batch_by_id(batch.id)
 
       changeset =
         Batching.Request
@@ -154,14 +154,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       assert reason_for_result(result) == :batch_not_building
     end
 
-    test "handles nil size_bytes gracefully" do
-      batch = generate(batch())
-
-      # Manually set size_bytes to nil to test edge case
-      batch =
-        batch
-        |> Ecto.Changeset.change(size_bytes: nil)
-        |> Batcher.Repo.update!()
+    test "handles zero size_bytes boundary gracefully" do
+      batch = generate(batch(size_bytes: 0))
 
       changeset =
         Batching.Request
@@ -170,7 +164,6 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
-      # Should pass (nil is treated as 0)
       assert result == :ok
     end
 
@@ -231,7 +224,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
         generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
       end
 
-      {:ok, batch} = Batching.get_batch_by_id(batch.id, load: [:request_count, :size_bytes])
+      {:ok, batch} = Batching.get_batch_by_id(batch.id)
 
       changeset =
         Batching.Request

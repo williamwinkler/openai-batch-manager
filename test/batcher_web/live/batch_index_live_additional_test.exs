@@ -92,6 +92,36 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
     end
   end
 
+  describe "metrics delta updates" do
+    test "applies in-memory request/size updates from metrics delta event", %{conn: conn} do
+      batch = generate(batch(model: "delta-model"))
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      row_html_before =
+        view
+        |> element("#batches-row-#{batch.id}")
+        |> render()
+
+      assert row_html_before =~ "0 bytes"
+
+      BatcherWeb.Endpoint.broadcast("batches:metrics_delta", "delta", %{
+        batch_id: batch.id,
+        request_count_delta: 2,
+        size_bytes_delta: 2048,
+        ts: DateTime.utc_now()
+      })
+
+      row_html_after =
+        view
+        |> element("#batches-row-#{batch.id}")
+        |> render()
+
+      assert row_html_after =~ "2.0 KB"
+      assert row_html_after =~ ~r/>\s*2\s*</
+    end
+  end
+
   describe "cancel batch action" do
     test "cancel button is visible for active batches", %{conn: conn} do
       generate(batch())

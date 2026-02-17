@@ -11,7 +11,7 @@ defmodule Batcher.Batching.Changes.EnsureBatchHasRequestsTest do
       batch = generate(batch())
 
       # Verify batch is empty
-      batch = Batching.get_batch_by_id!(batch.id, load: [:request_count])
+      batch = Batching.get_batch_by_id!(batch.id)
       assert batch.request_count == 0
       assert batch.state == :building
 
@@ -33,7 +33,7 @@ defmodule Batcher.Batching.Changes.EnsureBatchHasRequestsTest do
       generate(request(batch_id: batch.id, url: batch.url, model: batch.model))
 
       # Verify batch has requests
-      batch = Batching.get_batch_by_id!(batch.id, load: [:request_count])
+      batch = Batching.get_batch_by_id!(batch.id)
       assert batch.request_count == 1
       assert batch.state == :building
 
@@ -54,7 +54,7 @@ defmodule Batcher.Batching.Changes.EnsureBatchHasRequestsTest do
       )
 
       # Verify batch has requests
-      batch = Batching.get_batch_by_id!(batch.id, load: [:request_count])
+      batch = Batching.get_batch_by_id!(batch.id)
       assert batch.request_count == 10
 
       # Attempt to start upload

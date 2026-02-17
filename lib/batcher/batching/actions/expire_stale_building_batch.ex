@@ -23,9 +23,9 @@ defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatch do
           batch
       end
 
-    batch_with_count = Ash.load!(batch, :request_count)
+    current_batch = Batching.get_batch_by_id!(batch.id)
 
-    if batch_with_count.request_count == 0 do
+    if current_batch.request_count == 0 do
       # Delete empty batch - it's orphaned data
       Logger.info("Deleting empty batch #{batch.id} that has been building for over 1 hour")
 

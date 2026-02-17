@@ -20,6 +20,78 @@ defmodule Batcher.Batching.Request do
       index [:batch_id]
     end
 
+    custom_statements do
+      statement :requests_after_insert_update_batch_counters do
+        up """
+        CREATE TRIGGER IF NOT EXISTS requests_after_insert_update_batch_counters
+        AFTER INSERT ON requests
+        BEGIN
+          UPDATE batches
+          SET
+            request_count = request_count + 1,
+            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0)
+          WHERE id = NEW.batch_id;
+        END;
+        """
+
+        down "DROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters;"
+      end
+
+      statement :requests_after_delete_update_batch_counters do
+        up """
+        CREATE TRIGGER IF NOT EXISTS requests_after_delete_update_batch_counters
+        AFTER DELETE ON requests
+        BEGIN
+          UPDATE batches
+          SET
+            request_count = request_count - 1,
+            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0)
+          WHERE id = OLD.batch_id;
+        END;
+        """
+
+        down "DROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters;"
+      end
+
+      statement :requests_after_update_same_batch_update_counters do
+        up """
+        CREATE TRIGGER IF NOT EXISTS requests_after_update_same_batch_update_counters
+        AFTER UPDATE OF request_payload_size ON requests
+        WHEN OLD.batch_id = NEW.batch_id
+        BEGIN
+          UPDATE batches
+          SET size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0))
+          WHERE id = NEW.batch_id;
+        END;
+        """
+
+        down "DROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters;"
+      end
+
+      statement :requests_after_update_move_batch_update_counters do
+        up """
+        CREATE TRIGGER IF NOT EXISTS requests_after_update_move_batch_update_counters
+        AFTER UPDATE OF batch_id, request_payload_size ON requests
+        WHEN OLD.batch_id != NEW.batch_id
+        BEGIN
+          UPDATE batches
+          SET
+            request_count = request_count - 1,
+            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0)
+          WHERE id = OLD.batch_id;
+
+          UPDATE batches
+          SET
+            request_count = request_count + 1,
+            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0)
+          WHERE id = NEW.batch_id;
+        END;
+        """
+
+        down "DROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters;"
+      end
+    end
+
     references do
       reference :batch, on_delete: :delete
     end

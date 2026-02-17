@@ -30,7 +30,9 @@ defmodule Batcher.Generator do
     seed_generator(
       %Batcher.Batching.Batch{
         url: url,
-        model: StreamData.repeatedly(fn -> Batcher.Models.model(url) end)
+        model: StreamData.repeatedly(fn -> Batcher.Models.model(url) end),
+        request_count: 0,
+        size_bytes: 0
       },
       overrides: opts
     )

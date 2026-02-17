@@ -67,8 +67,7 @@ defmodule Batcher.Batching.FileProcessing do
       |> Ash.Changeset.for_update(:finalize_processing)
       |> Ash.update()
 
-    updated_batch =
-      Ash.load!(updated_batch, [:requests_terminal_count, :request_count, :delivery_stats])
+    updated_batch = Ash.load!(updated_batch, [:requests_terminal_count, :delivery_stats])
 
     if updated_batch.requests_terminal_count do
       total_count = updated_batch.request_count
