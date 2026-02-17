@@ -81,6 +81,7 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
       assert html =~ "Model"
       assert html =~ "Status"
       assert html =~ "Endpoint"
+      assert html =~ "Time in state"
     end
 
     test "shows batch model", %{conn: conn} do
@@ -89,6 +90,49 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
       {:ok, _view, html} = live(conn, ~p"/batches")
 
       assert html =~ "gpt-4o-mini"
+    end
+  end
+
+  describe "openai progress in time in state column" do
+    test "renders completed/total ratio when available", %{conn: conn} do
+      generate(
+        seeded_batch(
+          state: :uploading,
+          openai_requests_completed: 468,
+          openai_requests_total: 471,
+          openai_requests_failed: 0
+        )
+      )
+
+      {:ok, _view, html} = live(conn, ~p"/batches")
+
+      assert html =~ "(468/471)"
+    end
+
+    test "updates ratio from progress_updated pubsub event without reload", %{conn: conn} do
+      batch = generate(seeded_batch(state: :uploading))
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      BatcherWeb.Endpoint.broadcast(
+        "batches:progress_updated:#{batch.id}",
+        "progress_updated",
+        %{
+          data: %{
+            id: batch.id,
+            openai_requests_completed: 10,
+            openai_requests_failed: 1,
+            openai_requests_total: 20
+          }
+        }
+      )
+
+      row_html =
+        view
+        |> element("#batches-row-#{batch.id}")
+        |> render()
+
+      assert row_html =~ "(10/20)"
     end
   end
 

@@ -1,0 +1,233 @@
+{
+  "attributes": [
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "id",
+      "references": null,
+      "primary_key?": true,
+      "allow_nil?": false,
+      "generated?": true
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "custom_id",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "url",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "model",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "request_payload",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "request_payload_size",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "estimated_input_tokens",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "estimated_request_input_tokens",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "map",
+      "source": "response_payload",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": true,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "state",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "map",
+      "source": "delivery_config",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "error_msg",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": true,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "created_at",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "updated_at",
+      "references": null,
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "bigint",
+      "source": "batch_id",
+      "references": {
+        "name": "requests_batch_id_fkey",
+        "table": "batches",
+        "multitenancy": {
+          "global": null,
+          "strategy": null,
+          "attribute": null
+        },
+        "primary_key?": true,
+        "destination_attribute": "id",
+        "on_delete": "delete",
+        "on_update": null,
+        "deferrable": false,
+        "destination_attribute_generated": null,
+        "destination_attribute_default": null
+      },
+      "primary_key?": false,
+      "allow_nil?": false,
+      "generated?": false
+    }
+  ],
+  "table": "requests",
+  "hash": "5445E08E22503784DB1F13E5BB6F9B62AE353A29200715703A4832C27D1F1E8B",
+  "repo": "Elixir.Batcher.Repo",
+  "multitenancy": {
+    "global": null,
+    "strategy": null,
+    "attribute": null
+  },
+  "identities": [],
+  "strict?": false,
+  "base_filter": null,
+  "custom_indexes": [
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "where": null,
+      "fields": [
+        "custom_id"
+      ],
+      "unique": true,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "where": null,
+      "fields": [
+        "batch_id"
+      ],
+      "unique": false,
+      "using": null
+    }
+  ],
+  "custom_statements": [
+    {
+      "name": "requests_after_insert_update_batch_counters",
+      "up": "CREATE TRIGGER IF NOT EXISTS requests_after_insert_update_batch_counters\nAFTER INSERT ON requests\nBEGIN\n  UPDATE batches\n  SET\n    request_count = request_count + 1,\n    size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),\n    estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)\n  WHERE id = NEW.batch_id;\nEND;\n",
+      "down": "DROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters;",
+      "code?": false
+    },
+    {
+      "name": "requests_after_delete_update_batch_counters",
+      "up": "CREATE TRIGGER IF NOT EXISTS requests_after_delete_update_batch_counters\nAFTER DELETE ON requests\nBEGIN\n  UPDATE batches\n  SET\n    request_count = request_count - 1,\n    size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),\n    estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)\n  WHERE id = OLD.batch_id;\nEND;\n",
+      "down": "DROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters;",
+      "code?": false
+    },
+    {
+      "name": "requests_after_update_same_batch_update_counters",
+      "up": "CREATE TRIGGER IF NOT EXISTS requests_after_update_same_batch_update_counters\nAFTER UPDATE OF request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests\nWHEN OLD.batch_id = NEW.batch_id\nBEGIN\n  UPDATE batches\n  SET\n    size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0)),\n    estimated_input_tokens_total = estimated_input_tokens_total + (COALESCE(NEW.estimated_input_tokens, 0) - COALESCE(OLD.estimated_input_tokens, 0)),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total + (COALESCE(NEW.estimated_request_input_tokens, 0) - COALESCE(OLD.estimated_request_input_tokens, 0))\n  WHERE id = NEW.batch_id;\nEND;\n",
+      "down": "DROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters;",
+      "code?": false
+    },
+    {
+      "name": "requests_after_update_move_batch_update_counters",
+      "up": "CREATE TRIGGER IF NOT EXISTS requests_after_update_move_batch_update_counters\nAFTER UPDATE OF batch_id, request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests\nWHEN OLD.batch_id != NEW.batch_id\nBEGIN\n  UPDATE batches\n  SET\n    request_count = request_count - 1,\n    size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),\n    estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)\n  WHERE id = OLD.batch_id;\n\n  UPDATE batches\n  SET\n    request_count = request_count + 1,\n    size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),\n    estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)\n  WHERE id = NEW.batch_id;\nEND;\n",
+      "down": "DROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters;",
+      "code?": false
+    }
+  ],
+  "has_create_action": true
+}

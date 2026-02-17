@@ -3,6 +3,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
 
   alias Batcher.Batching
   alias Batcher.Batching.Validations.BatchCanAcceptRequest
+  alias Batcher.Settings
 
   import Batcher.Generator
 
@@ -72,7 +73,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
     end
 
     test "returns error when incoming request would exceed batch size limit" do
-      batch = generate(batch())
+      batch = generate(batch(model: "gpt-4o-mini", url: "/v1/responses"))
 
       # Fill the batch close to 1MB without crossing it.
       existing_payload_base = %{
@@ -168,7 +169,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
     end
 
     test "handles size_bytes at exact limit boundary" do
-      batch = generate(batch())
+      batch = generate(batch(model: "gpt-4o-mini", url: "/v1/responses"))
 
       # Create requests near the 1MB limit.
       large_payload_base = %{
@@ -240,7 +241,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
     test "format_bytes handles different byte sizes correctly" do
       # Test the private format_bytes function indirectly through error messages
       # The test limit is 1MB, so we'll test with requests that exceed it
-      batch = generate(batch())
+      batch = generate(batch(model: "gpt-4o-mini", url: "/v1/responses"))
 
       # Create requests near the 1MB limit.
       large_payload_base = %{
@@ -285,6 +286,122 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
       result = BatchCanAcceptRequest.validate(changeset, [], %{})
 
       assert reason_for_result(result) == :batch_size_would_exceed
+    end
+
+    test "returns error when incoming request would exceed model batch queue token limit" do
+      batch = generate(batch(model: "gpt-4o-mini", url: "/v1/responses"))
+
+      _request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            model: batch.model,
+            url: batch.url,
+            request_payload:
+              JSON.encode!(%{
+                body: %{input: String.duplicate("x", 1_900_000), model: batch.model},
+                method: "POST",
+                url: batch.url
+              }),
+            request_payload_size: 10,
+            estimated_input_tokens: 1_999_990
+          )
+        )
+
+      {:ok, batch} = Batching.get_batch_by_id(batch.id)
+
+      incoming_payload = %{
+        body: %{
+          input: "This request should be blocked by queue headroom",
+          model: batch.model
+        },
+        method: "POST",
+        url: batch.url,
+        custom_id: "incoming_queue_limit_request"
+      }
+
+      changeset = oversized_request_changeset(batch, incoming_payload)
+      result = BatchCanAcceptRequest.validate(changeset, [], %{})
+
+      assert reason_for_result(result) == :batch_tokens_would_exceed_queue_limit
+      assert String.contains?(error_message(result), "batch queue limit")
+    end
+
+    test "ignores top-level wrapper fields for incoming token admission checks" do
+      batch = generate(batch(model: "gpt-4o-mini", url: "/v1/responses"))
+
+      _request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            model: batch.model,
+            url: batch.url,
+            request_payload:
+              JSON.encode!(%{
+                body: %{input: String.duplicate("x", 1_750_000), model: batch.model},
+                method: "POST",
+                url: batch.url
+              }),
+            request_payload_size: 10,
+            estimated_input_tokens: 1_980_000
+          )
+        )
+
+      {:ok, batch} = Batching.get_batch_by_id(batch.id)
+
+      wrapper_heavy_payload = %{
+        custom_id: String.duplicate("c", 100_000),
+        method: "POST",
+        url: batch.url,
+        body: %{
+          input: "small input",
+          model: batch.model
+        }
+      }
+
+      changeset = oversized_request_changeset(batch, wrapper_heavy_payload)
+      result = BatchCanAcceptRequest.validate(changeset, [], %{})
+
+      assert result == :ok
+    end
+
+    test "applies settings override when checking queue token admission" do
+      _ = Settings.upsert_model_override!("gpt-4o-mini", 3_000_000)
+      batch = generate(batch(model: "gpt-4o-mini", url: "/v1/responses"))
+
+      _request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            model: batch.model,
+            url: batch.url,
+            request_payload:
+              JSON.encode!(%{
+                body: %{input: String.duplicate("x", 1_900_000), model: batch.model},
+                method: "POST",
+                url: batch.url
+              }),
+            request_payload_size: 10,
+            estimated_input_tokens: 1_999_990
+          )
+        )
+
+      {:ok, batch} = Batching.get_batch_by_id(batch.id)
+
+      incoming_payload = %{
+        body: %{
+          input: "This request should now fit due to override",
+          model: batch.model
+        },
+        method: "POST",
+        url: batch.url,
+        custom_id: "incoming_queue_limit_request_with_override"
+      }
+
+      changeset = oversized_request_changeset(batch, incoming_payload)
+      result = BatchCanAcceptRequest.validate(changeset, [], %{})
+
+      assert result == :ok
     end
   end
 

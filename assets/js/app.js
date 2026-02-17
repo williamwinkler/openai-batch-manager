@@ -20,9 +20,9 @@
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
-import {Socket} from "phoenix"
-import {LiveSocket} from "phoenix_live_view"
-import {hooks as colocatedHooks} from "phoenix-colocated/batcher"
+import { Socket } from "phoenix"
+import { hooks as colocatedHooks } from "phoenix-colocated/batcher"
+import { LiveSocket } from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 
 // JSON Syntax Highlighting hook
@@ -279,7 +279,7 @@ const RabbitMQModal = {
   mounted() {
     const modalId = this.el.dataset.modalId
     const modal = document.getElementById(modalId)
-    
+
     if (!modal) return
 
     // Open modal on button click
@@ -299,6 +299,99 @@ const RabbitMQModal = {
   }
 }
 
+// Token cap input formatter (adds thousand separators while typing)
+const TokenLimitInput = {
+  mounted() {
+    this.formatValue()
+    this.onInput = () => this.formatValue()
+    this.el.addEventListener("input", this.onInput)
+  },
+  updated() {
+    this.formatValue()
+  },
+  destroyed() {
+    this.el.removeEventListener("input", this.onInput)
+  },
+  formatValue() {
+    const raw = (this.el.value || "").replace(/\D/g, "")
+    if (!raw) {
+      this.el.value = ""
+      return
+    }
+
+    this.el.value = raw.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  }
+}
+
+// Updates queue token cap placeholder from selected model.
+const ModelTokenLimitPlaceholder = {
+  mounted() {
+    this.onModelInput = () => this.updatePlaceholder()
+    this.syncBindings()
+    this.updatePlaceholder()
+  },
+  updated() {
+    this.syncBindings()
+    this.updatePlaceholder()
+  },
+  destroyed() {
+    this.detachModelListeners()
+  },
+  syncBindings() {
+    this.detachModelListeners()
+    this.bindElements()
+    this.defaultPlaceholder = this.tokenInput?.dataset.defaultPlaceholder || this.tokenInput?.placeholder || ""
+    this.modelLimits = this.parseLimits(this.el.dataset.modelDefaultLimits)
+    this.modelInput?.addEventListener("input", this.onModelInput)
+    this.modelInput?.addEventListener("change", this.onModelInput)
+  },
+  detachModelListeners() {
+    if (!this.modelInput || !this.onModelInput) return
+    this.modelInput.removeEventListener("input", this.onModelInput)
+    this.modelInput.removeEventListener("change", this.onModelInput)
+  },
+  bindElements() {
+    this.modelInput = this.el.querySelector("#model-input")
+    this.tokenInput = this.el.querySelector("#queue-token-cap")
+  },
+  parseLimits(raw) {
+    if (!raw) return {}
+    try {
+      return JSON.parse(raw)
+    } catch (_error) {
+      return {}
+    }
+  },
+  findMatchedLimit(modelValue) {
+    const normalized = (modelValue || "").trim().toLowerCase()
+    if (!normalized) return null
+
+    let matchedPrefix = null
+    let matchedLimit = null
+
+    for (const [prefix, limit] of Object.entries(this.modelLimits)) {
+      if (!normalized.startsWith(prefix)) continue
+
+      if (!matchedPrefix || prefix.length > matchedPrefix.length) {
+        matchedPrefix = prefix
+        matchedLimit = limit
+      }
+    }
+
+    return Number.isInteger(matchedLimit) ? matchedLimit : null
+  },
+  updatePlaceholder() {
+    if (!this.modelInput || !this.tokenInput) return
+
+    const matchedLimit = this.findMatchedLimit(this.modelInput.value)
+    if (matchedLimit && matchedLimit > 0) {
+      this.tokenInput.placeholder = new Intl.NumberFormat("en-US").format(matchedLimit)
+    } else {
+      this.tokenInput.placeholder = this.defaultPlaceholder
+    }
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
@@ -310,7 +403,9 @@ const liveSocket = new LiveSocket("/live", Socket, {
     JsonSyntaxHighlight,
     LocalTime,
     RabbitMQModal,
-    Tooltip
+    Tooltip,
+    TokenLimitInput,
+    ModelTokenLimitPlaceholder
   },
 })
 

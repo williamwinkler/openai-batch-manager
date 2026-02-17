@@ -67,6 +67,12 @@ defmodule BatcherWeb.Layouts do
               label="Requests"
               active={@current_path && String.starts_with?(@current_path, "/requests")}
             />
+            <.nav_link
+              href="/settings"
+              icon="hero-cog-6-tooth"
+              label="Settings"
+              active={@current_path && String.starts_with?(@current_path, "/settings")}
+            />
           </nav>
           <div class="flex-1 flex items-center justify-end gap-3">
             <span class="text-xs text-base-content/20 font-mono select-all">

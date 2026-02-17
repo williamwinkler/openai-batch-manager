@@ -16,6 +16,11 @@ defmodule Batcher.Batching.Types.BatchStatus do
         label: "Uploaded",
         description: "Batch file has been uploaded to OpenAI"
       ],
+      waiting_for_capacity: [
+        label: "Waiting for capacity",
+        description:
+          "Batch is queued locally waiting for OpenAI queue headroom for this model. This is to avoid rate-limit errors"
+      ],
       openai_processing: [
         label: "OpenAI processing",
         description: "OpenAI is processing the batch"

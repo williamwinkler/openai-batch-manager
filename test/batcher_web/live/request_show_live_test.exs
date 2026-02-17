@@ -51,12 +51,51 @@ defmodule BatcherWeb.RequestShowLiveTest do
       assert html =~ "Webhook" or html =~ "webhook"
     end
 
+    test "shows a single Est. input tokens label and hides capacity estimate line", %{
+      conn: conn,
+      request: request
+    } do
+      {:ok, _view, html} = live(conn, ~p"/requests/#{request.id}")
+
+      assert html =~ "Est. input tokens"
+      refute html =~ "Capacity estimate:"
+    end
+
     test "redirects when request not found", %{conn: conn} do
       {:ok, conn} =
         live(conn, ~p"/requests/999999")
         |> follow_redirect(conn)
 
       assert html_response(conn, 200) =~ "Request not found"
+    end
+  end
+
+  describe "token estimate display" do
+    test "uses actual input tokens from response payload when available", %{conn: conn} do
+      batch = generate(batch())
+
+      request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :openai_processed,
+            estimated_request_input_tokens: 3_700,
+            response_payload: %{
+              "response" => %{
+                "body" => %{
+                  "usage" => %{
+                    "input_tokens" => 100
+                  }
+                }
+              }
+            }
+          )
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/requests/#{request.id}")
+
+      assert html =~ "Est. input tokens"
+      refute html =~ "3.7K"
     end
   end
 

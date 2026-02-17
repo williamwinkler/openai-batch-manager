@@ -13,18 +13,22 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
       {:ok, %{"status" => "completed"} = response} ->
         Logger.info("Batch #{batch.id} processing completed on OpenAI")
         usage = OpenaiApiClient.extract_token_usage_from_batch_status(response)
+        progress_attrs = extract_request_counts(response)
 
         batch
         |> Ash.Changeset.for_update(
           :openai_processing_completed,
-          %{
-            openai_output_file_id: response["output_file_id"],
-            openai_error_file_id: response["error_file_id"],
-            input_tokens: usage.input_tokens,
-            cached_tokens: usage.cached_tokens,
-            reasoning_tokens: usage.reasoning_tokens,
-            output_tokens: usage.output_tokens
-          }
+          Map.merge(
+            %{
+              openai_output_file_id: response["output_file_id"],
+              openai_error_file_id: response["error_file_id"],
+              input_tokens: usage.input_tokens,
+              cached_tokens: usage.cached_tokens,
+              reasoning_tokens: usage.reasoning_tokens,
+              output_tokens: usage.output_tokens
+            },
+            progress_attrs
+          )
         )
         |> Ash.update()
 
@@ -52,18 +56,26 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
       {:ok, %{"status" => "failed"} = resp} ->
         error_msg = JSON.encode!(resp)
         Logger.error("Batch #{batch.id} processing failed on OpenAI: #{error_msg}")
+        progress_attrs = extract_request_counts(resp)
 
         batch
-        |> Ash.Changeset.for_update(:failed, %{error_msg: error_msg})
+        |> Ash.Changeset.for_update(:failed, Map.put(progress_attrs, :error_msg, error_msg))
         |> Ash.update()
 
       {:ok, pending_resp} ->
         status = Map.get(pending_resp, "status", "unknown")
         Logger.debug("Batch #{batch.id} still processing on OpenAI (status: #{status})")
+        progress_attrs = extract_request_counts(pending_resp)
 
-        batch
-        |> Ash.Changeset.for_update(:set_openai_status_last_checked, %{})
-        |> Ash.update()
+        if request_counts_changed?(batch, progress_attrs) do
+          batch
+          |> Ash.Changeset.for_update(:record_openai_progress, progress_attrs)
+          |> Ash.update()
+        else
+          batch
+          |> Ash.Changeset.for_update(:set_openai_status_last_checked, %{})
+          |> Ash.update()
+        end
 
       {:error, reason} ->
         Logger.error(
@@ -71,6 +83,34 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
         )
 
         {:error, reason}
+    end
+  end
+
+  defp request_counts_changed?(_batch, attrs) when attrs == %{}, do: false
+
+  defp request_counts_changed?(batch, attrs) do
+    Enum.any?(attrs, fn {key, value} -> Map.get(batch, key) != value end)
+  end
+
+  defp extract_request_counts(%{"request_counts" => request_counts})
+       when is_map(request_counts) do
+    %{}
+    |> maybe_put_integer(:openai_requests_completed, read_count(request_counts, "completed"))
+    |> maybe_put_integer(:openai_requests_failed, read_count(request_counts, "failed"))
+    |> maybe_put_integer(:openai_requests_total, read_count(request_counts, "total"))
+  end
+
+  defp extract_request_counts(_), do: %{}
+
+  defp maybe_put_integer(attrs, _key, value) when not is_integer(value), do: attrs
+  defp maybe_put_integer(attrs, _key, value) when value < 0, do: attrs
+  defp maybe_put_integer(attrs, key, value), do: Map.put(attrs, key, value)
+
+  defp read_count(request_counts, key) do
+    case key do
+      "completed" -> Map.get(request_counts, "completed") || Map.get(request_counts, :completed)
+      "failed" -> Map.get(request_counts, "failed") || Map.get(request_counts, :failed)
+      "total" -> Map.get(request_counts, "total") || Map.get(request_counts, :total)
     end
   end
 end

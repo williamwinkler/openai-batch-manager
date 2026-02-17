@@ -8,6 +8,8 @@ defmodule Batcher.Batching do
       define :get_batch_by_id, action: :read, get_by: :id
       define :find_building_batch, action: :find_building_batch, args: [:model, :url]
       define :start_batch_upload, action: :start_upload
+      define :wait_for_capacity, action: :wait_for_capacity
+      define :touch_waiting_for_capacity, action: :touch_waiting_for_capacity
       define :read_batch_by_id, action: :read, get_by: :id
       define :list_batches, action: :read
 

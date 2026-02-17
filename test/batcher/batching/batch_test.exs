@@ -865,7 +865,7 @@ defmodule Batcher.Batching.BatchTest do
   end
 
   describe "Batcher.Batching.Batch.mark_expired" do
-    test "transitions from openai_processing to expired and triggers create_openai_batch", %{
+    test "transitions from openai_processing to expired and triggers capacity dispatch", %{
       server: server
     } do
       openai_input_file_id = "file-1quwTNE3rPZezkuRuGuXaS"
@@ -910,9 +910,9 @@ defmodule Batcher.Batching.BatchTest do
       assert batch_after.expires_at == nil
       assert batch_after.openai_batch_id == nil
 
-      # Drain the oban queue to process the triggered job
-      assert_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
-      Oban.drain_queue(queue: :default)
+      # Drain the capacity dispatch queue to process the triggered capacity dispatch job
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
+      Oban.drain_queue(queue: :capacity_dispatch)
 
       # Reload the batch to see the final state
       batch_final = Ash.get!(Batching.Batch, batch_after.id, load: [:transitions])
@@ -974,8 +974,8 @@ defmodule Batcher.Batching.BatchTest do
       assert batch_after.openai_batch_id == nil
       assert batch_after.state == :expired
 
-      # Oban job should be enqueued for create_openai_batch
-      assert_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
+      # Oban job should be enqueued for capacity-aware dispatch
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
     end
   end
 end

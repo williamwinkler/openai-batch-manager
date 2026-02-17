@@ -577,9 +577,9 @@ defmodule Batcher.Batching.Actions.ProcessExpiredBatchTest do
       assert batch_after_upload.openai_error_file_id == nil
 
       # ════════════════════════════════════════════════════════════════
-      # Phase 4: Drain default queue → creates new OpenAI batch
+      # Phase 4: Drain capacity_dispatch queue → creates new OpenAI batch
       # ════════════════════════════════════════════════════════════════
-      Oban.drain_queue(queue: :default)
+      Oban.drain_queue(queue: :capacity_dispatch)
 
       batch_final = Ash.get!(Batching.Batch, batch.id, load: [:transitions])
       assert batch_final.state == :openai_processing

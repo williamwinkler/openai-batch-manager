@@ -1,0 +1,32 @@
+services:
+  openai-batch-manager:
+    image: williamwinkler/openai-batch-manager:latest
+    ports:
+      - "4000:4000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RABBITMQ_URL=${RABBITMQ_URL} # Optional
+      - RABBITMQ_INPUT_QUEUE=${RABBITMQ_INPUT_QUEUE} # Optional
+      - RABBITMQ_INPUT_EXCHANGE=${RABBITMQ_INPUT_EXCHANGE} # Optional
+      - RABBITMQ_INPUT_ROUTING_KEY=${RABBITMQ_INPUT_ROUTING_KEY} # Optional
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

@@ -115,7 +115,7 @@ defmodule Batcher.BatchBuilder do
          retries
        )
        when retries > 0 do
-    if transient_batch_reference_error?(error) do
+    if transient_batch_reference_error?(error) or batch_not_building_invalid_error?(error) do
       Process.sleep(25)
       add_request(url, model, request_data, retries - 1)
     else
@@ -150,8 +150,13 @@ defmodule Batcher.BatchBuilder do
 
   defp batch_error_reason(_), do: nil
 
-  defp batch_rotation_reason?(reason) when reason in [:batch_full, :batch_size_would_exceed],
-    do: true
+  defp batch_rotation_reason?(reason)
+       when reason in [
+              :batch_full,
+              :batch_size_would_exceed,
+              :batch_tokens_would_exceed_queue_limit
+            ],
+       do: true
 
   defp batch_rotation_reason?(_), do: false
 
@@ -165,6 +170,13 @@ defmodule Batcher.BatchBuilder do
   end
 
   defp batch_rotation_required_error?(_), do: false
+
+  defp batch_not_building_invalid_error?(%Ash.Error.Invalid{errors: errors}) do
+    Enum.any?(errors, fn
+      %{field: :batch_id} = err -> batch_error_reason(err) == :batch_not_building
+      _ -> false
+    end)
+  end
 
   @doc """
   Force upload of the current batch (marks ready for upload).
@@ -211,7 +223,16 @@ defmodule Batcher.BatchBuilder do
 
   ## Server Callbacks
 
-  @max_prompts 50_000
+  @max_prompts Application.compile_env(
+                 :batcher,
+                 [:batch_limits, :max_requests_per_batch],
+                 50_000
+               )
+  @max_batch_size_bytes Application.compile_env(
+                          :batcher,
+                          [:batch_limits, :max_batch_size_bytes],
+                          50 * 1024 * 1024
+                        )
 
   @impl true
   def init({url, model}) do
@@ -303,7 +324,7 @@ defmodule Batcher.BatchBuilder do
           "[Batch #{state.batch_id}] Request added successfully with custom_id=#{request.custom_id}"
         )
 
-        {:reply, {:ok, request}, state}
+        maybe_rotate_after_successful_append(request, state)
 
       {:error, %Ash.Error.Invalid{} = error} ->
         # Check if this is a unique constraint violation on custom_id
@@ -335,12 +356,30 @@ defmodule Batcher.BatchBuilder do
             {:stop, :normal, {:error, :batch_not_building}, state}
 
           needs_batch_rotation ->
-            Logger.info(
-              "Batch #{state.batch_id} reached capacity, triggering upload and shutting down"
-            )
+            case Batcher.Batching.get_batch_by_id(state.batch_id) do
+              {:ok, batch} ->
+                if (batch.request_count || 0) > 0 do
+                  Logger.info(
+                    "Batch #{state.batch_id} reached capacity, triggering upload and shutting down"
+                  )
 
-            # Batch is full - trigger upload, unregister, and stop so a new BatchBuilder can be created
-            trigger_upload_and_stop(state)
+                  # Batch is full - trigger upload, unregister, and stop so a new BatchBuilder can be created
+                  trigger_upload_and_stop(state)
+                else
+                  Logger.error(
+                    "Request cannot fit into an empty batch for model #{state.model}; queue limit would be exceeded"
+                  )
+
+                  {:reply, {:error, error}, state}
+                end
+
+              _ ->
+                Logger.error(
+                  "Request cannot fit into an empty batch for model #{state.model}; queue limit would be exceeded"
+                )
+
+                {:reply, {:error, error}, state}
+            end
 
           true ->
             Logger.error(
@@ -425,6 +464,10 @@ defmodule Batcher.BatchBuilder do
 
   # When batch is full, trigger upload, unregister, and stop so retry creates a new BatchBuilder
   defp trigger_upload_and_stop(state) do
+    trigger_upload_and_stop(state, {:error, :batch_full})
+  end
+
+  defp trigger_upload_and_stop(state, reply) do
     # Unregister first so new requests don't hit this dying process
     Registry.unregister(Batcher.BatchRegistry, {state.url, state.model})
     state = Map.put(state, :terminating, true)
@@ -452,8 +495,8 @@ defmodule Batcher.BatchBuilder do
       end
     end)
 
-    # Reply with :batch_full and stop - the caller will retry and create a new BatchBuilder
-    {:stop, :normal, {:error, :batch_full}, state}
+    # Stop builder so new requests create a new batch for this model/url.
+    {:stop, :normal, reply, state}
   end
 
   defp get_building_batch(url, model) do
@@ -489,9 +532,35 @@ defmodule Batcher.BatchBuilder do
         batch_id: request.batch_id,
         request_count_delta: 1,
         size_bytes_delta: request.request_payload_size,
+        estimated_input_tokens_delta: request.estimated_input_tokens,
+        estimated_request_input_tokens_delta: request.estimated_request_input_tokens,
         ts: DateTime.utc_now()
       }
     )
+  end
+
+  defp maybe_rotate_after_successful_append(request, state) do
+    case Batcher.Batching.get_batch_by_id(state.batch_id) do
+      {:ok, batch} ->
+        token_capacity_reached =
+          Batcher.Batching.CapacityControl.should_rotate_building_batch?(batch)
+
+        request_capacity_reached = (batch.request_count || 0) >= @max_prompts
+        size_capacity_reached = (batch.size_bytes || 0) >= @max_batch_size_bytes
+
+        if request_capacity_reached or size_capacity_reached or token_capacity_reached do
+          Logger.info(
+            "Batch #{state.batch_id} reached upload threshold, triggering upload (count=#{batch.request_count}, size=#{batch.size_bytes}, estimated_tokens=#{batch.estimated_input_tokens_total})"
+          )
+
+          trigger_upload_and_stop(state, {:ok, request})
+        else
+          {:reply, {:ok, request}, state}
+        end
+
+      {:error, _reason} ->
+        {:reply, {:ok, request}, state}
+    end
   end
 
   defp stringify_keys(struct) when is_struct(struct) do

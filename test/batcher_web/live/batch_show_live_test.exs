@@ -165,4 +165,70 @@ defmodule BatcherWeb.BatchShowLiveTest do
       assert html =~ "Created"
     end
   end
+
+  describe "openai progress display" do
+    test "shows progress counter in openai section", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            openai_requests_completed: 5,
+            openai_requests_failed: 2,
+            openai_requests_total: 10
+          )
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+
+      assert html =~ "Progress"
+      assert html =~ "5/10"
+    end
+
+    test "updates progress via pubsub progress_updated event", %{conn: conn} do
+      batch = generate(batch())
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      BatcherWeb.Endpoint.broadcast(
+        "batches:progress_updated:#{batch.id}",
+        "progress_updated",
+        %{
+          data: %{
+            id: batch.id,
+            openai_requests_completed: 7,
+            openai_requests_failed: 1,
+            openai_requests_total: 9
+          }
+        }
+      )
+
+      html = render(view)
+      assert html =~ "7/9"
+    end
+  end
+
+  describe "capacity reason rendering" do
+    test "renders insufficient_headroom message and does not render fairness message", %{
+      conn: conn
+    } do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "insufficient_headroom"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("button[phx-click='open_capacity_modal']")
+      |> render_click()
+
+      html = render(view)
+
+      assert html =~ "Why This Batch Is Waiting"
+      assert html =~ "starting it now would exceed the rate limit and cause errors"
+      refute html =~ "Older waiting batch has priority (FIFO)"
+    end
+  end
 end

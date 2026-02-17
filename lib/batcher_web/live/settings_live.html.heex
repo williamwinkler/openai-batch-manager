@@ -1,0 +1,115 @@
+<Layouts.app flash={@flash} current_path={@current_path} rabbitmq_connected={@rabbitmq_connected}>
+  <div class="max-w-5xl mx-auto space-y-6">
+    <div class="space-y-2">
+      <h1 class="text-2xl font-semibold">Settings</h1>
+      <p class="text-sm text-base-content/70">
+        Configure model-specific queue token caps used for capacity admission. These values can be
+        higher than Tier 1 defaults when your OpenAI organization has higher limits.
+      </p>
+    </div>
+
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body gap-4">
+        <h2 class="card-title text-base">Override Queue Token Cap</h2>
+        <p class="text-sm text-base-content/70">
+          You can override the queue token cap on a per model basis. By default, the queue token cap is set to OpenAI's <a
+            href="https://developers.openai.com/api/docs/guides/rate-limits/#usage-tiers"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="link link-primary"
+          >
+            Usage Tier 1
+          </a>.
+        </p>
+        <p class="text-sm text-base-content/70">
+          The higher the queue token cap, the more tokens can be processed in parallel.
+        </p>
+        <p class="text-sm">
+          Check your current org limits in <a
+            href="https://platform.openai.com/settings/organization/limits"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="link link-primary"
+          >
+            OpenAI Organization Limits
+          </a>.
+        </p>
+
+        <.form
+          for={@override_form}
+          id="model-override-form"
+          phx-change="validate_override"
+          phx-submit="save_override"
+          phx-hook="ModelTokenLimitPlaceholder"
+          data-model-default-limits={Jason.encode!(@model_default_limits)}
+          class="grid grid-cols-1 md:grid-cols-3 gap-3"
+        >
+          <.input
+            field={@override_form[:model_prefix]}
+            id="model-input"
+            label="Model"
+            placeholder="gpt-4o-mini"
+            list="model-suggestions"
+            required
+          />
+          <datalist id="model-suggestions">
+            <option :for={model <- @model_suggestions} value={model} />
+          </datalist>
+          <.input
+            field={@override_form[:token_limit]}
+            label="Queue token cap"
+            id="queue-token-cap"
+            type="text"
+            inputmode="numeric"
+            phx-hook="TokenLimitInput"
+            placeholder="2,000,000"
+            data-default-placeholder="2,000,000"
+            autocomplete="off"
+            required
+          />
+          <div class="flex h-full items-end md:pb-3">
+            <button type="submit" class="btn btn-primary w-full md:w-auto">Save Override</button>
+          </div>
+        </.form>
+        <p class="text-base-content/60">
+          <%= if @token_limit_preview do %>
+            Queue token cap formatted: <span class="font-mono">{@token_limit_preview}</span>
+            tokens
+          <% end %>
+        </p>
+        <h2 class="card-title text-base">Current Overrides</h2>
+
+        <div :if={Enum.empty?(@overrides)} class="text-sm text-base-content/70">
+          No model-specific overrides configured.
+        </div>
+
+        <div :if={!Enum.empty?(@overrides)} class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th class="text-right">Queue token cap</th>
+                <th class="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={override <- @overrides}>
+                <td class="font-mono">{override.model_prefix}</td>
+                <td class="text-right font-mono">{format_token_cap(override.token_limit)}</td>
+                <td class="text-right">
+                  <button
+                    class="btn btn-xs btn-ghost text-warning"
+                    phx-click="delete_override"
+                    phx-value-model_prefix={override.model_prefix}
+                  >
+                    Reset
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layouts.app>

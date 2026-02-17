@@ -27,7 +27,7 @@ defmodule Batcher.Batching.Changes.SetPayload do
     |> validate_match(:custom_id, custom_id, request_payload.custom_id)
     |> validate_match(:model, model, request_payload.body.model)
     |> validate_match(:url, url, request_payload.url)
-    |> set_json_payload(request_payload)
+    |> set_json_payload(request_payload, model, url)
   end
 
   defp validate_match(changeset, field, value, payload_value) do
@@ -43,8 +43,11 @@ defmodule Batcher.Batching.Changes.SetPayload do
     end
   end
 
-  defp set_json_payload(changeset, request_payload) do
+  defp set_json_payload(changeset, request_payload, model, url) do
     if changeset.valid? do
+      {:ok, %{request_tokens: request_tokens, capacity_tokens: capacity_tokens}} =
+        Batcher.TokenEstimation.RequestEstimator.estimate(url, model, request_payload)
+
       # Remove delivery, delivery_config, and batch_id before encoding to JSON
       request_payload_json =
         request_payload
@@ -62,6 +65,8 @@ defmodule Batcher.Batching.Changes.SetPayload do
         :request_payload_size,
         byte_size(request_payload_json)
       )
+      |> Ash.Changeset.force_change_attribute(:estimated_request_input_tokens, request_tokens)
+      |> Ash.Changeset.force_change_attribute(:estimated_input_tokens, capacity_tokens)
     else
       changeset
     end

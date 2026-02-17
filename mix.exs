@@ -153,6 +153,7 @@ defmodule Batcher.MixProject do
       {:ex_json_schema, "~> 0.11.1"},
       {:dotenvy, "~> 1.1.0"},
       {:multipart, "~> 0.4.0"},
+      {:tiktoken, "~> 0.4"},
       {:process_tree, "~> 0.2"},
       {:test_server, "~> 0.1", only: :test},
       {:amqp, "~> 4.1"}

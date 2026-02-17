@@ -31,16 +31,16 @@
               id="batches"
               rows={@page.results}
               row_navigate={fn batch -> ~p"/batches/#{batch.id}" end}
-              class="min-w-[1450px]"
+              class="min-w-[1550px]"
             >
               <:col :let={batch} label="ID" width="w-20">
                 <span class="font-mono text-sm">{batch.id}</span>
               </:col>
-              <:col :let={batch} label="Model" width="w-48">
-                <span class="font-mono text-sm truncate block">{batch.model}</span>
-              </:col>
-              <:col :let={batch} label="Endpoint" width="w-44">
+              <:col :let={batch} label="Endpoint" width="w-32">
                 <span class="font-mono text-sm truncate block">{batch.url}</span>
+              </:col>
+              <:col :let={batch} label="Model" width="w-44">
+                <span class="font-mono text-sm truncate block">{batch.model}</span>
               </:col>
               <:col :let={batch} label="Requests" width="w-24">
                 {batch.request_count || 0}
@@ -48,8 +48,37 @@
               <:col :let={batch} label="Size" width="w-24">
                 {Format.bytes(batch.size_bytes)}
               </:col>
+              <:col :let={batch} label="Est. tokens" width="w-24">
+                <span class="font-mono text-sm">
+                  {Format.compact_number(batch.estimated_request_input_tokens_total || 0)}
+                </span>
+              </:col>
               <:col :let={batch} label="Status" width="w-32">
                 <.status_badge status={batch.state} />
+              </:col>
+              <:col :let={batch} label="Time in state" width="w-28">
+                <span
+                  :if={
+                    batch.state in [
+                      :openai_processing,
+                      :waiting_for_capacity,
+                      :uploading,
+                      :downloading,
+                      :delivering
+                    ]
+                  }
+                  class={[
+                    "text-xs text-base-content/50",
+                    if(batch.openai_status_last_checked_at, do: "tooltip tooltip-bottom")
+                  ]}
+                  data-tip={
+                    if batch.openai_status_last_checked_at do
+                      "Last checked at #{Format.time_ago(batch.openai_status_last_checked_at)}"
+                    end
+                  }
+                >
+                  {status_duration(batch)}
+                </span>
               </:col>
               <:col :let={batch} label="Created" width="w-40">
                 <span

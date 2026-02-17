@@ -32,6 +32,7 @@ defmodule BatcherWeb.Router do
       live "/batches/:id", BatchShowLive, :show
       live "/requests", RequestIndexLive, :index
       live "/requests/:id", RequestShowLive, :show
+      live "/settings", SettingsLive, :index
     end
   end
 
