@@ -19,7 +19,7 @@ defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatchTest do
         |> Batcher.Repo.update!()
 
       # Verify batch exists and is empty
-      batch = Batching.get_batch_by_id!(batch.id, load: [:request_count])
+      batch = Batching.get_batch_by_id!(batch.id)
       assert batch.state == :building
       assert batch.request_count == 0
 
@@ -51,7 +51,7 @@ defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatchTest do
         |> Batcher.Repo.update!()
 
       # Verify batch exists and has requests
-      batch = Batching.get_batch_by_id!(batch.id, load: [:request_count])
+      batch = Batching.get_batch_by_id!(batch.id)
       assert batch.state == :building
       assert batch.request_count == 1
 
@@ -84,7 +84,7 @@ defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatchTest do
         |> Batcher.Repo.update!()
 
       # Verify batch has requests
-      batch = Batching.get_batch_by_id!(batch.id, load: [:request_count])
+      batch = Batching.get_batch_by_id!(batch.id)
       assert batch.request_count == 5
 
       # Run the expire action

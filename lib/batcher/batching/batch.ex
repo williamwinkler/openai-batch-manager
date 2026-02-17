@@ -11,9 +11,41 @@ defmodule Batcher.Batching.Batch do
 
   alias Batcher.Batching
 
+  @max_requests_per_batch Application.compile_env(
+                            :batcher,
+                            [:batch_limits, :max_requests_per_batch],
+                            50_000
+                          )
+
   sqlite do
     table "batches"
     repo Batcher.Repo
+    migration_defaults request_count: "0", size_bytes: "0"
+
+    custom_indexes do
+      index [:state, :model, :url], name: "batches_state_model_url_index"
+    end
+
+    custom_statements do
+      statement :backfill_batch_counters do
+        up """
+        UPDATE batches
+        SET
+          request_count = (
+            SELECT COUNT(*)
+            FROM requests
+            WHERE requests.batch_id = batches.id
+          ),
+          size_bytes = COALESCE((
+            SELECT SUM(request_payload_size)
+            FROM requests
+            WHERE requests.batch_id = batches.id
+          ), 0)
+        """
+
+        down "SELECT 1;"
+      end
+    end
   end
 
   state_machine do
@@ -175,22 +207,7 @@ defmodule Batcher.Batching.Batch do
       argument :model, :string, allow_nil?: false
       argument :url, :string, allow_nil?: false
       filter expr(state == :building and model == ^arg(:model) and url == ^arg(:url))
-
-      prepare fn query, _ ->
-        Ash.Query.after_action(query, fn _query, records ->
-          filtered =
-            Enum.map(records, fn batch ->
-              batch
-              |> Ash.load!(:request_count)
-              |> Ash.load!(:size_bytes)
-            end)
-            |> Enum.filter(fn batch ->
-              batch.request_count < 50_000
-            end)
-
-          {:ok, filtered}
-        end)
-      end
+      filter expr(request_count < ^@max_requests_per_batch)
 
       get? true
     end
@@ -484,6 +501,20 @@ defmodule Batcher.Batching.Batch do
       public? true
     end
 
+    attribute :request_count, :integer do
+      description "Number of requests in the batch"
+      allow_nil? false
+      default 0
+      public? true
+    end
+
+    attribute :size_bytes, :integer do
+      description "Total size in bytes of all request payloads in the batch"
+      allow_nil? false
+      default 0
+      public? true
+    end
+
     attribute :error_msg, :string do
       description "Error message if batch failed"
     end
@@ -513,9 +544,6 @@ defmodule Batcher.Batching.Batch do
   end
 
   calculations do
-    calculate :request_count, :integer, Batcher.Batching.Calculations.BatchRequestCount
-    calculate :size_bytes, :integer, Batcher.Batching.Calculations.BatchSizeBytes
-
     calculate :requests_terminal_count,
               :integer,
               Batcher.Batching.Calculations.BatchRequestsTerminal

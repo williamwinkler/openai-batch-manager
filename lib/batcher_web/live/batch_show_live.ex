@@ -13,9 +13,7 @@ defmodule BatcherWeb.BatchShowLive do
       BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch_id}")
     end
 
-    case Batching.get_batch_by_id(batch_id,
-           load: [:request_count, :size_bytes, :transitions, :delivery_stats]
-         ) do
+    case Batching.get_batch_by_id(batch_id, load: [:transitions, :delivery_stats]) do
       {:ok, batch} ->
         transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
@@ -43,8 +41,7 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.start_batch_upload(batch) do
       {:ok, updated_batch} ->
-        updated_batch =
-          Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+        updated_batch = Ash.load!(updated_batch, [:transitions, :delivery_stats])
 
         transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
@@ -74,8 +71,7 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.cancel_batch(batch) do
       {:ok, updated_batch} ->
-        updated_batch =
-          Ash.load!(updated_batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+        updated_batch = Ash.load!(updated_batch, [:transitions, :delivery_stats])
 
         transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
@@ -155,7 +151,7 @@ defmodule BatcherWeb.BatchShowLive do
         %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}},
         socket
       ) do
-    batch = Ash.load!(batch, [:request_count, :size_bytes, :transitions, :delivery_stats])
+    batch = Ash.load!(batch, [:transitions, :delivery_stats])
     transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
     {:noreply,

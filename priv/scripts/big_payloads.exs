@@ -4,11 +4,11 @@
 #   mix run priv/scripts/big_payloads.exs
 #
 defmodule BigPayloadScript do
-  @api_url "http://localhost:4000/api/requests"
+  @api_url "http://localhost:4001/api/requests"
   @model "gpt-4o-mini"
   @url "/v1/responses"
-  @count 360
-  @payload_bytes 350_000
+  @count 50_000
+  @payload_bytes 50_000
   @webhook_url "https://example.com/webhook"
 
   def run do
@@ -16,21 +16,35 @@ defmodule BigPayloadScript do
     IO.puts("  endpoint: #{@url}")
     IO.puts("  model: #{@model}")
     IO.puts("  input_bytes/request: #{@payload_bytes}")
+    IO.puts("  concurrency: 3")
 
     start_ms = System.monotonic_time(:millisecond)
 
     results =
-      for i <- 1..@count do
-        req = build_request(i)
+      1..@count
+      |> Task.async_stream(
+        fn i ->
+          req = build_request(i)
 
-        case Req.post(@api_url, json: req, headers: [{"content-type", "application/json"}]) do
-          {:ok, %{status: status}} ->
-            {:ok, status}
+          case Req.post(@api_url, json: req, headers: [{"content-type", "application/json"}]) do
+            {:ok, %{status: status}} ->
+              {:ok, status}
 
-          {:error, reason} ->
-            {:error, reason}
-        end
-      end
+            {:error, reason} ->
+              {:error, reason}
+          end
+        end,
+        max_concurrency: 3,
+        ordered: false,
+        timeout: :infinity
+      )
+      |> Enum.map(fn
+        {:ok, result} ->
+          result
+
+        {:exit, reason} ->
+          {:error, reason}
+      end)
 
     duration_ms = System.monotonic_time(:millisecond) - start_ms
 

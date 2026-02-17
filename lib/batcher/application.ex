@@ -19,6 +19,14 @@ defmodule Batcher.Application do
       Batcher.OpenaiApiClient.validate_api_key!()
     end
 
+    if skip_migrations?() do
+      Logger.info(
+        "Release migrations are skipped in source-run mode. Run `mix ecto.migrate` after upgrading."
+      )
+    else
+      Logger.info("Running release database migrations (including upgrade backfills) on startup.")
+    end
+
     children =
       [
         BatcherWeb.Telemetry,

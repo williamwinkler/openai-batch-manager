@@ -3,6 +3,7 @@ defmodule BatcherWeb.BatchIndexLive do
 
   alias Batcher.Batching
   alias Batcher.Utils.Format
+  @reload_debounce_ms 750
 
   @impl true
   def mount(_params, _session, socket) do
@@ -10,12 +11,14 @@ defmodule BatcherWeb.BatchIndexLive do
     if connected?(socket) do
       BatcherWeb.Endpoint.subscribe("batches:created")
       BatcherWeb.Endpoint.subscribe("requests:created")
+      BatcherWeb.Endpoint.subscribe("batches:metrics_delta")
     end
 
     socket =
       socket
       |> assign(:page_title, "Batches")
       |> assign(:subscribed_batch_ids, MapSet.new())
+      |> assign(:reload_timer_ref, nil)
 
     {:ok, socket}
   end
@@ -233,8 +236,8 @@ defmodule BatcherWeb.BatchIndexLive do
     batch_ids_on_page = Enum.map(socket.assigns.page.results, & &1.id)
 
     if request.batch_id in batch_ids_on_page do
-      # Reload the page to update request counts
-      {:noreply, reload_page(socket)}
+      # Fallback for missed delta events
+      {:noreply, schedule_reload(socket)}
     else
       {:noreply, socket}
     end
@@ -249,10 +252,23 @@ defmodule BatcherWeb.BatchIndexLive do
     batch_ids_on_page = Enum.map(socket.assigns.page.results, & &1.id)
 
     if request.batch_id in batch_ids_on_page do
-      {:noreply, reload_page(socket)}
+      {:noreply, schedule_reload(socket)}
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_info(
+        %{topic: "batches:metrics_delta", payload: payload},
+        socket
+      ) do
+    {:noreply, apply_batch_metrics_delta(socket, payload)}
+  end
+
+  @impl true
+  def handle_info(:reload_page_debounced, socket) do
+    {:noreply, socket |> assign(:reload_timer_ref, nil) |> reload_page()}
   end
 
   @impl true
@@ -261,6 +277,8 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   defp reload_page(socket) do
+    maybe_cancel_timer(socket.assigns[:reload_timer_ref])
+
     query_text = socket.assigns[:query_text] || ""
     sort_by = socket.assigns[:sort_by] || "-created_at"
 
@@ -271,9 +289,44 @@ defmodule BatcherWeb.BatchIndexLive do
       )
 
     socket
+    |> assign(:reload_timer_ref, nil)
     |> assign(:page, page)
     |> subscribe_to_batches(page.results)
   end
+
+  defp schedule_reload(socket) do
+    maybe_cancel_timer(socket.assigns[:reload_timer_ref])
+    timer_ref = Process.send_after(self(), :reload_page_debounced, @reload_debounce_ms)
+    assign(socket, :reload_timer_ref, timer_ref)
+  end
+
+  defp maybe_cancel_timer(nil), do: :ok
+  defp maybe_cancel_timer(timer_ref), do: Process.cancel_timer(timer_ref)
+
+  defp apply_batch_metrics_delta(socket, %{
+         batch_id: batch_id,
+         request_count_delta: request_count_delta,
+         size_bytes_delta: size_bytes_delta
+       }) do
+    page = socket.assigns.page
+
+    updated_results =
+      Enum.map(page.results, fn batch ->
+        if batch.id == batch_id do
+          %{
+            batch
+            | request_count: (batch.request_count || 0) + request_count_delta,
+              size_bytes: (batch.size_bytes || 0) + size_bytes_delta
+          }
+        else
+          batch
+        end
+      end)
+
+    assign(socket, :page, %{page | results: updated_results})
+  end
+
+  defp apply_batch_metrics_delta(socket, _payload), do: socket
 
   defp subscribe_to_batches(socket, batches) do
     if connected?(socket) do

@@ -23,7 +23,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   @max_batch_size_bytes Application.compile_env(
                           :batcher,
                           [:batch_limits, :max_batch_size_bytes],
-                          100 * 1024 * 1024
+                          # 50MB
+                          50 * 1024 * 1024
                         )
 
   @impl true
@@ -32,7 +33,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
     incoming_request_size = incoming_request_size_bytes(changeset)
 
     # Use the non-bang version to handle missing batches gracefully
-    case Batching.get_batch_by_id(batch_id, load: [:request_count, :size_bytes]) do
+    case Batching.get_batch_by_id(batch_id) do
       {:ok, batch} ->
         with :ok <- batch_is_building(batch),
              :ok <- batch_not_full(batch),

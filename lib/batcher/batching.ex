@@ -13,8 +13,7 @@ defmodule Batcher.Batching do
 
       define :search_batches,
         action: :search,
-        args: [:query],
-        default_options: [load: [:request_count, :size_bytes]]
+        args: [:query]
 
       define :cancel_batch, action: :cancel
       define :destroy_batch, action: :destroy
