@@ -23,7 +23,8 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   @max_batch_size_bytes Application.compile_env(
                           :batcher,
                           [:batch_limits, :max_batch_size_bytes],
-                          50 * 1024 * 1024 # 50MB
+                          # 50MB
+                          50 * 1024 * 1024
                         )
 
   @impl true
