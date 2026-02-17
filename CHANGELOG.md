@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.15](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.14...v0.1.15) (2026-02-17)
+
+
+### Features
+
+* add ratelimits on a model basis with overrides possible ([#41](https://github.com/williamwinkler/openai-batch-manager/issues/41)) ([bf7f0c5](https://github.com/williamwinkler/openai-batch-manager/commit/bf7f0c5bc68e884a91010dd4177d5d475a569366))
+* compute requests and size on batches with sqlite triggers ([#39](https://github.com/williamwinkler/openai-batch-manager/issues/39)) ([ce26f3a](https://github.com/williamwinkler/openai-batch-manager/commit/ce26f3a7af8c70864557e739a0dbd455c4a47565))
+
 ## [0.1.14](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.13...v0.1.14) (2026-02-16)
 
 
