@@ -33,15 +33,16 @@ defmodule Batcher.Application do
         Batcher.Repo,
         {Ecto.Migrator,
          repos: Application.fetch_env!(:batcher, :ecto_repos), skip: skip_migrations?()},
+        {Task, fn -> Batcher.Settings.Initializer.ensure_defaults() end},
         # Registry for BatchBuilder GenServers (keyed by {endpoint, model})
         {Registry, keys: :unique, name: Batcher.BatchRegistry},
         # DynamicSupervisor for BatchBuilder instances
         {DynamicSupervisor, name: Batcher.BatchSupervisor, strategy: :one_for_one},
+        maybe_openai_rate_limits(),
         {Oban,
-         AshOban.config(
-           Application.fetch_env!(:batcher, :ash_domains),
-           Application.fetch_env!(:batcher, Oban)
-         )},
+         Application.fetch_env!(:batcher, :ash_domains)
+         |> AshOban.config(Application.fetch_env!(:batcher, Oban))
+         |> sanitize_oban_crontab()},
         # PubSub must start before RabbitMQ so status broadcasts work during init
         {Phoenix.PubSub, name: Batcher.PubSub},
         # RabbitMQ publisher (optional - only starts if configured)
@@ -110,4 +111,43 @@ defmodule Batcher.Application do
         {Batcher.RabbitMQ.Consumer, config}
     end
   end
+
+  defp maybe_openai_rate_limits do
+    if Application.get_env(:batcher, :openai_rate_limits_enabled, true) do
+      Batcher.OpenaiRateLimits
+    end
+  end
+
+  defp sanitize_oban_crontab(config) do
+    plugins = Keyword.get(config, :plugins, [])
+
+    sanitized_plugins =
+      Enum.map(plugins, fn
+        {Oban.Plugins.Cron, opts} ->
+          crontab = Keyword.get(opts, :crontab, [])
+
+          {valid_entries, dropped_entries} =
+            Enum.split_with(crontab, &cron_worker_available?/1)
+
+          Enum.each(dropped_entries, fn {_expr, module, _job_opts} ->
+            Logger.warning(
+              "Dropping Oban cron entry because worker module is unavailable: #{inspect(module)}"
+            )
+          end)
+
+          {Oban.Plugins.Cron, Keyword.put(opts, :crontab, valid_entries)}
+
+        other ->
+          other
+      end)
+
+    Keyword.put(config, :plugins, sanitized_plugins)
+  end
+
+  defp cron_worker_available?({_expression, module, _job_opts}) when is_atom(module) do
+    Code.ensure_loaded?(module) and
+      (function_exported?(module, :__opts__, 0) or function_exported?(module, :new, 1))
+  end
+
+  defp cron_worker_available?(_), do: false
 end

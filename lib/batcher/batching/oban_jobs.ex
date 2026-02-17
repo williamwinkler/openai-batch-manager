@@ -19,6 +19,7 @@ defmodule Batcher.Batching.ObanJobs do
     Batcher.Batching.Batch.AshOban.Worker.StartDownloading,
     Batcher.Batching.Batch.AshOban.Worker.ProcessDownloadedFile,
     Batcher.Batching.Batch.AshOban.Worker.ProcessExpiredBatch,
+    Batcher.Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity,
     Batcher.Batching.Batch.AshOban.Worker.CheckDeliveryCompletion,
     Batcher.Batching.Batch.AshOban.Worker.ExpireStaleBuildingBatch
   ]

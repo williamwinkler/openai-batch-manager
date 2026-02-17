@@ -3,9 +3,14 @@ config :batcher, Oban, testing: :manual
 config :ash, policies: [show_policy_breakdowns?: true]
 
 config :batcher, Batcher.OpenaiApiClient, openai_api_key: "sk-test-dummy-key"
+config :batcher, :openai_rate_limits_enabled, false
 
 # Disable HTTP retries in tests to avoid TestServer receiving multiple requests
 config :batcher, :disable_http_retries, true
+
+config :batcher, :capacity_control,
+  default_unknown_model_batch_limit_tokens: 2_000_000,
+  capacity_recheck_cron: "*/1 * * * *"
 
 # Configure your database
 #

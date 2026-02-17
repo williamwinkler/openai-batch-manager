@@ -28,6 +28,7 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       response = %{
         "status" => "completed",
         "output_file_id" => "file-2AbcDNE3rPZezkuRuGuXbB",
+        "request_counts" => %{"completed" => 471, "failed" => 0, "total" => 471},
         "usage" => %{
           "input_tokens" => 1000,
           "input_tokens_details" => %{"cached_tokens" => 200},
@@ -53,6 +54,9 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       assert batch_after.cached_tokens == 200
       assert batch_after.reasoning_tokens == 300
       assert batch_after.output_tokens == 800
+      assert batch_after.openai_requests_completed == 471
+      assert batch_after.openai_requests_failed == 0
+      assert batch_after.openai_requests_total == 471
 
       # Verify transition record
       assert length(batch_after.transitions) == 1
@@ -73,6 +77,7 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
 
       response = %{
         "status" => "failed",
+        "request_counts" => %{"completed" => 33, "failed" => 11, "total" => 44},
         "error" => %{
           "message" => "Batch processing failed",
           "code" => "batch_failed"
@@ -91,6 +96,9 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
 
       assert batch_after.state == :failed
       assert batch_after.openai_status_last_checked_at
+      assert batch_after.openai_requests_completed == 33
+      assert batch_after.openai_requests_failed == 11
+      assert batch_after.openai_requests_total == 44
 
       # Verify transition record
       latest_transition = List.last(batch_after.transitions)
@@ -150,9 +158,9 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       assert batch_after.expires_at == nil
       assert batch_after.openai_batch_id == nil
 
-      # Drain the oban queue to process the triggered create_openai_batch job
-      assert_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
-      Oban.drain_queue(queue: :default)
+      # Drain the capacity dispatch queue to process capacity-aware dispatch and OpenAI batch creation
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
+      Oban.drain_queue(queue: :capacity_dispatch)
 
       # Reload the batch to see the final state
       batch_final = Ash.get!(Batching.Batch, batch_after.id, load: [:transitions])
@@ -272,7 +280,8 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
         |> generate()
 
       response = %{
-        "status" => "validating"
+        "status" => "validating",
+        "request_counts" => %{"completed" => 417, "failed" => 0, "total" => 471}
       }
 
       expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
@@ -287,6 +296,105 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       assert batch_after.state == :openai_processing
       assert batch_after.openai_status_last_checked_at
       assert batch_after.openai_status_last_checked_at != nil
+      assert batch_after.openai_requests_completed == 417
+      assert batch_after.openai_requests_failed == 0
+      assert batch_after.openai_requests_total == 471
+    end
+
+    test "updates last_checked_at when pending counts are unchanged", %{server: server} do
+      openai_batch_id = "batch_pending_unchanged123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          openai_requests_completed: 20,
+          openai_requests_failed: 1,
+          openai_requests_total: 25
+        )
+        |> generate()
+
+      response = %{
+        "status" => "in_progress",
+        "request_counts" => %{"completed" => 20, "failed" => 1, "total" => 25}
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      assert batch_after.state == :openai_processing
+      assert batch_after.openai_status_last_checked_at
+      assert batch_after.openai_requests_completed == 20
+      assert batch_after.openai_requests_failed == 1
+      assert batch_after.openai_requests_total == 25
+    end
+
+    test "ignores malformed request_counts values", %{server: server} do
+      openai_batch_id = "batch_pending_malformed123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          openai_requests_completed: 9,
+          openai_requests_failed: 2,
+          openai_requests_total: 11
+        )
+        |> generate()
+
+      response = %{
+        "status" => "in_progress",
+        "request_counts" => %{"completed" => "nine", "failed" => -1, "total" => "eleven"}
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      assert batch_after.state == :openai_processing
+      assert batch_after.openai_status_last_checked_at
+      assert batch_after.openai_requests_completed == 9
+      assert batch_after.openai_requests_failed == 2
+      assert batch_after.openai_requests_total == 11
+    end
+
+    test "handles missing request_counts without resetting existing values", %{server: server} do
+      openai_batch_id = "batch_pending_missing_counts123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          openai_requests_completed: 100,
+          openai_requests_failed: 4,
+          openai_requests_total: 120
+        )
+        |> generate()
+
+      response = %{"status" => "finalizing"}
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      assert batch_after.state == :openai_processing
+      assert batch_after.openai_status_last_checked_at
+      assert batch_after.openai_requests_completed == 100
+      assert batch_after.openai_requests_failed == 4
+      assert batch_after.openai_requests_total == 120
     end
 
     test "handles API failures gracefully", %{server: server} do

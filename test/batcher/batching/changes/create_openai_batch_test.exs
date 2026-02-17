@@ -2,6 +2,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
   use Batcher.DataCase, async: false
 
   alias Batcher.Batching
+  alias Batcher.Settings
 
   import Batcher.Generator
   import Batcher.TestServer
@@ -161,6 +162,80 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
 
       # Should fail with an error
       assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "moves to waiting_for_capacity with insufficient_headroom when capacity is exhausted" do
+      model = "gpt-4o-mini"
+
+      _active_reserved =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :openai_processing,
+            estimated_input_tokens_total: 1_950_000
+          )
+        )
+
+      batch =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :uploaded,
+            openai_input_file_id: "file-123",
+            estimated_input_tokens_total: 100_000
+          )
+        )
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+
+      updated = Batching.get_batch_by_id!(batch.id)
+      assert updated.state == :waiting_for_capacity
+      assert updated.capacity_wait_reason == "insufficient_headroom"
+    end
+
+    test "uses settings override limit when deciding admission", %{server: server} do
+      model = "gpt-4o-mini"
+      _ = Settings.upsert_model_override!(model, 2_100_000)
+
+      _active_reserved =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :openai_processing,
+            estimated_input_tokens_total: 1_950_000
+          )
+        )
+
+      batch =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :uploaded,
+            openai_input_file_id: "file-123",
+            estimated_input_tokens_total: 100_000
+          )
+        )
+
+      openai_response = %{
+        "id" => "batch_abc123",
+        "status" => "validating",
+        "input_file_id" => "file-123"
+      }
+
+      expect_json_response(server, :post, "/v1/batches", openai_response, 200)
+
+      {:ok, updated_batch} =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert updated_batch.state == :openai_processing
+      assert updated_batch.openai_batch_id == "batch_abc123"
     end
 
     test "only updates pending requests to processing", %{server: server} do

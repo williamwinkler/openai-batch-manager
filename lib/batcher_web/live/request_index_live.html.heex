@@ -35,7 +35,7 @@
               id="requests"
               rows={@page.results}
               row_navigate={fn request -> ~p"/requests/#{request.id}" end}
-              class="min-w-[1450px]"
+              class="min-w-[1550px]"
             >
               <:col :let={request} label="ID" width="w-20">
                 <span class="font-mono text-sm">{request.id}</span>
@@ -51,11 +51,16 @@
               <:col :let={request} label="Custom ID" width="w-72">
                 <span class="font-mono text-sm truncate block">{request.custom_id}</span>
               </:col>
+              <:col :let={request} label="Endpoint" width="w-32">
+                <span class="font-mono text-sm truncate block">{request.url}</span>
+              </:col>
               <:col :let={request} label="Model" width="w-44">
                 <span class="font-mono text-sm truncate block">{request.model}</span>
               </:col>
-              <:col :let={request} label="Endpoint" width="w-42">
-                <span class="font-mono text-sm truncate block">{request.url}</span>
+              <:col :let={request} label="Est. tokens" width="w-28">
+                <span class="font-mono text-sm">
+                  {Format.compact_number(request.estimated_request_input_tokens || 0)}
+                </span>
               </:col>
               <:col :let={request} label="Status" width="w-32">
                 <.status_badge status={request.state} type={:request} />

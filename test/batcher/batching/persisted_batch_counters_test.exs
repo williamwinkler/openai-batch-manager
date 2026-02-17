@@ -12,6 +12,8 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
 
     assert batch.request_count == 0
     assert batch.size_bytes == 0
+    assert batch.estimated_input_tokens_total == 0
+    assert batch.estimated_request_input_tokens_total == 0
 
     {:ok, request} =
       Batching.create_request(%{
@@ -32,6 +34,10 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
 
     assert updated_batch.request_count == 1
     assert updated_batch.size_bytes == request.request_payload_size
+    assert updated_batch.estimated_input_tokens_total == request.estimated_input_tokens
+
+    assert updated_batch.estimated_request_input_tokens_total ==
+             request.estimated_request_input_tokens
   end
 
   test "request delete decrements batch counters" do
@@ -58,6 +64,8 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
     updated_batch = Batching.get_batch_by_id!(batch.id)
     assert updated_batch.request_count == 0
     assert updated_batch.size_bytes == 0
+    assert updated_batch.estimated_input_tokens_total == 0
+    assert updated_batch.estimated_request_input_tokens_total == 0
   end
 
   test "updating request_payload_size adjusts size_bytes" do
@@ -89,6 +97,10 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
     updated_batch = Batching.get_batch_by_id!(batch.id)
     assert updated_batch.request_count == 1
     assert updated_batch.size_bytes == new_size
+    assert updated_batch.estimated_input_tokens_total == request.estimated_input_tokens
+
+    assert updated_batch.estimated_request_input_tokens_total ==
+             request.estimated_request_input_tokens
   end
 
   test "moving request between batches updates both counters" do
@@ -121,8 +133,14 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
 
     assert source_updated.request_count == 0
     assert source_updated.size_bytes == 0
+    assert source_updated.estimated_input_tokens_total == 0
+    assert source_updated.estimated_request_input_tokens_total == 0
     assert target_updated.request_count == 1
     assert target_updated.size_bytes == request.request_payload_size
+    assert target_updated.estimated_input_tokens_total == request.estimated_input_tokens
+
+    assert target_updated.estimated_request_input_tokens_total ==
+             request.estimated_request_input_tokens
   end
 
   test "counter changes roll back with transaction rollback" do
@@ -155,6 +173,11 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
 
     assert after_batch.request_count == before.request_count
     assert after_batch.size_bytes == before.size_bytes
+    assert after_batch.estimated_input_tokens_total == before.estimated_input_tokens_total
+
+    assert after_batch.estimated_request_input_tokens_total ==
+             before.estimated_request_input_tokens_total
+
     assert {:ok, []} = Batching.list_requests_by_custom_id(custom_id)
   end
 end

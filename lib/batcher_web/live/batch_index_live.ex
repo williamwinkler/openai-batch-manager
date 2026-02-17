@@ -35,7 +35,8 @@ defmodule BatcherWeb.BatchIndexLive do
     page =
       Batching.search_batches!(query_text,
         page: page_opts,
-        query: [sort_input: sort_by]
+        query: [sort_input: sort_by],
+        load: [:processing_since]
       )
 
     socket =
@@ -267,6 +268,14 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   @impl true
+  def handle_info(
+        %{topic: "batches:progress_updated:" <> _batch_id, payload: %{data: batch}},
+        socket
+      ) do
+    {:noreply, apply_batch_progress_update(socket, batch)}
+  end
+
+  @impl true
   def handle_info(:reload_page_debounced, socket) do
     {:noreply, socket |> assign(:reload_timer_ref, nil) |> reload_page()}
   end
@@ -285,7 +294,8 @@ defmodule BatcherWeb.BatchIndexLive do
     page =
       Batching.search_batches!(query_text,
         page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit, count: true],
-        query: [sort_input: sort_by]
+        query: [sort_input: sort_by],
+        load: [:processing_since]
       )
 
     socket
@@ -303,11 +313,20 @@ defmodule BatcherWeb.BatchIndexLive do
   defp maybe_cancel_timer(nil), do: :ok
   defp maybe_cancel_timer(timer_ref), do: Process.cancel_timer(timer_ref)
 
-  defp apply_batch_metrics_delta(socket, %{
-         batch_id: batch_id,
-         request_count_delta: request_count_delta,
-         size_bytes_delta: size_bytes_delta
-       }) do
+  defp apply_batch_metrics_delta(
+         socket,
+         %{
+           batch_id: batch_id,
+           request_count_delta: request_count_delta,
+           size_bytes_delta: size_bytes_delta
+         } =
+           payload
+       ) do
+    estimated_input_tokens_delta = Map.get(payload, :estimated_input_tokens_delta, 0)
+
+    estimated_request_input_tokens_delta =
+      Map.get(payload, :estimated_request_input_tokens_delta, 0)
+
     page = socket.assigns.page
 
     updated_results =
@@ -316,7 +335,12 @@ defmodule BatcherWeb.BatchIndexLive do
           %{
             batch
             | request_count: (batch.request_count || 0) + request_count_delta,
-              size_bytes: (batch.size_bytes || 0) + size_bytes_delta
+              size_bytes: (batch.size_bytes || 0) + size_bytes_delta,
+              estimated_input_tokens_total:
+                (batch.estimated_input_tokens_total || 0) + estimated_input_tokens_delta,
+              estimated_request_input_tokens_total:
+                (batch.estimated_request_input_tokens_total || 0) +
+                  estimated_request_input_tokens_delta
           }
         else
           batch
@@ -327,6 +351,26 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   defp apply_batch_metrics_delta(socket, _payload), do: socket
+
+  defp apply_batch_progress_update(socket, batch_data) do
+    page = socket.assigns.page
+
+    updated_results =
+      Enum.map(page.results, fn batch ->
+        if batch.id == batch_data.id do
+          %{
+            batch
+            | openai_requests_completed: batch_data.openai_requests_completed,
+              openai_requests_failed: batch_data.openai_requests_failed,
+              openai_requests_total: batch_data.openai_requests_total
+          }
+        else
+          batch
+        end
+      end)
+
+    assign(socket, :page, %{page | results: updated_results})
+  end
 
   defp subscribe_to_batches(socket, batches) do
     if connected?(socket) do
@@ -340,12 +384,44 @@ defmodule BatcherWeb.BatchIndexLive do
       Enum.each(new_ids, fn id ->
         BatcherWeb.Endpoint.subscribe("batches:state_changed:#{id}")
         BatcherWeb.Endpoint.subscribe("batches:destroyed:#{id}")
+        BatcherWeb.Endpoint.subscribe("batches:progress_updated:#{id}")
       end)
 
       new_subscribed = Enum.reduce(new_ids, already_subscribed, &MapSet.put(&2, &1))
       assign(socket, :subscribed_batch_ids, new_subscribed)
     else
       socket
+    end
+  end
+
+  defp status_duration(batch) do
+    datetime =
+      case batch.state do
+        :waiting_for_capacity -> batch.waiting_for_capacity_since_at
+        :openai_processing -> batch.processing_since
+        :uploading -> batch.updated_at
+        :downloading -> batch.updated_at
+        :delivering -> batch.updated_at
+        _ -> nil
+      end
+
+    duration = Format.duration_since(datetime)
+    ratio = openai_progress_ratio(batch)
+
+    cond do
+      duration == "" and is_nil(ratio) -> ""
+      duration == "" -> ratio
+      is_nil(ratio) -> duration
+      true -> "#{duration} (#{ratio})"
+    end
+  end
+
+  defp openai_progress_ratio(batch) do
+    total = batch.openai_requests_total
+    completed = batch.openai_requests_completed || 0
+
+    if is_integer(total) and total > 0 and is_integer(completed) do
+      "#{completed}/#{total}"
     end
   end
 

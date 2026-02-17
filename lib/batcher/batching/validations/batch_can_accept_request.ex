@@ -13,6 +13,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   @reason_batch_not_building :batch_not_building
   @reason_batch_full :batch_full
   @reason_batch_size_would_exceed :batch_size_would_exceed
+  @reason_batch_tokens_would_exceed_queue_limit :batch_tokens_would_exceed_queue_limit
 
   @max_requests_per_batch Application.compile_env(
                             :batcher,
@@ -31,13 +32,15 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
   def validate(changeset, _opts, _context) do
     batch_id = Ash.Changeset.get_attribute(changeset, :batch_id)
     incoming_request_size = incoming_request_size_bytes(changeset)
+    incoming_request_tokens = incoming_request_tokens(changeset)
 
     # Use the non-bang version to handle missing batches gracefully
     case Batching.get_batch_by_id(batch_id) do
       {:ok, batch} ->
         with :ok <- batch_is_building(batch),
              :ok <- batch_not_full(batch),
-             :ok <- batch_not_too_large(batch, incoming_request_size) do
+             :ok <- batch_not_too_large(batch, incoming_request_size),
+             :ok <- batch_tokens_within_queue_limit(batch, incoming_request_tokens) do
           :ok
         end
 
@@ -105,6 +108,41 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
 
       _ ->
         0
+    end
+  end
+
+  defp incoming_request_tokens(changeset) do
+    payload = Ash.Changeset.get_argument(changeset, :request_payload)
+    model = Ash.Changeset.get_attribute(changeset, :model)
+    url = Ash.Changeset.get_attribute(changeset, :url)
+
+    with true <- is_binary(model),
+         true <- is_binary(url),
+         {:ok, %{capacity_tokens: tokens}} <-
+           Batcher.TokenEstimation.RequestEstimator.estimate(url, model, payload) do
+      tokens
+    else
+      _ -> 0
+    end
+  end
+
+  defp batch_tokens_within_queue_limit(batch, incoming_tokens) do
+    with {:ok, %{limit: limit}} <- Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model) do
+      current_tokens = batch.estimated_input_tokens_total || 0
+      prospective_total = current_tokens + incoming_tokens
+
+      if prospective_total <= limit do
+        :ok
+      else
+        {:error,
+         invalid_batch_error(
+           @reason_batch_tokens_would_exceed_queue_limit,
+           "Batch token total would exceed model batch queue limit (limit: #{limit}, current: #{current_tokens}, incoming: #{incoming_tokens}, prospective: #{prospective_total})"
+         )}
+      end
+    else
+      _ ->
+        :ok
     end
   end
 

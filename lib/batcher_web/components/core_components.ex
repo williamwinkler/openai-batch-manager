@@ -622,6 +622,7 @@ defmodule BatcherWeb.CoreComponents do
         # In progress states - blue
         :uploading -> {"bg-info/15", "text-info", "bg-info"}
         :uploaded -> {"bg-info/15", "text-info", "bg-info"}
+        :waiting_for_capacity -> {"bg-info/15", "text-info", "bg-info"}
         :openai_processing -> {"bg-info/15", "text-info", "bg-info"}
         :downloading -> {"bg-info/15", "text-info", "bg-info"}
         :downloaded -> {"bg-info/15", "text-info", "bg-info"}
@@ -641,7 +642,7 @@ defmodule BatcherWeb.CoreComponents do
       |> assign(:description, description)
 
     ~H"""
-    <div class="tooltip tooltip-bottom" data-tip={@description}>
+    <div class="tooltip tooltip-bottom inline-flex" data-tip={@description}>
       <span class={[
         "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium",
         @bg_class,

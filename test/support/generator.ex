@@ -32,7 +32,9 @@ defmodule Batcher.Generator do
         url: url,
         model: StreamData.repeatedly(fn -> Batcher.Models.model(url) end),
         request_count: 0,
-        size_bytes: 0
+        size_bytes: 0,
+        estimated_input_tokens_total: 0,
+        estimated_request_input_tokens_total: 0
       },
       overrides: opts
     )
@@ -123,7 +125,9 @@ defmodule Batcher.Generator do
           # IMPORTANT: The database expects these to be set,
           # but normally the action calculates them. We must fake them here.
           request_payload: default_payload_json,
-          request_payload_size: byte_size(default_payload_json)
+          request_payload_size: byte_size(default_payload_json),
+          estimated_input_tokens: 0,
+          estimated_request_input_tokens: 0
         },
         overrides: opts
       )

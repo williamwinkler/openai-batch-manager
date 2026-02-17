@@ -29,7 +29,9 @@ defmodule Batcher.Batching.Request do
           UPDATE batches
           SET
             request_count = request_count + 1,
-            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0)
+            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),
+            estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),
+            estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)
           WHERE id = NEW.batch_id;
         END;
         """
@@ -45,7 +47,9 @@ defmodule Batcher.Batching.Request do
           UPDATE batches
           SET
             request_count = request_count - 1,
-            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0)
+            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),
+            estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),
+            estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)
           WHERE id = OLD.batch_id;
         END;
         """
@@ -56,11 +60,14 @@ defmodule Batcher.Batching.Request do
       statement :requests_after_update_same_batch_update_counters do
         up """
         CREATE TRIGGER IF NOT EXISTS requests_after_update_same_batch_update_counters
-        AFTER UPDATE OF request_payload_size ON requests
+        AFTER UPDATE OF request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests
         WHEN OLD.batch_id = NEW.batch_id
         BEGIN
           UPDATE batches
-          SET size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0))
+          SET
+            size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0)),
+            estimated_input_tokens_total = estimated_input_tokens_total + (COALESCE(NEW.estimated_input_tokens, 0) - COALESCE(OLD.estimated_input_tokens, 0)),
+            estimated_request_input_tokens_total = estimated_request_input_tokens_total + (COALESCE(NEW.estimated_request_input_tokens, 0) - COALESCE(OLD.estimated_request_input_tokens, 0))
           WHERE id = NEW.batch_id;
         END;
         """
@@ -71,19 +78,23 @@ defmodule Batcher.Batching.Request do
       statement :requests_after_update_move_batch_update_counters do
         up """
         CREATE TRIGGER IF NOT EXISTS requests_after_update_move_batch_update_counters
-        AFTER UPDATE OF batch_id, request_payload_size ON requests
+        AFTER UPDATE OF batch_id, request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests
         WHEN OLD.batch_id != NEW.batch_id
         BEGIN
           UPDATE batches
           SET
             request_count = request_count - 1,
-            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0)
+            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),
+            estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),
+            estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)
           WHERE id = OLD.batch_id;
 
           UPDATE batches
           SET
             request_count = request_count + 1,
-            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0)
+            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),
+            estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),
+            estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)
           WHERE id = NEW.batch_id;
         END;
         """
@@ -391,6 +402,20 @@ defmodule Batcher.Batching.Request do
     attribute :request_payload_size, :integer do
       description "Size of the request payload in bytes"
       allow_nil? false
+      public? true
+    end
+
+    attribute :estimated_input_tokens, :integer do
+      description "Estimated input tokens used for queue-capacity admission"
+      allow_nil? false
+      default 0
+      public? true
+    end
+
+    attribute :estimated_request_input_tokens, :integer do
+      description "Estimated request input tokens for endpoint-aware display"
+      allow_nil? false
+      default 0
       public? true
     end
 

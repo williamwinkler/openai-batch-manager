@@ -95,4 +95,81 @@ defmodule Batcher.Utils.Format do
         "#{years}y ago"
     end
   end
+
+  @doc """
+  Formats elapsed time since a datetime as a compact duration.
+
+  ## Examples
+
+      iex> Format.duration_since(DateTime.add(DateTime.utc_now(), -30, :second))
+      "<1m"
+
+      iex> Format.duration_since(DateTime.add(DateTime.utc_now(), -90, :minute))
+      "1h 30m"
+  """
+  def duration_since(nil), do: ""
+
+  def duration_since(datetime) do
+    diff = DateTime.diff(DateTime.utc_now(), datetime, :second)
+
+    cond do
+      diff < 60 ->
+        "<1m"
+
+      diff < 3600 ->
+        "#{div(diff, 60)}m"
+
+      diff < 86_400 ->
+        "#{div(diff, 3600)}h #{rem(div(diff, 60), 60)}m"
+
+      true ->
+        "#{div(diff, 86_400)}d #{rem(div(diff, 3600), 24)}h"
+    end
+  end
+
+  @doc """
+  Formats a large integer into a compact human-readable number (K/M/B/T).
+
+  ## Examples
+
+      iex> Format.compact_number(999)
+      "999"
+
+      iex> Format.compact_number(1_000)
+      "1K"
+
+      iex> Format.compact_number(125_000)
+      "125K"
+
+      iex> Format.compact_number(1_250_000)
+      "1.2M"
+  """
+  def compact_number(nil), do: "0"
+  def compact_number(number) when number < 0, do: "-" <> compact_number(abs(number))
+
+  def compact_number(number) when is_integer(number) do
+    cond do
+      number >= 1_000_000_000_000 -> format_compact(number, 1_000_000_000_000, "T")
+      number >= 1_000_000_000 -> format_compact(number, 1_000_000_000, "B")
+      number >= 1_000_000 -> format_compact(number, 1_000_000, "M")
+      number >= 1_000 -> format_compact(number, 1_000, "K")
+      true -> Integer.to_string(number)
+    end
+  end
+
+  def compact_number(number) when is_float(number), do: compact_number(trunc(number))
+
+  defp format_compact(number, divisor, suffix) do
+    value = number / divisor
+
+    display =
+      if value >= 100 do
+        Integer.to_string(trunc(value))
+      else
+        rounded = Float.round(value, 1)
+        if rounded == trunc(rounded), do: Integer.to_string(trunc(rounded)), else: "#{rounded}"
+      end
+
+    display <> suffix
+  end
 end

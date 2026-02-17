@@ -10,6 +10,14 @@
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-semibold">Batch {@batch.id}</h1>
         <.status_badge status={@batch.state} />
+        <button
+          :if={@batch.state == :waiting_for_capacity}
+          type="button"
+          class="btn btn-xs btn-ghost"
+          phx-click="open_capacity_modal"
+        >
+          Why waiting?
+        </button>
       </div>
       <div class="flex gap-2">
         <.link
@@ -162,7 +170,28 @@
           <div class="grid grid-cols-1 gap-3 text-sm">
             <div>
               <div class="text-base-content/50 mb-1">Batch ID</div>
-              <div class="font-mono text-xs break-all">{@batch.openai_batch_id || "—"}</div>
+              <div class="font-mono text-xs break-all">
+                <a
+                  :if={@batch.openai_batch_id}
+                  href={"https://platform.openai.com/batches/#{@batch.openai_batch_id}"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link link-hover"
+                >
+                  {@batch.openai_batch_id}
+                </a>
+                <span :if={!@batch.openai_batch_id}>—</span>
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50 mb-1">Progress</div>
+              <div class="font-mono text-xs">
+                <%= if is_integer(@batch.openai_requests_total) and @batch.openai_requests_total > 0 do %>
+                  {@batch.openai_requests_completed || 0}/{@batch.openai_requests_total}
+                <% else %>
+                  —
+                <% end %>
+              </div>
             </div>
             <div>
               <div class="text-base-content/50 mb-1">Input file</div>
@@ -223,6 +252,12 @@
         </div>
         <div class="p-4">
           <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-base-content/50">Est. input</span>
+              <span class="font-mono">
+                {Format.compact_number(estimated_input_from_actual(@batch))}
+              </span>
+            </div>
             <div class="flex justify-between">
               <span class="text-base-content/50">Input</span>
               <span class="font-mono">{@batch.input_tokens || 0}</span>
@@ -440,6 +475,48 @@
             </li>
           <% end %>
         </ul>
+      </div>
+    </div>
+  </div>
+
+  <div
+    :if={@show_capacity_modal and @batch.state == :waiting_for_capacity}
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+  >
+    <div class="absolute inset-0 bg-black/50" phx-click="close_capacity_modal"></div>
+    <div class="relative bg-base-100 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-auto">
+      <div class="sticky top-0 bg-base-100 border-b border-base-300/50 px-5 py-4 flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Why This Batch Is Waiting</h3>
+        <button type="button" class="btn btn-sm btn-ghost" phx-click="close_capacity_modal">
+          <.icon name="hero-x-mark" class="w-5 h-5" />
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4">
+        <div class="space-y-2 text-sm leading-6">
+          <p>
+            Right now, we already have
+            <span class="font-semibold">
+              {Format.compact_number(@capacity_info.reserved_other)} tokens
+            </span>
+            queued/processing on OpenAI for model <span class="font-semibold">{@capacity_info.model}</span>.
+          </p>
+
+          <p>
+            To avoid rate-limit errors, we keep total queued tokens below <span class="font-semibold">
+              {Format.compact_number(@capacity_info.limit)} tokens</span>.
+            You can adjust model-specific caps on the <.link
+              navigate={~p"/settings"}
+              class="link link-primary"
+            >Settings page</.link>.
+          </p>
+
+          <p>
+            This batch is estimated at <span class="font-semibold">
+              {Format.compact_number(@capacity_info.estimated_tokens)} tokens
+            </span>, therefore starting it now would exceed the rate limit and cause errors.
+          </p>
+        </div>
       </div>
     </div>
   </div>

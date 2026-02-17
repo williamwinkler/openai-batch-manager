@@ -312,6 +312,68 @@ defmodule BatcherWeb.RequestShowLive do
     |> assign(:delivery_attempts_page, page)
   end
 
+  def estimated_input_from_actual(request) do
+    actual_input_tokens = extract_actual_input_tokens(request.response_payload)
+
+    base_tokens =
+      cond do
+        is_integer(actual_input_tokens) and actual_input_tokens >= 0 ->
+          actual_input_tokens
+
+        true ->
+          request.estimated_request_input_tokens || 0
+      end
+
+    trunc(Float.ceil(base_tokens * 1.1))
+  end
+
+  defp extract_actual_input_tokens(nil), do: nil
+
+  defp extract_actual_input_tokens(response_payload) when is_map(response_payload) do
+    usage_paths = [
+      ["response", "body", "usage", "input_tokens"],
+      ["response", "body", "usage", "prompt_tokens"],
+      ["response", "usage", "input_tokens"],
+      ["response", "usage", "prompt_tokens"],
+      ["usage", "input_tokens"],
+      ["usage", "prompt_tokens"]
+    ]
+
+    Enum.find_value(usage_paths, fn path ->
+      get_in_mixed(response_payload, path)
+    end)
+  end
+
+  defp extract_actual_input_tokens(_), do: nil
+
+  defp get_in_mixed(data, []), do: data
+
+  defp get_in_mixed(data, [key | rest]) when is_map(data) do
+    case Map.fetch(data, key) do
+      {:ok, value} ->
+        get_in_mixed(value, rest)
+
+      :error ->
+        atom_key =
+          try do
+            String.to_existing_atom(key)
+          rescue
+            ArgumentError -> nil
+          end
+
+        if atom_key do
+          case Map.fetch(data, atom_key) do
+            {:ok, value} -> get_in_mixed(value, rest)
+            :error -> nil
+          end
+        else
+          nil
+        end
+    end
+  end
+
+  defp get_in_mixed(_data, _path), do: nil
+
   @doc """
   Format a JSON string or map for display with pretty printing.
   """

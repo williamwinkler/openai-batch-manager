@@ -53,6 +53,12 @@
               <div>{format_bytes(@request.request_payload_size)}</div>
             </div>
             <div>
+              <div class="text-base-content/50 mb-1">Est. input tokens</div>
+              <div class="font-mono">
+                {Batcher.Utils.Format.compact_number(estimated_input_from_actual(@request))}
+              </div>
+            </div>
+            <div>
               <div class="text-base-content/50 mb-1">Created</div>
               <div
                 id="request-created-at"
@@ -286,25 +292,45 @@
       <%!-- Header --%>
       <div class="px-6 py-4 border-b border-base-300 flex items-center justify-between shrink-0">
         <h3 class="text-lg font-semibold">{@payload_modal_title}</h3>
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm btn-circle"
-          phx-click="close_payload_modal"
-        >
-          <.icon name="hero-x-mark" class="w-5 h-5" />
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            :if={@payload_modal_title in ["Request Payload", "Response Payload"]}
+            id="payload-copy-button"
+            type="button"
+            class="btn btn-outline btn-primary btn-sm tooltip tooltip-left"
+            data-tip="Copy JSON to clipboard"
+            phx-hook="CopyToClipboard"
+            data-copy-target="#payload-modal-content"
+            data-default-label="Copy JSON"
+            data-success-label="Copied!"
+            data-error-label="Copy failed"
+          >
+            <.icon name="hero-document-duplicate" class="w-4 h-4" />
+            <span data-copy-label>Copy JSON</span>
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-circle"
+            phx-click="close_payload_modal"
+          >
+            <.icon name="hero-x-mark" class="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <%!-- Body --%>
       <div class="p-6 overflow-auto flex-1">
         <%= if @payload_modal_is_json do %>
           <pre
-            id={"payload-modal-#{@payload_modal_title}"}
+            id="payload-modal-content"
             class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
             phx-hook="JsonSyntaxHighlight"
           >{@payload_modal_content}</pre>
         <% else %>
-          <pre class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all">{@payload_modal_content}</pre>
+          <pre
+            id="payload-modal-content"
+            class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all"
+          >{@payload_modal_content}</pre>
         <% end %>
       </div>
     </div>

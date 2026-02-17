@@ -22,6 +22,13 @@ defmodule BatcherWeb.HomeLiveTest do
       assert render(view) =~ "Requests"
     end
 
+    test "has navigation link to settings", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, ~s|a[href="/settings"]|)
+      assert render(view) =~ "Settings"
+    end
+
     test "developer tool links open in new tab", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/")
 

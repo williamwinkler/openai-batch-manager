@@ -20,7 +20,11 @@ defmodule Batcher.Batching.Batch do
   sqlite do
     table "batches"
     repo Batcher.Repo
-    migration_defaults request_count: "0", size_bytes: "0"
+
+    migration_defaults request_count: "0",
+                       size_bytes: "0",
+                       estimated_input_tokens_total: "0",
+                       estimated_request_input_tokens_total: "0"
 
     custom_indexes do
       index [:state, :model, :url], name: "batches_state_model_url_index"
@@ -36,6 +40,16 @@ defmodule Batcher.Batching.Batch do
             FROM requests
             WHERE requests.batch_id = batches.id
           ),
+          estimated_input_tokens_total = COALESCE((
+            SELECT SUM(estimated_input_tokens)
+            FROM requests
+            WHERE requests.batch_id = batches.id
+          ), 0),
+          estimated_request_input_tokens_total = COALESCE((
+            SELECT SUM(estimated_request_input_tokens)
+            FROM requests
+            WHERE requests.batch_id = batches.id
+          ), 0),
           size_bytes = COALESCE((
             SELECT SUM(request_payload_size)
             FROM requests
@@ -55,7 +69,12 @@ defmodule Batcher.Batching.Batch do
     transitions do
       transition :start_upload, from: :building, to: :uploading
       transition :upload, from: :uploading, to: :uploaded
-      transition :create_openai_batch, from: [:uploaded, :expired], to: :openai_processing
+      transition :wait_for_capacity, from: [:uploaded, :expired], to: :waiting_for_capacity
+
+      transition :create_openai_batch,
+        from: [:uploaded, :waiting_for_capacity, :expired],
+        to: :openai_processing
+
       transition :mark_expired, from: :openai_processing, to: :expired
       transition :handle_partial_expiration, from: :openai_processing, to: :expired
       transition :reupload_unprocessed, from: :expired, to: :uploading
@@ -75,6 +94,7 @@ defmodule Batcher.Batching.Batch do
           :building,
           :uploading,
           :uploaded,
+          :waiting_for_capacity,
           :openai_processing,
           :openai_completed,
           :downloading,
@@ -90,6 +110,7 @@ defmodule Batcher.Batching.Batch do
           :building,
           :uploading,
           :uploaded,
+          :waiting_for_capacity,
           :openai_processing,
           :openai_completed,
           :downloading,
@@ -131,6 +152,16 @@ defmodule Batcher.Batching.Batch do
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
+      end
+
+      trigger :dispatch_waiting_for_capacity do
+        action :dispatch_waiting_for_capacity
+        where expr(state == :waiting_for_capacity)
+        # Serialize waiting-queue admission scans to prevent concurrent dispatchers
+        # from racing and transitioning the same waiting batch multiple times.
+        queue :capacity_dispatch
+        worker_module_name Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.DispatchWaitingForCapacity
       end
 
       trigger :process_expired_batch do
@@ -249,7 +280,7 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       change Batching.Changes.UploadBatchFile
       change transition_state(:uploaded)
-      change run_oban_trigger(:create_openai_batch)
+      change run_oban_trigger(:dispatch_waiting_for_capacity)
     end
 
     update :create_openai_batch do
@@ -258,6 +289,30 @@ defmodule Batcher.Batching.Batch do
       change Batching.Changes.CreateOpenaiBatch
       change transition_state(:openai_processing)
       change run_oban_trigger(:check_batch_status)
+    end
+
+    update :wait_for_capacity do
+      description "Move batch to waiting queue due to capacity limits"
+      require_atomic? false
+      accept [:capacity_wait_reason]
+      change set_attribute(:capacity_last_checked_at, &DateTime.utc_now/0)
+      change Batching.Changes.SetWaitingSince
+      change transition_state(:waiting_for_capacity)
+      change run_oban_trigger(:dispatch_waiting_for_capacity)
+    end
+
+    update :touch_waiting_for_capacity do
+      description "Refresh waiting metadata while queued for capacity"
+      require_atomic? false
+      accept [:capacity_wait_reason]
+      change set_attribute(:capacity_last_checked_at, &DateTime.utc_now/0)
+    end
+
+    action :dispatch_waiting_for_capacity, :struct do
+      description "Re-check waiting batches and start eligible ones that fit current headroom"
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.DispatchWaitingForCapacity
     end
 
     action :check_batch_status, :struct do
@@ -272,9 +327,22 @@ defmodule Batcher.Batching.Batch do
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
     end
 
+    update :record_openai_progress do
+      require_atomic? false
+      accept [:openai_requests_completed, :openai_requests_failed, :openai_requests_total]
+      change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+    end
+
     update :failed do
       require_atomic? false
-      accept [:error_msg]
+
+      accept [
+        :error_msg,
+        :openai_requests_completed,
+        :openai_requests_failed,
+        :openai_requests_total
+      ]
+
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
       change Batching.Changes.FailBatch
       change transition_state(:failed)
@@ -290,7 +358,10 @@ defmodule Batcher.Batching.Batch do
         :input_tokens,
         :cached_tokens,
         :reasoning_tokens,
-        :output_tokens
+        :output_tokens,
+        :openai_requests_completed,
+        :openai_requests_failed,
+        :openai_requests_total
       ]
 
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
@@ -374,7 +445,7 @@ defmodule Batcher.Batching.Batch do
       change set_attribute(:expires_at, nil)
       change set_attribute(:openai_batch_id, nil)
       change transition_state(:expired)
-      change run_oban_trigger(:create_openai_batch)
+      change run_oban_trigger(:dispatch_waiting_for_capacity)
     end
 
     update :handle_partial_expiration do
@@ -394,6 +465,9 @@ defmodule Batcher.Batching.Batch do
       change set_attribute(:openai_input_file_id, nil)
       change set_attribute(:openai_output_file_id, nil)
       change set_attribute(:openai_error_file_id, nil)
+      change set_attribute(:openai_requests_completed, nil)
+      change set_attribute(:openai_requests_failed, nil)
+      change set_attribute(:openai_requests_total, nil)
       change transition_state(:uploading)
       change run_oban_trigger(:upload)
     end
@@ -442,6 +516,7 @@ defmodule Batcher.Batching.Batch do
     publish :create, ["created", :id]
     publish_all :create, ["created"]
     publish :start_upload, ["started_uploading", :id]
+    publish :record_openai_progress, ["progress_updated", :id]
     publish :destroy, ["destroyed", :id]
 
     publish_all :update, ["state_changed", :id],
@@ -489,6 +564,10 @@ defmodule Batcher.Batching.Batch do
       description "The datetime of when the status of the batch was last checked on OpenAIs platform"
     end
 
+    attribute :openai_requests_completed, :integer
+    attribute :openai_requests_failed, :integer
+    attribute :openai_requests_total, :integer
+
     attribute :url, Batching.Types.OpenaiBatchEndpoints do
       description "OpenAI Batch API request url (e.g., '/v1/responses')"
       allow_nil? false
@@ -513,6 +592,32 @@ defmodule Batcher.Batching.Batch do
       allow_nil? false
       default 0
       public? true
+    end
+
+    attribute :estimated_input_tokens_total, :integer do
+      description "Estimated total input tokens for all requests in the batch"
+      allow_nil? false
+      default 0
+      public? true
+    end
+
+    attribute :estimated_request_input_tokens_total, :integer do
+      description "Estimated total request input tokens for all requests in the batch"
+      allow_nil? false
+      default 0
+      public? true
+    end
+
+    attribute :capacity_last_checked_at, :utc_datetime do
+      description "The datetime when capacity admission was last checked"
+    end
+
+    attribute :capacity_wait_reason, :string do
+      description "Reason why the batch is waiting for capacity"
+    end
+
+    attribute :waiting_for_capacity_since_at, :utc_datetime do
+      description "Timestamp for FIFO ordering among waiting batches"
     end
 
     attribute :error_msg, :string do
@@ -544,6 +649,8 @@ defmodule Batcher.Batching.Batch do
   end
 
   calculations do
+    calculate :processing_since, :utc_datetime, Batcher.Batching.Calculations.BatchProcessingSince
+
     calculate :requests_terminal_count,
               :integer,
               Batcher.Batching.Calculations.BatchRequestsTerminal
@@ -554,13 +661,8 @@ defmodule Batcher.Batching.Batch do
   defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
 
   defp apply_sorting(query, sort_by) when is_binary(sort_by) do
-    case parse_sort_by(sort_by) do
-      {field, direction} ->
-        Ash.Query.sort(query, [{field, direction}])
-
-      _ ->
-        Ash.Query.sort(query, created_at: :desc)
-    end
+    {field, direction} = parse_sort_by(sort_by)
+    Ash.Query.sort(query, [{field, direction}])
   end
 
   defp parse_sort_by("-created_at"), do: {:created_at, :desc}

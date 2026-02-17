@@ -163,6 +163,22 @@ Data lives at `/data/batcher.db` and `/data/batches` (mount a volume at `/data` 
 
 When `DISABLE_DELIVERY_RETRY=true` (also accepts `1`/`yes`), failed delivery attempts are **not retried** and each request gets only one delivery attempt.
 
+### Capacity limits behavior
+
+- The app uses **Tier 1 default batch queue limits** for known models.
+- If a model is not covered by Tier 1 defaults, the app uses a conservative unknown-model fallback limit.
+- OpenAI's "TPD" value on the organization limits page behaves like a **max enqueued batch-token headroom** limit per model (tokens in active OpenAI states), not a strict 24-hour cumulative send cap. After earlier batches leave active queue usage, new batches can start the same day.
+
+#### Queue token cap overrides in UI
+
+- Open **`/settings`** to override queue token caps per model.
+- Overrides use **exact model matching** (case-insensitive), not prefixes.
+  - Example: overriding `gpt-4o` does **not** affect `gpt-4o-mini-2024-07-18`.
+- Limit resolution order is:
+  1. Exact model override from `/settings`
+  2. Built-in Tier 1 default for known model families
+  3. Unknown-model fallback limit
+
 ## Development
 
 ```bash

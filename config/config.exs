@@ -25,7 +25,7 @@ config :ash_oban, pro?: false
 config :batcher, Oban,
   engine: Oban.Engines.Lite,
   notifier: Oban.Notifiers.PG,
-  queues: [default: 10, batch_uploads: 1, batch_processing: 1, delivery: 5],
+  queues: [default: 10, batch_uploads: 1, batch_processing: 1, capacity_dispatch: 1, delivery: 5],
   repo: Batcher.Repo,
   # Reduce polling frequency to avoid hammering SQLite database
   # SQLite with pool_size=1 serializes writes, so aggressive polling causes contention
@@ -40,6 +40,18 @@ config :batcher, Oban,
 config :batcher, Batcher.BatchBuilder,
   max_age_hours: 1,
   check_interval_minutes: 5
+
+config :batcher, :token_estimation,
+  request_safety_buffer: 1.0,
+  safety_buffer: 1.10,
+  fallback_chars_per_token: 3.5,
+  max_tokenizer_payload_bytes: 200_000
+
+config :batcher, :capacity_control,
+  default_unknown_model_batch_limit_tokens: 250_000,
+  capacity_recheck_cron: "*/1 * * * *"
+
+config :batcher, :openai_rate_limits_enabled, true
 
 config :ash,
   default_belongs_to_type: :integer,
@@ -93,7 +105,7 @@ config :spark,
 config :batcher,
   ecto_repos: [Batcher.Repo],
   generators: [timestamp_type: :utc_datetime],
-  ash_domains: [Batcher.Batching]
+  ash_domains: [Batcher.Batching, Batcher.Settings]
 
 # Configures the endpoint
 config :batcher, BatcherWeb.Endpoint,
