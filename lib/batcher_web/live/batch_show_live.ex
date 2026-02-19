@@ -3,6 +3,7 @@ defmodule BatcherWeb.BatchShowLive do
 
   alias Batcher.Batching
   alias Batcher.Batching.CapacityControl
+  alias BatcherWeb.Live.Utils.AsyncActions
   alias Batcher.Utils.Format
 
   @impl true
@@ -16,18 +17,27 @@ defmodule BatcherWeb.BatchShowLive do
       BatcherWeb.Endpoint.subscribe("batches:metrics_delta")
     end
 
-    case Batching.get_batch_by_id(batch_id, load: [:transitions, :delivery_stats]) do
+    case Batching.get_batch_by_id(batch_id) do
       {:ok, batch} ->
-        transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
-
         {:ok,
          socket
-         |> assign(batch: batch, transitions: transitions, show_capacity_modal: false)
+         |> assign(batch: batch, show_capacity_modal: false)
+         |> assign(:transitions, [])
+         |> assign(:delivery_stats, %{})
+         |> assign(:timeline_status, :loading_initial)
+         |> assign(:timeline_request_key, nil)
+         |> assign(:delivery_stats_status, :loading_initial)
+         |> assign(:delivery_stats_request_key, nil)
+         |> assign(:pending_actions, MapSet.new())
          |> assign(:show_error_modal, false)
          |> assign(:error_modal_content, "")
          |> assign(:error_modal_is_json, false)
-         |> assign(:capacity_info, build_capacity_info(batch))
-         |> assign(delivery_bar_width_styles(batch))}
+         |> assign(:error_modal_status, :idle)
+         |> assign(:error_modal_request_key, nil)
+         |> assign(:capacity_info, nil)
+         |> assign(:capacity_info_status, :idle)
+         |> assign(:capacity_info_stale, true)
+         |> start_section_loads(batch.id)}
 
       {:error, _} ->
         {:ok,
@@ -43,171 +53,60 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
-  def handle_event("upload_batch", _params, socket) do
-    batch = socket.assigns.batch
-
-    case Batching.start_batch_upload(batch) do
-      {:ok, updated_batch} ->
-        updated_batch =
-          Batching.get_batch_by_id!(updated_batch.id, load: [:transitions, :delivery_stats])
-
-        transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
-
-        {:noreply,
-         socket
-         |> assign(batch: updated_batch, transitions: transitions)
-         |> assign(delivery_bar_width_styles(updated_batch))
-         |> put_flash(:info, "Batch upload started")}
-
-      {:error, error} ->
-        error_msg =
-          case error do
-            %Ash.Error.Invalid{errors: errors} ->
-              Enum.map_join(errors, ", ", &Exception.message/1)
-
-            other ->
-              "Failed to start upload: #{Exception.message(other)}"
-          end
-
-        {:noreply, put_flash(socket, :error, error_msg)}
-    end
-  end
+  def handle_event("upload_batch", _params, socket),
+    do: start_current_batch_action_async(socket, :upload)
 
   @impl true
-  def handle_event("cancel_batch", _params, socket) do
-    batch = socket.assigns.batch
-
-    case Batching.cancel_batch(batch) do
-      {:ok, updated_batch} ->
-        updated_batch =
-          Batching.get_batch_by_id!(updated_batch.id, load: [:transitions, :delivery_stats])
-
-        transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
-
-        {:noreply,
-         socket
-         |> assign(batch: updated_batch, transitions: transitions)
-         |> assign(delivery_bar_width_styles(updated_batch))
-         |> put_flash(:info, "Batch cancelled successfully")}
-
-      {:error, error} ->
-        error_msg =
-          case error do
-            %Ash.Error.Invalid{errors: errors} ->
-              Enum.map_join(errors, ", ", fn e ->
-                # Handle NoMatchingTransition errors specifically
-                case e do
-                  %AshStateMachine.Errors.NoMatchingTransition{
-                    old_state: old_state,
-                    target: target
-                  } ->
-                    "Cannot transition batch from #{old_state} to #{target} state"
-
-                  _ ->
-                    # Use Exception.message for other error types
-                    Exception.message(e)
-                end
-              end)
-
-            other ->
-              "Failed to cancel batch: #{Exception.message(other)}"
-          end
-
-        {:noreply, put_flash(socket, :error, error_msg)}
-    end
-  end
+  def handle_event("cancel_batch", _params, socket),
+    do: start_current_batch_action_async(socket, :cancel)
 
   @impl true
-  def handle_event("delete_batch", _params, socket) do
-    batch = socket.assigns.batch
-
-    case Batching.destroy_batch(batch) do
-      :ok ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Batch deleted successfully")
-         |> redirect(to: ~p"/batches")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete batch")}
-    end
-  end
+  def handle_event("delete_batch", _params, socket),
+    do: start_current_batch_action_async(socket, :delete)
 
   @impl true
-  def handle_event("restart_batch", _params, socket) do
-    batch = socket.assigns.batch
-
-    case Batching.restart_batch(batch) do
-      {:ok, updated_batch} ->
-        updated_batch =
-          Batching.get_batch_by_id!(updated_batch.id, load: [:transitions, :delivery_stats])
-
-        transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
-
-        {:noreply,
-         socket
-         |> assign(batch: updated_batch, transitions: transitions, show_error_modal: false)
-         |> assign(:error_modal_content, "")
-         |> assign(:error_modal_is_json, false)
-         |> assign(:capacity_info, build_capacity_info(updated_batch))
-         |> assign(delivery_bar_width_styles(updated_batch))
-         |> put_flash(:info, "Batch restart initiated successfully")}
-
-      {:error, error} ->
-        error_msg =
-          case error do
-            %Ash.Error.Invalid{errors: errors} ->
-              Enum.map_join(errors, ", ", &Exception.message/1)
-
-            other ->
-              "Failed to restart batch: #{Exception.message(other)}"
-          end
-
-        {:noreply, put_flash(socket, :error, error_msg)}
-    end
-  end
+  def handle_event("restart_batch", _params, socket),
+    do: start_current_batch_action_async(socket, :restart)
 
   @impl true
-  def handle_event("redeliver_batch", _params, socket) do
-    batch = socket.assigns.batch
-
-    case Batching.redeliver_batch(batch.id) do
-      {:ok, _} ->
-        {:noreply, put_flash(socket, :info, "Redelivery initiated for failed requests")}
-
-      {:error, error} ->
-        error_msg =
-          case error do
-            %Ash.Error.Invalid{errors: errors} ->
-              Enum.map_join(errors, ", ", &Exception.message/1)
-
-            other ->
-              "Failed to redeliver: #{Exception.message(other)}"
-          end
-
-        {:noreply, put_flash(socket, :error, error_msg)}
-    end
-  end
+  def handle_event("redeliver_batch", _params, socket),
+    do: start_current_batch_action_async(socket, :redeliver)
 
   @impl true
   def handle_event("show_batch_error", _params, socket) do
-    {content, is_json} = format_content_with_type(socket.assigns.batch.error_msg)
+    request_key = {:batch_error, socket.assigns.batch.id, System.unique_integer([:positive])}
+    error_msg = socket.assigns.batch.error_msg
 
-    {:noreply,
-     socket
-     |> assign(:show_error_modal, true)
-     |> assign(:error_modal_content, content)
-     |> assign(:error_modal_is_json, is_json)}
+    socket =
+      socket
+      |> assign(:show_error_modal, true)
+      |> assign(:error_modal_content, "")
+      |> assign(:error_modal_is_json, false)
+      |> assign(:error_modal_status, :loading)
+      |> assign(:error_modal_request_key, request_key)
+      |> start_async({:batch_error_modal, request_key}, fn ->
+        format_content_with_type(error_msg)
+      end)
+
+    {:noreply, socket}
   end
 
   @impl true
   def handle_event("close_batch_error_modal", _params, socket) do
-    {:noreply, assign(socket, :show_error_modal, false)}
+    {:noreply,
+     socket
+     |> assign(:show_error_modal, false)
+     |> assign(:error_modal_status, :idle)}
   end
 
   @impl true
   def handle_event("open_capacity_modal", _params, socket) do
-    {:noreply, assign(socket, :show_capacity_modal, true)}
+    socket =
+      socket
+      |> assign(:show_capacity_modal, true)
+      |> maybe_load_capacity_info()
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -216,17 +115,141 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
+  def handle_async({:batch_action, action, batch_id}, {:ok, result}, socket) do
+    socket = AsyncActions.clear_pending(socket, {:batch_action, action, batch_id})
+
+    case result do
+      {:ok, :delete, message} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, message)
+         |> redirect(to: ~p"/batches")}
+
+      {:ok, :restart, message} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, message)
+         |> assign(:show_error_modal, false)
+         |> assign(:error_modal_content, "")
+         |> assign(:error_modal_is_json, false)
+         |> assign(:error_modal_status, :idle)}
+
+      {:ok, _action, message} ->
+        {:noreply, put_flash(socket, :info, message)}
+
+      {:error, error_message} ->
+        {:noreply, put_flash(socket, :error, error_message)}
+    end
+  end
+
+  @impl true
+  def handle_async({:batch_action, action, batch_id}, {:exit, reason}, socket) do
+    socket =
+      socket
+      |> AsyncActions.clear_pending({:batch_action, action, batch_id})
+      |> put_flash(:error, "Batch action failed unexpectedly: #{inspect(reason)}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_async({:batch_error_modal, request_key}, result, socket) do
+    if socket.assigns.error_modal_request_key == request_key do
+      case result do
+        {:ok, {content, is_json}} ->
+          {:noreply,
+           socket
+           |> assign(:error_modal_content, content)
+           |> assign(:error_modal_is_json, is_json)
+           |> assign(:error_modal_status, :ready)}
+
+        {:exit, _reason} ->
+          {:noreply, assign(socket, :error_modal_status, :error)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:batch_details_section, :timeline, request_key}, {:ok, transitions}, socket) do
+    if socket.assigns.batch.id == request_key and
+         socket.assigns.timeline_request_key == request_key do
+      {:noreply, assign(socket, transitions: transitions, timeline_status: :ready)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:batch_details_section, :timeline, request_key}, {:exit, _reason}, socket) do
+    if socket.assigns.batch.id == request_key and
+         socket.assigns.timeline_request_key == request_key do
+      {:noreply, assign(socket, :timeline_status, :error)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async(
+        {:batch_details_section, :delivery_stats, request_key},
+        {:ok, delivery_stats},
+        socket
+      ) do
+    if socket.assigns.batch.id == request_key and
+         socket.assigns.delivery_stats_request_key == request_key do
+      {:noreply, assign(socket, delivery_stats: delivery_stats, delivery_stats_status: :ready)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async(
+        {:batch_details_section, :delivery_stats, request_key},
+        {:exit, _reason},
+        socket
+      ) do
+    if socket.assigns.batch.id == request_key and
+         socket.assigns.delivery_stats_request_key == request_key do
+      {:noreply, assign(socket, :delivery_stats_status, :error)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:batch_details_section, :capacity_info, request_key}, result, socket) do
+    if request_key == socket.assigns.batch.id do
+      case result do
+        {:ok, capacity_info} ->
+          {:noreply,
+           socket
+           |> assign(:capacity_info, capacity_info)
+           |> assign(:capacity_info_status, :ready)
+           |> assign(:capacity_info_stale, false)}
+
+        {:exit, _reason} ->
+          {:noreply, assign(socket, :capacity_info_status, :error)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_info(
         %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}},
         socket
       ) do
-    batch = Batching.get_batch_by_id!(batch.id, load: [:transitions, :delivery_stats])
-    transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
+    batch = Batching.get_batch_by_id!(batch.id)
 
     {:noreply,
      socket
-     |> assign(batch: batch, transitions: transitions, capacity_info: build_capacity_info(batch))
-     |> assign(delivery_bar_width_styles(batch))}
+     |> assign(batch: batch)
+     |> mark_capacity_info_stale()
+     |> start_section_loads(batch.id)}
   end
 
   @impl true
@@ -249,7 +272,7 @@ defmodule BatcherWeb.BatchShowLive do
         openai_requests_total: batch_data.openai_requests_total
     }
 
-    {:noreply, assign(socket, :batch, updated_batch)}
+    {:noreply, socket |> assign(:batch, updated_batch) |> mark_capacity_info_stale()}
   end
 
   @impl true
@@ -281,10 +304,7 @@ defmodule BatcherWeb.BatchShowLive do
               estimated_request_input_tokens_delta
       }
 
-      {:noreply,
-       socket
-       |> assign(batch: updated_batch, capacity_info: build_capacity_info(updated_batch))
-       |> assign(delivery_bar_width_styles(updated_batch))}
+      {:noreply, socket |> assign(batch: updated_batch) |> mark_capacity_info_stale()}
     else
       {:noreply, socket}
     end
@@ -295,25 +315,122 @@ defmodule BatcherWeb.BatchShowLive do
     {:noreply, socket}
   end
 
-  defp delivery_bar_width_styles(batch) do
-    total = batch.request_count || 0
-    delivered = batch.delivery_stats[:delivered] || 0
-    delivering = batch.delivery_stats[:delivering] || 0
-    failed = batch.delivery_stats[:failed] || 0
+  defp start_current_batch_action_async(socket, action) do
+    batch_id = socket.assigns.batch.id
 
-    {delivered_pct, delivering_pct, failed_pct} =
-      if total > 0 do
-        {delivered / total * 100, delivering / total * 100, failed / total * 100}
-      else
-        {0, 0, 0}
-      end
+    if pending_action?(socket.assigns.pending_actions, action, batch_id) do
+      {:noreply, socket}
+    else
+      async_key = {:batch_action, action, batch_id}
 
-    [
-      delivered_width_style: "width: #{delivered_pct}%",
-      delivering_width_style: "width: #{delivering_pct}%",
-      failed_width_style: "width: #{failed_pct}%"
-    ]
+      AsyncActions.start_action(socket, async_key, fn ->
+        perform_batch_action(action, batch_id)
+      end)
+    end
   end
+
+  defp perform_batch_action(action, batch_id) do
+    maybe_test_async_delay()
+
+    case Batching.get_batch_by_id(batch_id) do
+      {:ok, batch} ->
+        case action do
+          :upload ->
+            case Batching.start_batch_upload(batch) do
+              {:ok, _} ->
+                {:ok, action, "Batch upload started"}
+
+              {:error, error} ->
+                {:error, format_generic_action_error("Failed to start upload", error)}
+            end
+
+          :cancel ->
+            case Batching.cancel_batch(batch) do
+              {:ok, _} -> {:ok, action, "Batch cancelled successfully"}
+              {:error, error} -> {:error, format_cancel_error(error)}
+            end
+
+          :delete ->
+            case Batching.destroy_batch(batch) do
+              :ok -> {:ok, action, "Batch deleted successfully"}
+              {:error, _} -> {:error, "Failed to delete batch"}
+            end
+
+          :restart ->
+            case Batching.restart_batch(batch) do
+              {:ok, _} ->
+                {:ok, action, "Batch restart initiated successfully"}
+
+              {:error, error} ->
+                {:error, format_generic_action_error("Failed to restart batch", error)}
+            end
+
+          :redeliver ->
+            case Batching.redeliver_batch(batch_id) do
+              {:ok, _} ->
+                {:ok, action, "Redelivery initiated for failed requests"}
+
+              {:error, error} ->
+                {:error, format_generic_action_error("Failed to redeliver", error)}
+            end
+        end
+
+      {:error, _} ->
+        {:error, "Batch not found"}
+    end
+  end
+
+  def pending_action?(pending_actions, action, batch_id) do
+    AsyncActions.pending?(pending_actions, {:batch_action, action, batch_id})
+  end
+
+  defp start_section_loads(socket, batch_id) do
+    socket
+    |> assign(:timeline_request_key, batch_id)
+    |> assign(:delivery_stats_request_key, batch_id)
+    |> assign(:timeline_status, next_section_status(socket.assigns.timeline_status))
+    |> assign(:delivery_stats_status, next_section_status(socket.assigns.delivery_stats_status))
+    |> start_async({:batch_details_section, :timeline, batch_id}, fn ->
+      load_transitions(batch_id)
+    end)
+    |> start_async({:batch_details_section, :delivery_stats, batch_id}, fn ->
+      load_delivery_stats(batch_id)
+    end)
+  end
+
+  defp next_section_status(current) do
+    if current in [:idle, :loading_initial], do: :loading_initial, else: :refreshing
+  end
+
+  defp load_transitions(batch_id) do
+    batch = Batching.get_batch_by_id!(batch_id, load: [:transitions])
+    Enum.sort_by(batch.transitions, & &1.transitioned_at, DateTime)
+  end
+
+  defp load_delivery_stats(batch_id) do
+    batch = Batching.get_batch_by_id!(batch_id, load: [:delivery_stats])
+    batch.delivery_stats || %{}
+  end
+
+  defp maybe_load_capacity_info(socket) do
+    batch = socket.assigns.batch
+
+    if socket.assigns.batch.state == :waiting_for_capacity and
+         (is_nil(socket.assigns.capacity_info) or socket.assigns.capacity_info_stale) do
+      socket
+      |> assign(
+        :capacity_info_status,
+        if(is_nil(socket.assigns.capacity_info), do: :loading_initial, else: :refreshing)
+      )
+      |> start_async({:batch_details_section, :capacity_info, batch.id}, fn ->
+        build_capacity_info(batch)
+      end)
+    else
+      socket
+    end
+  end
+
+  defp mark_capacity_info_stale(socket), do: assign(socket, :capacity_info_stale, true)
 
   defp build_capacity_info(batch) do
     {:ok, %{limit: limit, source: limit_source}} =
@@ -353,6 +470,37 @@ defmodule BatcherWeb.BatchShowLive do
   defp format_wait_reason(nil), do: "Waiting for queue capacity"
   defp format_wait_reason(other), do: other
 
+  defp format_cancel_error(error) do
+    case error do
+      %Ash.Error.Invalid{errors: errors} ->
+        Enum.map_join(errors, ", ", fn e ->
+          case e do
+            %AshStateMachine.Errors.NoMatchingTransition{
+              old_state: old_state,
+              target: target
+            } ->
+              "Cannot transition batch from #{old_state} to #{target} state"
+
+            _ ->
+              Exception.message(e)
+          end
+        end)
+
+      other ->
+        "Failed to cancel batch: #{Exception.message(other)}"
+    end
+  end
+
+  defp format_generic_action_error(prefix, error) do
+    case error do
+      %Ash.Error.Invalid{errors: errors} ->
+        Enum.map_join(errors, ", ", &Exception.message/1)
+
+      other ->
+        "#{prefix}: #{Exception.message(other)}"
+    end
+  end
+
   defp format_content_with_type(nil), do: {"", false}
 
   defp format_content_with_type(content) when is_binary(content) do
@@ -367,6 +515,8 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   defp format_content_with_type(content), do: {inspect(content), false}
+
+  def loading_section?(status), do: status in [:loading_initial, :refreshing]
 
   defp token_limit_backoff_waiting?(batch) do
     batch.state == :waiting_for_capacity and
@@ -383,6 +533,13 @@ defmodule BatcherWeb.BatchShowLive do
       seconds < 60 -> "<1m"
       seconds < 3600 -> "#{div(seconds, 60)}m"
       true -> "#{div(seconds, 3600)}h #{rem(div(seconds, 60), 60)}m"
+    end
+  end
+
+  defp maybe_test_async_delay do
+    case Application.get_env(:batcher, :batch_action_test_delay_ms, 0) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
     end
   end
 end

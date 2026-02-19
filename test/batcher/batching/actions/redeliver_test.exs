@@ -264,5 +264,34 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
       r2 = Batching.get_request_by_id!(failed_in_batch2.id)
       assert r2.state == :delivery_failed
     end
+
+    test "returns error and does not transition batch when RabbitMQ is disconnected" do
+      if pid = Process.whereis(Batcher.RabbitMQ.Publisher) do
+        Process.exit(pid, :kill)
+      end
+
+      batch =
+        seeded_batch(state: :delivery_failed)
+        |> generate()
+
+      _failed_request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :delivery_failed,
+          delivery_config: %{"type" => "rabbitmq", "rabbitmq_queue" => "batch_results"},
+          response_payload: %{"output" => "response"}
+        )
+        |> generate()
+
+      result =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
+        |> Ash.run_action()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+
+      batch_after = Batching.get_batch_by_id!(batch.id)
+      assert batch_after.state == :delivery_failed
+    end
   end
 end

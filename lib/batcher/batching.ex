@@ -17,6 +17,10 @@ defmodule Batcher.Batching do
         action: :search,
         args: [:query]
 
+      define :count_batches_for_search,
+        action: :count_for_search,
+        args: [:query]
+
       define :cancel_batch, action: :cancel
       define :begin_batch_redeliver, action: :begin_redeliver
       define :restart_batch, action: :restart
@@ -43,6 +47,10 @@ defmodule Batcher.Batching do
 
       define :search_requests,
         action: :search,
+        args: [:query]
+
+      define :count_requests_for_search,
+        action: :count_for_search,
         args: [:query]
 
       define :deliver_request, action: :deliver

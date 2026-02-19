@@ -16,6 +16,7 @@ defmodule Batcher.Batching.BatchTransition do
 
     custom_indexes do
       index [:batch_id]
+      index [:batch_id, :transitioned_at]
     end
   end
 

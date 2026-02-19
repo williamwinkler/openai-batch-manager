@@ -2,6 +2,9 @@ defmodule BatcherWeb.BatchIndexLive do
   use BatcherWeb, :live_view
 
   alias Batcher.Batching
+  alias BatcherWeb.Live.Utils.AsyncActions
+  alias BatcherWeb.Live.Utils.ActionLocks
+  alias BatcherWeb.Live.Utils.AsyncPagination
   alias Batcher.Utils.Format
   @reload_debounce_ms 750
 
@@ -19,6 +22,11 @@ defmodule BatcherWeb.BatchIndexLive do
       |> assign(:page_title, "Batches")
       |> assign(:subscribed_batch_ids, MapSet.new())
       |> assign(:reload_timer_ref, nil)
+      |> assign(:pending_actions, MapSet.new())
+      |> assign(:processing_since_by_batch_id, %{})
+      |> assign(:processing_since_status, :idle)
+      |> assign(:processing_since_request_key, nil)
+      |> AsyncPagination.init()
 
     {:ok, socket}
   end
@@ -30,13 +38,12 @@ defmodule BatcherWeb.BatchIndexLive do
 
     page_opts =
       AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 20)
-      |> Keyword.put(:count, true)
+      |> Keyword.put(:count, false)
 
     page =
       Batching.search_batches!(query_text,
         page: page_opts,
-        query: [sort_input: sort_by],
-        load: [:processing_since]
+        query: [sort_input: sort_by]
       )
 
     socket =
@@ -45,6 +52,8 @@ defmodule BatcherWeb.BatchIndexLive do
       |> assign(:sort_by, sort_by)
       |> assign(:page, page)
       |> subscribe_to_batches(page.results)
+      |> schedule_processing_since(query_text, sort_by, page)
+      |> schedule_count(query_text, sort_by)
 
     {:noreply, socket}
   end
@@ -77,159 +86,76 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   @impl true
-  def handle_event("upload_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
+  def handle_event("upload_batch", %{"id" => id}, socket),
+    do: start_batch_action_async(socket, :upload, id)
 
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        if batch.state == :building do
-          case Batcher.BatchBuilder.upload_batch(batch.url, batch.model) do
-            :ok ->
-              {:noreply, put_flash(socket, :info, "Batch upload initiated successfully")}
+  @impl true
+  def handle_event("cancel_batch", %{"id" => id}, socket),
+    do: start_batch_action_async(socket, :cancel, id)
 
-            {:error, reason} ->
-              error_msg =
-                case reason do
-                  :noproc ->
-                    "BatchBuilder not found. The batch may have already been uploaded."
+  @impl true
+  def handle_event("delete_batch", %{"id" => id}, socket),
+    do: start_batch_action_async(socket, :delete, id)
 
-                  :no_building_batch ->
-                    "No batch in building state found for this model/endpoint."
+  @impl true
+  def handle_event("restart_batch", %{"id" => id}, socket),
+    do: start_batch_action_async(socket, :restart, id)
 
-                  other ->
-                    "Failed to upload batch: #{inspect(other)}"
-                end
+  @impl true
+  def handle_event("redeliver_batch", %{"id" => id}, socket),
+    do: start_batch_action_async(socket, :redeliver, id)
 
-              {:noreply, put_flash(socket, :error, error_msg)}
-          end
-        else
-          {:noreply, put_flash(socket, :error, "Batch is not in building state")}
-        end
+  @impl true
+  def handle_async({:batch_action, action, batch_id}, {:ok, result}, socket) do
+    ActionLocks.release({:batch_action, action, batch_id})
+    socket = AsyncActions.clear_pending(socket, {:batch_action, action, batch_id})
 
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
+    case result do
+      {:ok, info_message, opts} ->
+        socket =
+          socket
+          |> put_flash(:info, info_message)
+          |> maybe_reload(Keyword.get(opts, :reload?, false))
+
+        {:noreply, socket}
+
+      {:error, error_message, _opts} ->
+        {:noreply, put_flash(socket, :error, error_message)}
     end
   end
 
   @impl true
-  def handle_event("cancel_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
+  def handle_async({:batch_action, action, batch_id}, {:exit, reason}, socket) do
+    ActionLocks.release({:batch_action, action, batch_id})
 
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        case Batching.cancel_batch(batch) do
-          {:ok, _} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Batch cancelled successfully")
-             |> reload_page()}
+    socket =
+      socket
+      |> AsyncActions.clear_pending({:batch_action, action, batch_id})
+      |> put_flash(:error, "Batch action failed unexpectedly: #{inspect(reason)}")
 
-          {:error, error} ->
-            error_msg =
-              case error do
-                %Ash.Error.Invalid{errors: errors} ->
-                  Enum.map_join(errors, ", ", fn e ->
-                    # Handle NoMatchingTransition errors specifically
-                    case e do
-                      %AshStateMachine.Errors.NoMatchingTransition{
-                        old_state: old_state,
-                        target: target
-                      } ->
-                        "Cannot transition batch from #{old_state} to #{target} state"
-
-                      _ ->
-                        # Use Exception.message for other error types
-                        Exception.message(e)
-                    end
-                  end)
-
-                other ->
-                  "Failed to cancel batch: #{Exception.message(other)}"
-              end
-
-            {:noreply, put_flash(socket, :error, error_msg)}
-        end
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
-    end
+    {:noreply, socket}
   end
 
   @impl true
-  def handle_event("delete_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        case Batching.destroy_batch(batch) do
-          :ok ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Batch deleted successfully")
-             |> reload_page()}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Failed to delete batch")}
-        end
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
-    end
+  def handle_async({:page_count, count_request_key}, result, socket) do
+    {:noreply, AsyncPagination.handle_count_async(socket, count_request_key, result)}
   end
 
   @impl true
-  def handle_event("restart_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
+  def handle_async({:batch_processing_since, request_key}, result, socket) do
+    if socket.assigns.processing_since_request_key == request_key do
+      case result do
+        {:ok, loaded_map} ->
+          {:noreply,
+           socket
+           |> assign(:processing_since_by_batch_id, merge_processing_since(socket, loaded_map))
+           |> assign(:processing_since_status, :ready)}
 
-    case Batching.get_batch_by_id(id) do
-      {:ok, batch} ->
-        case Batching.restart_batch(batch) do
-          {:ok, _} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Batch restart initiated successfully")
-             |> reload_page()}
-
-          {:error, error} ->
-            error_msg =
-              case error do
-                %Ash.Error.Invalid{errors: errors} ->
-                  Enum.map_join(errors, ", ", &Exception.message/1)
-
-                other ->
-                  "Failed to restart batch: #{Exception.message(other)}"
-              end
-
-            {:noreply, put_flash(socket, :error, error_msg)}
-        end
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Batch not found")}
-    end
-  end
-
-  @impl true
-  def handle_event("redeliver_batch", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    case Batching.redeliver_batch(id) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Redelivery initiated for failed requests")
-         |> reload_page()}
-
-      {:error, error} ->
-        error_msg =
-          case error do
-            %Ash.Error.Invalid{errors: errors} ->
-              Enum.map_join(errors, ", ", &Exception.message/1)
-
-            other ->
-              "Failed to redeliver: #{Exception.message(other)}"
-          end
-
-        {:noreply, put_flash(socket, :error, error_msg)}
+        {:exit, _reason} ->
+          {:noreply, assign(socket, :processing_since_status, :error)}
+      end
+    else
+      {:noreply, socket}
     end
   end
 
@@ -239,24 +165,24 @@ defmodule BatcherWeb.BatchIndexLive do
         socket
       ) do
     # Reload the page to reflect state changes
-    {:noreply, reload_page(socket)}
+    {:noreply, reload_page(socket, refresh_count?: false)}
   end
 
   @impl true
   def handle_info(%{topic: "batches:created", payload: %{data: _batch}}, socket) do
     # Reload batches to include the new one (respects current filters/sort)
-    {:noreply, reload_page(socket)}
+    {:noreply, reload_page(socket, refresh_count?: false)}
   end
 
   @impl true
   def handle_info(%{topic: "batches:created:" <> _batch_id, payload: %{data: _batch}}, socket) do
     # Also handle individual batch creation events
-    {:noreply, reload_page(socket)}
+    {:noreply, reload_page(socket, refresh_count?: false)}
   end
 
   @impl true
   def handle_info(%{topic: "batches:destroyed:" <> _batch_id, payload: %{data: _batch}}, socket) do
-    {:noreply, reload_page(socket)}
+    {:noreply, reload_page(socket, refresh_count?: false)}
   end
 
   @impl true
@@ -308,7 +234,7 @@ defmodule BatcherWeb.BatchIndexLive do
 
   @impl true
   def handle_info(:reload_page_debounced, socket) do
-    {:noreply, socket |> assign(:reload_timer_ref, nil) |> reload_page()}
+    {:noreply, socket |> assign(:reload_timer_ref, nil) |> reload_page(refresh_count?: false)}
   end
 
   @impl true
@@ -316,7 +242,7 @@ defmodule BatcherWeb.BatchIndexLive do
     {:noreply, socket}
   end
 
-  defp reload_page(socket) do
+  defp reload_page(socket, opts) do
     maybe_cancel_timer(socket.assigns[:reload_timer_ref])
 
     query_text = socket.assigns[:query_text] || ""
@@ -324,15 +250,254 @@ defmodule BatcherWeb.BatchIndexLive do
 
     page =
       Batching.search_batches!(query_text,
-        page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit, count: true],
-        query: [sort_input: sort_by],
-        load: [:processing_since]
+        page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit, count: false],
+        query: [sort_input: sort_by]
       )
 
-    socket
-    |> assign(:reload_timer_ref, nil)
-    |> assign(:page, page)
-    |> subscribe_to_batches(page.results)
+    socket =
+      socket
+      |> assign(:reload_timer_ref, nil)
+      |> assign(:page, page)
+      |> subscribe_to_batches(page.results)
+      |> schedule_processing_since(query_text, sort_by, page)
+
+    if Keyword.get(opts, :refresh_count?, true) do
+      schedule_count(socket, query_text, sort_by)
+    else
+      socket
+    end
+  end
+
+  defp schedule_count(socket, query_text, sort_by) do
+    count_request_key = {:batches_count, query_text, sort_by}
+
+    AsyncPagination.schedule_count(socket, count_request_key, fn ->
+      count_batches(query_text)
+    end)
+  end
+
+  defp schedule_processing_since(socket, query_text, sort_by, page) do
+    ids = Enum.map(page.results, & &1.id)
+    request_key = {:processing_since, query_text, sort_by, page.offset, page.limit, ids}
+
+    socket =
+      socket
+      |> assign(:processing_since_request_key, request_key)
+      |> assign(
+        :processing_since_status,
+        if(socket.assigns.processing_since_status in [:idle],
+          do: :loading_initial,
+          else: :refreshing
+        )
+      )
+
+    if connected?(socket) do
+      start_async(socket, {:batch_processing_since, request_key}, fn ->
+        load_processing_since(ids)
+      end)
+    else
+      socket
+    end
+  end
+
+  defp load_processing_since(ids) do
+    ids
+    |> Enum.map(fn id ->
+      case Batching.get_batch_by_id(id, load: [:processing_since]) do
+        {:ok, batch} -> {id, batch.processing_since}
+        _ -> {id, nil}
+      end
+    end)
+    |> Map.new()
+  end
+
+  defp merge_processing_since(socket, loaded_map) do
+    visible_ids = socket.assigns.page.results |> Enum.map(& &1.id) |> MapSet.new()
+    existing = socket.assigns.processing_since_by_batch_id
+
+    kept_existing =
+      existing
+      |> Enum.filter(fn {id, _} -> MapSet.member?(visible_ids, id) end)
+      |> Map.new()
+
+    Map.merge(kept_existing, loaded_map)
+  end
+
+  defp count_batches(query_text) do
+    case Batching.count_batches_for_search(query_text, page: [limit: 1, count: true]) do
+      {:ok, page} -> {:ok, page.count || 0}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp start_batch_action_async(socket, action, raw_id) do
+    case parse_batch_id(raw_id) do
+      {:ok, batch_id} ->
+        key = {:batch_action, action, batch_id}
+
+        if pending_action?(socket.assigns.pending_actions, action, batch_id) do
+          {:noreply, socket}
+        else
+          if ActionLocks.acquire(key) do
+            AsyncActions.start_action(socket, key, fn ->
+              perform_batch_action(action, batch_id)
+            end)
+          else
+            {:noreply, socket}
+          end
+        end
+
+      :error ->
+        {:noreply, put_flash(socket, :error, "Invalid batch id")}
+    end
+  end
+
+  defp perform_batch_action(action, batch_id) do
+    maybe_test_async_delay()
+
+    case action do
+      :upload -> perform_upload(batch_id)
+      :cancel -> perform_cancel(batch_id)
+      :delete -> perform_delete(batch_id)
+      :restart -> perform_restart(batch_id)
+      :redeliver -> perform_redeliver(batch_id)
+    end
+  end
+
+  defp perform_upload(batch_id) do
+    case Batching.get_batch_by_id(batch_id) do
+      {:ok, batch} ->
+        if batch.state == :building do
+          case Batcher.BatchBuilder.upload_batch(batch.url, batch.model) do
+            :ok ->
+              {:ok, "Batch upload initiated successfully", reload?: false}
+
+            {:error, reason} ->
+              error_msg =
+                case reason do
+                  :noproc ->
+                    "BatchBuilder not found. The batch may have already been uploaded."
+
+                  :no_building_batch ->
+                    "No batch in building state found for this model/endpoint."
+
+                  other ->
+                    "Failed to upload batch: #{inspect(other)}"
+                end
+
+              {:error, error_msg, reload?: false}
+          end
+        else
+          {:error, "Batch is not in building state", reload?: false}
+        end
+
+      {:error, _} ->
+        {:error, "Batch not found", reload?: false}
+    end
+  end
+
+  defp perform_cancel(batch_id) do
+    with {:ok, batch} <- Batching.get_batch_by_id(batch_id) do
+      case Batching.cancel_batch(batch) do
+        {:ok, _} ->
+          {:ok, "Batch cancelled successfully", reload?: true}
+
+        {:error, error} ->
+          {:error, format_cancel_error(error), reload?: false}
+      end
+    else
+      {:error, _} -> {:error, "Batch not found", reload?: false}
+    end
+  end
+
+  defp perform_delete(batch_id) do
+    with {:ok, batch} <- Batching.get_batch_by_id(batch_id) do
+      case Batching.destroy_batch(batch) do
+        :ok -> {:ok, "Batch deleted successfully", reload?: true}
+        {:error, _} -> {:error, "Failed to delete batch", reload?: false}
+      end
+    else
+      {:error, _} -> {:error, "Batch not found", reload?: false}
+    end
+  end
+
+  defp perform_restart(batch_id) do
+    with {:ok, batch} <- Batching.get_batch_by_id(batch_id) do
+      case Batching.restart_batch(batch) do
+        {:ok, _} ->
+          {:ok, "Batch restart initiated successfully", reload?: true}
+
+        {:error, error} ->
+          {:error, format_generic_action_error("Failed to restart batch", error), reload?: false}
+      end
+    else
+      {:error, _} -> {:error, "Batch not found", reload?: false}
+    end
+  end
+
+  defp perform_redeliver(batch_id) do
+    case Batching.redeliver_batch(batch_id) do
+      {:ok, _} ->
+        {:ok, "Redelivery initiated for failed requests", reload?: true}
+
+      {:error, error} ->
+        {:error, format_generic_action_error("Failed to redeliver", error), reload?: false}
+    end
+  end
+
+  defp maybe_reload(socket, true), do: reload_page(socket, refresh_count?: true)
+  defp maybe_reload(socket, false), do: socket
+
+  def pending_action?(pending_actions, action, batch_id) do
+    key = {:batch_action, action, batch_id}
+    AsyncActions.pending?(pending_actions, key) or ActionLocks.locked?(key)
+  end
+
+  defp parse_batch_id(raw_id) when is_binary(raw_id) do
+    case Integer.parse(raw_id) do
+      {id, ""} -> {:ok, id}
+      _ -> :error
+    end
+  end
+
+  defp parse_batch_id(_), do: :error
+
+  defp format_cancel_error(error) do
+    case error do
+      %Ash.Error.Invalid{errors: errors} ->
+        Enum.map_join(errors, ", ", fn e ->
+          case e do
+            %AshStateMachine.Errors.NoMatchingTransition{
+              old_state: old_state,
+              target: target
+            } ->
+              "Cannot transition batch from #{old_state} to #{target} state"
+
+            _ ->
+              Exception.message(e)
+          end
+        end)
+
+      other ->
+        "Failed to cancel batch: #{Exception.message(other)}"
+    end
+  end
+
+  defp format_generic_action_error(prefix, error) do
+    case error do
+      %Ash.Error.Invalid{errors: errors} ->
+        Enum.map_join(errors, ", ", &Exception.message/1)
+
+      other ->
+        "#{prefix}: #{Exception.message(other)}"
+    end
+  end
+
+  defp maybe_test_async_delay do
+    case Application.get_env(:batcher, :batch_action_test_delay_ms, 0) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
+    end
   end
 
   defp schedule_reload(socket) do
@@ -425,11 +590,11 @@ defmodule BatcherWeb.BatchIndexLive do
     end
   end
 
-  defp status_duration(batch) do
+  defp status_duration(batch, processing_since_by_batch_id) do
     datetime =
       case batch.state do
         :waiting_for_capacity -> batch.waiting_for_capacity_since_at
-        :openai_processing -> batch.processing_since
+        :openai_processing -> Map.get(processing_since_by_batch_id, batch.id)
         :uploading -> batch.updated_at
         :downloading -> batch.updated_at
         :delivering -> batch.updated_at
@@ -467,16 +632,12 @@ defmodule BatcherWeb.BatchIndexLive do
     "Next retry #{Calendar.strftime(next_at, "%d %b %Y, %H:%M UTC")}"
   end
 
+  def loading_processing_since?(status), do: status in [:loading_initial, :refreshing]
+
   defp sort_options do
     [
       {"Newest first", "-created_at"},
-      {"Oldest first", "created_at"},
-      {"State (A-Z)", "state"},
-      {"State (Z-A)", "-state"},
-      {"Model (A-Z)", "model"},
-      {"Model (Z-A)", "-model"},
-      {"Endpoint (A-Z)", "url"},
-      {"Endpoint (Z-A)", "-url"}
+      {"Oldest first", "created_at"}
     ]
   end
 

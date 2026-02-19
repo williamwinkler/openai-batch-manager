@@ -6,8 +6,8 @@
       "type": "bigint",
       "source": "id",
       "references": null,
-      "primary_key?": true,
       "allow_nil?": false,
+      "primary_key?": true,
       "generated?": true
     },
     {
@@ -16,8 +16,8 @@
       "type": "text",
       "source": "custom_id",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -26,8 +26,8 @@
       "type": "text",
       "source": "url",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -36,8 +36,8 @@
       "type": "text",
       "source": "model",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -46,8 +46,8 @@
       "type": "text",
       "source": "request_payload",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -56,8 +56,8 @@
       "type": "bigint",
       "source": "request_payload_size",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -66,8 +66,8 @@
       "type": "bigint",
       "source": "estimated_input_tokens",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -76,8 +76,8 @@
       "type": "bigint",
       "source": "estimated_request_input_tokens",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -86,8 +86,8 @@
       "type": "map",
       "source": "response_payload",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": true,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -96,8 +96,8 @@
       "type": "text",
       "source": "state",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -106,8 +106,8 @@
       "type": "map",
       "source": "delivery_config",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -116,8 +116,8 @@
       "type": "text",
       "source": "error_msg",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": true,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -126,8 +126,8 @@
       "type": "utc_datetime_usec",
       "source": "created_at",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -136,8 +136,8 @@
       "type": "utc_datetime_usec",
       "source": "updated_at",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -150,43 +150,42 @@
         "table": "batches",
         "multitenancy": {
           "global": null,
-          "strategy": null,
-          "attribute": null
+          "attribute": null,
+          "strategy": null
         },
-        "primary_key?": true,
         "destination_attribute": "id",
-        "on_delete": "delete",
         "on_update": null,
+        "primary_key?": true,
+        "on_delete": "delete",
         "deferrable": false,
-        "destination_attribute_generated": null,
-        "destination_attribute_default": null
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null
       },
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     }
   ],
   "table": "requests",
-  "hash": "5445E08E22503784DB1F13E5BB6F9B62AE353A29200715703A4832C27D1F1E8B",
+  "hash": "9FFC53B87A98AB0AD89223F5962A937E74D0EA4610D3B048D00617AFFF66CF73",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
-  "base_filter": null,
   "custom_indexes": [
     {
       "message": null,
       "name": null,
       "table": null,
       "include": null,
-      "where": null,
       "fields": [
         "custom_id"
       ],
+      "where": null,
       "unique": true,
       "using": null
     },
@@ -195,10 +194,72 @@
       "name": null,
       "table": null,
       "include": null,
+      "fields": [
+        "state"
+      ],
       "where": null,
+      "unique": false,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
       "fields": [
         "batch_id"
       ],
+      "where": null,
+      "unique": false,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "batch_id",
+        "state"
+      ],
+      "where": null,
+      "unique": false,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "created_at"
+      ],
+      "where": null,
+      "unique": false,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "updated_at"
+      ],
+      "where": null,
+      "unique": false,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "batch_id",
+        "created_at"
+      ],
+      "where": null,
       "unique": false,
       "using": null
     }
@@ -229,5 +290,6 @@
       "code?": false
     }
   ],
+  "base_filter": null,
   "has_create_action": true
 }

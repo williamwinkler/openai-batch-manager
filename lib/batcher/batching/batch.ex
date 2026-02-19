@@ -29,6 +29,8 @@ defmodule Batcher.Batching.Batch do
 
     custom_indexes do
       index [:state, :model, :url], name: "batches_state_model_url_index"
+      index [:state, :model, :token_limit_retry_next_at, :waiting_for_capacity_since_at, :id]
+      index [:expires_at]
     end
 
     custom_statements do
@@ -265,6 +267,20 @@ defmodule Batcher.Batching.Batch do
       end
 
       pagination offset?: true, default_limit: 12, countable: true
+    end
+
+    read :count_for_search do
+      description "Count batches matching the search filters"
+
+      argument :query, :ci_string do
+        description "Filter batches by model and url"
+        constraints allow_empty?: true
+        default ""
+      end
+
+      filter expr(contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
+
+      pagination offset?: true, countable: true
     end
 
     update :start_upload do

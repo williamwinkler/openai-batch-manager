@@ -183,6 +183,22 @@ defmodule Batcher.Batching.BatchTest do
     end
   end
 
+  describe "Batcher.Batching.count_batches_for_search" do
+    test "counts batches using the same query semantics as search" do
+      _ = generate(batch(model: "count-model-a"))
+      _ = generate(batch(model: "count-model-b"))
+      _ = generate(batch(model: "other-model"))
+
+      {:ok, page} = Batching.search_batches("count-model", page: [limit: 1, count: true])
+
+      {:ok, count_page} =
+        Batching.count_batches_for_search("count-model", page: [limit: 1, count: true])
+
+      assert count_page.count == page.count
+      assert count_page.count == 2
+    end
+  end
+
   describe "Batcher.Batching.Batch.start_upload/0" do
     test "sets the state to :uploading" do
       batch = generate(batch())

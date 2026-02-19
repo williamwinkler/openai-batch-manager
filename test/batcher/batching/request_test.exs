@@ -732,6 +732,64 @@ defmodule Batcher.Batching.RequestTest do
     end
   end
 
+  describe "Batcher.Batching.count_requests_for_search" do
+    test "counts requests using the same query semantics as search" do
+      batch = generate(batch())
+
+      for i <- 1..3 do
+        {:ok, _request} =
+          Batching.create_request(%{
+            batch_id: batch.id,
+            custom_id: "needle-#{i}",
+            url: batch.url,
+            model: batch.model,
+            request_payload: %{
+              custom_id: "needle-#{i}",
+              body: %{input: "count test", model: batch.model},
+              method: "POST",
+              url: batch.url
+            },
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
+          })
+      end
+
+      {:ok, page} = Batching.search_requests("needle-", page: [limit: 2, count: true])
+
+      {:ok, count_page} =
+        Batching.count_requests_for_search("needle-", page: [limit: 1, count: true])
+
+      assert count_page.count == page.count
+    end
+
+    test "respects batch_id filtering" do
+      batch1 = generate(batch())
+      batch2 = generate(batch())
+
+      _ = generate_many(request(batch_id: batch1.id), 2)
+      _ = generate_many(request(batch_id: batch2.id), 4)
+
+      {:ok, page} =
+        Batching.search_requests(
+          "",
+          %{batch_id: batch2.id, sort_input: "-created_at"},
+          page: [limit: 2, count: true]
+        )
+
+      {:ok, count_page} =
+        Batching.count_requests_for_search(
+          "",
+          %{batch_id: batch2.id},
+          page: [limit: 1, count: true]
+        )
+
+      assert count_page.count == page.count
+      assert count_page.count == 4
+    end
+  end
+
   describe "Batcher.Batching.Request.begin_processing" do
     test "transitions request from pending to openai_processing" do
       request = generate(request())
@@ -1026,6 +1084,29 @@ defmodule Batcher.Batching.RequestTest do
           |> Ash.Changeset.for_update(:cancel)
           |> Ash.update!()
         end
+      end
+    end
+  end
+
+  describe "Batcher.Batching.Request.retry_delivery" do
+    test "blocks RabbitMQ retry when publisher is disconnected" do
+      if pid = Process.whereis(Batcher.RabbitMQ.Publisher) do
+        Process.exit(pid, :kill)
+      end
+
+      request =
+        generate(
+          seeded_request(
+            state: :delivery_failed,
+            delivery_config: %{"type" => "rabbitmq", "rabbitmq_queue" => "batch_results"},
+            response_payload: %{"output" => "response"}
+          )
+        )
+
+      assert_raise Ash.Error.Invalid, fn ->
+        request
+        |> Ash.Changeset.for_update(:retry_delivery)
+        |> Ash.update!()
       end
     end
   end

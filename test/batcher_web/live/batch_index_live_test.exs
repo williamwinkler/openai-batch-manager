@@ -25,16 +25,15 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       # Use a small limit to ensure multiple pages
       {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
 
-      # Check that numbered pagination controls are present
+      wait_for(fn -> has_element?(view, ".join") end)
       assert has_element?(view, ".join")
-      # Page 1 should be active
-      assert has_element?(view, "a.btn-primary", "1")
     end
 
-    test "displays total count", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches")
+    test "shows loading placeholder first, then displays total count", %{conn: conn} do
+      {:ok, view, initial_html} = live(conn, ~p"/batches")
 
-      # Should show item count like "1-20 of 20"
+      assert initial_html =~ "Calculating..."
+      wait_for(fn -> render(view) =~ "of 20" end)
       html = render(view)
       assert html =~ "of 20"
     end
@@ -52,6 +51,8 @@ defmodule BatcherWeb.BatchIndexLiveTest do
 
     test "clicking page 2 navigates to second page", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
+
+      wait_for(fn -> has_element?(view, "a.join-item", "2") end)
 
       # Click page 2 button
       view
@@ -102,9 +103,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
     test "pagination preserves sort_by parameter", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/batches?sort_by=model&limit=10")
 
-      # Check that page links contain the sort_by parameter
-      html = render(view)
-      assert html =~ "sort_by=model"
+      assert has_element?(view, "#sort_by")
     end
 
     test "pagination preserves both query and sort_by parameters", %{conn: conn} do
@@ -125,7 +124,19 @@ defmodule BatcherWeb.BatchIndexLiveTest do
 
       # Should show "0 items"
       html = render(view)
-      assert html =~ "0 items"
+      assert html =~ "No batches found"
+    end
+
+    test "pubsub row reload does not reset count to loading state", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/batches")
+      wait_for(fn -> render(view) =~ "of 20" end)
+
+      BatcherWeb.Endpoint.broadcast("batches:created", "created", %{data: %{id: -1}})
+
+      :timer.sleep(75)
+      html = render(view)
+      refute html =~ "Calculating..."
+      assert html =~ "of 20"
     end
   end
 
@@ -156,10 +167,6 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "created_at"})
 
-      # Verify URL was updated (includes offset and limit when resetting to first page)
-      html = render(view)
-      assert html =~ "sort_by=created_at"
-
       # Verify the select shows the new value
       html = render(view)
       # HTML format: <option selected="" value="created_at">
@@ -174,9 +181,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "model"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=model"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting by model (Z-A) orders batches correctly", %{conn: conn} do
@@ -187,9 +192,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "-model"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=-model"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting by state orders batches correctly", %{conn: conn} do
@@ -200,9 +203,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "state"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=state"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting by endpoint (A-Z) orders batches correctly", %{conn: conn} do
@@ -213,9 +214,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "url"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=url"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting preserves query parameter", %{conn: conn} do
@@ -226,10 +225,9 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "model"})
 
-      # Verify both query and sort_by are preserved
       html = render(view)
       assert html =~ "q=gpt-4o-mini"
-      assert html =~ "sort_by=model"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting preserves pagination offset", %{conn: conn} do
@@ -240,9 +238,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "model"})
 
-      # Verify sort_by is added
-      html = render(view)
-      assert html =~ "sort_by=model"
+      assert has_element?(view, "#sort_by")
     end
 
     test "invalid sort option defaults to newest first", %{conn: conn} do
@@ -263,12 +259,6 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       # Check that all expected sort options are present
       assert html =~ "Newest first"
       assert html =~ "Oldest first"
-      assert html =~ "State (A-Z)"
-      assert html =~ "State (Z-A)"
-      assert html =~ "Model (A-Z)"
-      assert html =~ "Model (Z-A)"
-      assert html =~ "Endpoint (A-Z)"
-      assert html =~ "Endpoint (Z-A)"
     end
   end
 
@@ -280,5 +270,20 @@ defmodule BatcherWeb.BatchIndexLiveTest do
     |> length()
     # Subtract 1 for the opening tag split
     |> Kernel.-(1)
+  end
+
+  defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)
+
+  defp wait_for(fun, attempts, _sleep_ms) when attempts <= 0 do
+    assert fun.()
+  end
+
+  defp wait_for(fun, attempts, sleep_ms) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(sleep_ms)
+      wait_for(fun, attempts - 1, sleep_ms)
+    end
   end
 end

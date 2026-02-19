@@ -20,6 +20,10 @@
         </button>
       </div>
       <div class="flex gap-2">
+        <% upload_pending = pending_action?(@pending_actions, :upload, @batch.id) %>
+        <% cancel_pending = pending_action?(@pending_actions, :cancel, @batch.id) %>
+        <% restart_pending = pending_action?(@pending_actions, :restart, @batch.id) %>
+        <% delete_pending = pending_action?(@pending_actions, :delete, @batch.id) %>
         <.link
           navigate={~p"/requests?batch_id=#{@batch.id}"}
           class="btn btn-sm btn-ghost"
@@ -28,10 +32,16 @@
         </.link>
         <button
           :if={@batch.state == :building}
+          id="upload-batch"
           phx-click="upload_batch"
           class="btn btn-sm btn-primary"
+          disabled={upload_pending}
         >
-          <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload Batch
+          <%= if upload_pending do %>
+            <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Uploading...
+          <% else %>
+            <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload Batch
+          <% end %>
         </button>
         <button
           :if={
@@ -43,24 +53,39 @@
               :cancelled
             ]
           }
+          id="cancel-batch"
           phx-click="cancel_batch"
           class="btn btn-sm btn-ghost text-warning"
           data-confirm="Are you sure you want to cancel this batch?"
+          disabled={cancel_pending}
         >
-          Cancel Batch
+          <%= if cancel_pending do %>
+            <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Cancelling...
+          <% else %>
+            Cancel Batch
+          <% end %>
         </button>
         <button
           :if={@batch.state == :failed}
+          id="restart-batch"
           phx-click="restart_batch"
           class="btn btn-sm btn-primary"
           data-confirm="Restart this failed batch?"
+          disabled={restart_pending}
         >
-          <.icon name="hero-arrow-path" class="w-4 h-4" /> Restart Batch
+          <%= if restart_pending do %>
+            <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Restarting...
+          <% else %>
+            <.icon name="hero-arrow-path" class="w-4 h-4" /> Restart Batch
+          <% end %>
         </button>
         <.delete_batch_button
+          id="delete-batch"
           batch_id={@batch.id}
           batch_state={@batch.state}
           show_icon={false}
+          loading={delete_pending}
+          loading_label="Deleting..."
         />
       </div>
     </div>
@@ -339,9 +364,9 @@
 
       <%!-- Delivery Stats Section --%>
       <% total = @batch.request_count || 0
-      delivered = @batch.delivery_stats[:delivered] || 0
-      delivering = @batch.delivery_stats[:delivering] || 0
-      failed = @batch.delivery_stats[:failed] || 0
+      delivered = @delivery_stats[:delivered] || 0
+      delivering = @delivery_stats[:delivering] || 0
+      failed = @delivery_stats[:failed] || 0
 
       # Calculate percentages for the stacked bar
       {delivered_pct, delivering_pct, failed_pct} =
@@ -363,177 +388,208 @@
           </button>
         </div>
         <div class="p-4">
-          <div class="space-y-3 text-sm">
-            <%!-- Stacked progress bar --%>
-            <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
-              <div class="bg-primary h-full" style={"width: #{delivered_pct}%"}></div>
-              <div class="bg-info h-full" style={"width: #{delivering_pct}%"}></div>
-              <div class="bg-error h-full" style={"width: #{failed_pct}%"}></div>
+          <%= if @delivery_stats_status == :loading_initial and @delivery_stats == %{} do %>
+            <div class="text-sm text-base-content/60 flex items-center gap-2">
+              <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
+              Loading delivery stats...
             </div>
+          <% else %>
+            <div
+              :if={@delivery_stats_status == :refreshing}
+              class="text-xs text-base-content/60 mb-2 flex items-center gap-1"
+            >
+              <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" /> Refreshing...
+            </div>
+            <div class="space-y-3 text-sm">
+              <%!-- Stacked progress bar --%>
+              <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
+                <div class="bg-primary h-full" style={"width: #{delivered_pct}%"}></div>
+                <div class="bg-info h-full" style={"width: #{delivering_pct}%"}></div>
+                <div class="bg-error h-full" style={"width: #{failed_pct}%"}></div>
+              </div>
 
-            <%!-- Stats with x/total format --%>
-            <div class="flex justify-between">
-              <span class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-primary"></span>
-                <span class="text-base-content/50">Delivered</span>
-              </span>
-              <span class="font-mono">{delivered}/{total}</span>
+              <%!-- Stats with x/total format --%>
+              <div class="flex justify-between">
+                <span class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-primary"></span>
+                  <span class="text-base-content/50">Delivered</span>
+                </span>
+                <span class="font-mono">{delivered}/{total}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-info"></span>
+                  <span class="text-base-content/50">Delivering</span>
+                </span>
+                <span class="font-mono">{delivering}/{total}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-error"></span>
+                  <span class="text-base-content/50">Failed</span>
+                </span>
+                <span class="font-mono">{failed}/{total}</span>
+              </div>
             </div>
-            <div class="flex justify-between">
-              <span class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-info"></span>
-                <span class="text-base-content/50">Delivering</span>
-              </span>
-              <span class="font-mono">{delivering}/{total}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-error"></span>
-                <span class="text-base-content/50">Failed</span>
-              </span>
-              <span class="font-mono">{failed}/{total}</span>
-            </div>
-          </div>
+          <% end %>
         </div>
       </div>
     </div>
 
     <%!-- Transition Timeline --%>
-    <% # Define terminal states (no future states to show after these)
-    terminal_states = [:delivered, :failed, :cancelled]
-    error_states = [:failed, :cancelled, :partially_delivered, :delivery_failed]
-
-    # Happy path: states we expect a successful batch to go through
-    happy_path = [
-      :building,
-      :uploading,
-      :uploaded,
-      :openai_processing,
-      :openai_completed,
-      :downloading,
-      :ready_to_deliver,
-      :delivering,
-      :delivered
-    ]
-
-    # Current state
-    current_state = @batch.state
-
-    # Determine future states to show (only if not in a terminal state)
-    future_states =
-      if current_state in terminal_states do
-        []
-      else
-        # Find where current state is in happy path and show states after it
-        case Enum.find_index(happy_path, &(&1 == current_state)) do
-          # Current state not in happy path (e.g., error state), show remaining from delivering onwards
-          nil -> []
-          idx -> Enum.drop(happy_path, idx + 1)
-        end
-      end %>
-    <div class="border border-base-300/50 rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 rounded-t-lg">
-        <span class="font-medium">Timeline</span>
+    <%= if @timeline_status == :loading_initial and Enum.empty?(@transitions) do %>
+      <div class="border border-base-300/50 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 rounded-t-lg flex items-center gap-2">
+          <span class="font-medium">Timeline</span>
+          <span
+            :if={@timeline_status == :refreshing}
+            class="text-xs text-base-content/60 inline-flex items-center gap-1"
+          >
+            <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" /> Refreshing...
+          </span>
+        </div>
+        <div class="p-4 text-sm text-base-content/60 flex items-center gap-2">
+          <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Loading timeline...
+        </div>
       </div>
-      <div class="p-4 pb-10 overflow-x-auto flex justify-center">
-        <ul class="timeline timeline-horizontal">
-          <%!-- Render actual transitions that have happened --%>
-          <%= for {transition, index} <- Enum.with_index(@transitions) do %>
-            <% is_last_transition = index == length(@transitions) - 1
-            is_current = is_last_transition and Enum.empty?(future_states)
-            is_error = transition.to in error_states
+    <% else %>
+      <% # Define terminal states (no future states to show after these)
+      terminal_states = [:delivered, :failed, :cancelled]
+      error_states = [:failed, :cancelled, :partially_delivered, :delivery_failed]
 
-            state_label =
-              Batcher.Batching.Types.BatchStatus.label(transition.to) ||
-                transition.to |> to_string() |> String.replace("_", " ")
+      # Happy path: states we expect a successful batch to go through
+      happy_path = [
+        :building,
+        :uploading,
+        :uploaded,
+        :waiting_for_capacity,
+        :openai_processing,
+        :openai_completed,
+        :downloading,
+        :ready_to_deliver,
+        :delivering,
+        :delivered
+      ]
 
-            state_description = Batcher.Batching.Types.BatchStatus.description(transition.to) %>
-            <li>
-              <%= if index > 0 do %>
-                <hr class={if is_error, do: "bg-error", else: "bg-primary"} />
-              <% end %>
-              <div
-                class="timeline-start text-xs text-base-content/50 min-h-5"
-                id={"transition-time-#{index}"}
-                phx-hook="LocalTime"
-                data-utc={DateTime.to_iso8601(transition.transitioned_at)}
-                data-format="datetime-short"
-              >
-                {Calendar.strftime(transition.transitioned_at, "%d %b %H:%M")}
-              </div>
-              <div class="timeline-middle">
-                <%= cond do %>
-                  <% is_last_transition and is_error -> %>
-                    <.timeline_icon type={:error} />
-                  <% is_last_transition and current_state in terminal_states -> %>
-                    <.timeline_icon type={:completed} />
-                  <% is_current -> %>
-                    <.timeline_icon type={:current} />
-                  <% is_last_transition -> %>
-                    <.timeline_icon type={:current} />
-                  <% is_error -> %>
-                    <.timeline_icon type={:error} />
-                  <% true -> %>
-                    <.timeline_icon type={:completed} />
+      # Current state
+      current_state = @batch.state
+
+      # Determine future states to show (only if not in a terminal state)
+      future_states =
+        if current_state in terminal_states do
+          []
+        else
+          # Find where current state is in happy path and show states after it
+          case Enum.find_index(happy_path, &(&1 == current_state)) do
+            # Current state not in happy path (e.g., error state), show remaining from delivering onwards
+            nil -> []
+            idx -> Enum.drop(happy_path, idx + 1)
+          end
+        end %>
+      <div class="border border-base-300/50 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 rounded-t-lg">
+          <span class="font-medium">Timeline</span>
+        </div>
+        <div class="p-4 pb-10 overflow-x-auto flex justify-center">
+          <ul class="timeline timeline-horizontal">
+            <%!-- Render actual transitions that have happened --%>
+            <%= for {transition, index} <- Enum.with_index(@transitions) do %>
+              <% is_last_transition = index == length(@transitions) - 1
+              is_current = is_last_transition and Enum.empty?(future_states)
+              is_error = transition.to in error_states
+
+              state_label =
+                Batcher.Batching.Types.BatchStatus.label(transition.to) ||
+                  transition.to |> to_string() |> String.replace("_", " ")
+
+              state_description = Batcher.Batching.Types.BatchStatus.description(transition.to) %>
+              <li>
+                <%= if index > 0 do %>
+                  <hr class={if is_error, do: "bg-error", else: "bg-primary"} />
                 <% end %>
-              </div>
-              <div
-                class="timeline-end"
-                id={"transition-#{index}"}
-                phx-hook="Tooltip"
-                data-tip={state_description}
-              >
-                <div class={[
-                  "timeline-box text-xs",
-                  if(is_error, do: "text-error")
-                ]}>
-                  {state_label}
+                <div
+                  class="timeline-start text-xs text-base-content/50 min-h-5"
+                  id={"transition-time-#{index}"}
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(transition.transitioned_at)}
+                  data-format="datetime-short"
+                >
+                  {Calendar.strftime(transition.transitioned_at, "%d %b %H:%M")}
                 </div>
-              </div>
-              <%= cond do %>
-                <% not is_last_transition -> %>
-                  <% next_transition = Enum.at(@transitions, index + 1)
-                  next_is_error = next_transition && next_transition.to in error_states %>
-                  <hr class={if next_is_error, do: "bg-error", else: "bg-primary"} />
-                <% is_last_transition and not Enum.empty?(future_states) -> %>
-                  <hr class="bg-base-300" />
-                <% true -> %>
-              <% end %>
-            </li>
-          <% end %>
-          <%!-- Render future expected states (grayed out) --%>
-          <%= for {state, index} <- Enum.with_index(future_states) do %>
-            <% is_last_future = index == length(future_states) - 1
-
-            state_label =
-              Batcher.Batching.Types.BatchStatus.label(state) ||
-                state |> to_string() |> String.replace("_", " ")
-
-            state_description = Batcher.Batching.Types.BatchStatus.description(state) %>
-            <li>
-              <hr class="bg-base-300" />
-              <div class="timeline-start text-xs text-base-content/50 min-h-5"></div>
-              <div class="timeline-middle">
-                <.timeline_icon type={:future} />
-              </div>
-              <div
-                class="timeline-end"
-                id={"future-#{index}"}
-                phx-hook="Tooltip"
-                data-tip={state_description}
-              >
-                <div class="timeline-box text-xs opacity-40">
-                  {state_label}
+                <div class="timeline-middle">
+                  <%= cond do %>
+                    <% is_last_transition and is_error -> %>
+                      <.timeline_icon type={:error} />
+                    <% is_last_transition and current_state in terminal_states -> %>
+                      <.timeline_icon type={:completed} />
+                    <% is_current -> %>
+                      <.timeline_icon type={:current} />
+                    <% is_last_transition -> %>
+                      <.timeline_icon type={:current} />
+                    <% is_error -> %>
+                      <.timeline_icon type={:error} />
+                    <% true -> %>
+                      <.timeline_icon type={:completed} />
+                  <% end %>
                 </div>
-              </div>
-              <%= if not is_last_future do %>
+                <div
+                  class="timeline-end"
+                  id={"transition-#{index}"}
+                  phx-hook="Tooltip"
+                  data-tip={state_description}
+                >
+                  <div class={[
+                    "timeline-box text-xs",
+                    if(is_error, do: "text-error")
+                  ]}>
+                    {state_label}
+                  </div>
+                </div>
+                <%= cond do %>
+                  <% not is_last_transition -> %>
+                    <% next_transition = Enum.at(@transitions, index + 1)
+                    next_is_error = next_transition && next_transition.to in error_states %>
+                    <hr class={if next_is_error, do: "bg-error", else: "bg-primary"} />
+                  <% is_last_transition and not Enum.empty?(future_states) -> %>
+                    <hr class="bg-base-300" />
+                  <% true -> %>
+                <% end %>
+              </li>
+            <% end %>
+            <%!-- Render future expected states (grayed out) --%>
+            <%= for {state, index} <- Enum.with_index(future_states) do %>
+              <% is_last_future = index == length(future_states) - 1
+
+              state_label =
+                Batcher.Batching.Types.BatchStatus.label(state) ||
+                  state |> to_string() |> String.replace("_", " ")
+
+              state_description = Batcher.Batching.Types.BatchStatus.description(state) %>
+              <li>
                 <hr class="bg-base-300" />
-              <% end %>
-            </li>
-          <% end %>
-        </ul>
+                <div class="timeline-start text-xs text-base-content/50 min-h-5"></div>
+                <div class="timeline-middle">
+                  <.timeline_icon type={:future} />
+                </div>
+                <div
+                  class="timeline-end"
+                  id={"future-#{index}"}
+                  phx-hook="Tooltip"
+                  data-tip={state_description}
+                >
+                  <div class="timeline-box text-xs opacity-40">
+                    {state_label}
+                  </div>
+                </div>
+                <%= if not is_last_future do %>
+                  <hr class="bg-base-300" />
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        </div>
       </div>
-    </div>
+    <% end %>
   </div>
 
   <div
@@ -555,14 +611,21 @@
       </div>
 
       <div class="p-6 overflow-auto flex-1">
-        <%= if @error_modal_is_json do %>
-          <pre
-            id="batch-error-modal-content"
-            class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
-            phx-hook="JsonSyntaxHighlight"
-          >{@error_modal_content}</pre>
-        <% else %>
-          <pre class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all">{@error_modal_content}</pre>
+        <%= cond do %>
+          <% @error_modal_status == :loading -> %>
+            <div class="text-sm text-base-content/60 flex items-center gap-2">
+              <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Loading error...
+            </div>
+          <% @error_modal_status == :error -> %>
+            <div class="text-sm text-error">Unable to load error details</div>
+          <% @error_modal_is_json -> %>
+            <pre
+              id="batch-error-modal-content"
+              class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
+              phx-hook="JsonSyntaxHighlight"
+            >{@error_modal_content}</pre>
+          <% true -> %>
+            <pre class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all">{@error_modal_content}</pre>
         <% end %>
       </div>
     </div>
@@ -599,18 +662,27 @@
             </p>
           </div>
         <% else %>
-          <div class="space-y-2 text-sm leading-6">
+          <div
+            :if={@capacity_info_status == :loading_initial and is_nil(@capacity_info)}
+            class="text-sm text-base-content/60 flex items-center gap-2"
+          >
+            <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Loading capacity info...
+          </div>
+          <div
+            :if={@capacity_info_status != :loading_initial or @capacity_info}
+            class="space-y-2 text-sm leading-6"
+          >
             <p>
               Right now, we already have
               <span class="font-semibold">
-                {Format.compact_number(@capacity_info.reserved_other)} tokens
+                {Format.compact_number((@capacity_info && @capacity_info.reserved_other) || 0)} tokens
               </span>
-              queued/processing on OpenAI for model <span class="font-semibold">{@capacity_info.model}</span>.
+              queued/processing on OpenAI for model <span class="font-semibold">{(@capacity_info && @capacity_info.model) || @batch.model}</span>.
             </p>
 
             <p>
               To avoid rate-limit errors, we keep total queued tokens below <span class="font-semibold">
-                {Format.compact_number(@capacity_info.limit)} tokens</span>.
+                {Format.compact_number((@capacity_info && @capacity_info.limit) || 0)} tokens</span>.
               You can adjust model-specific caps on the <.link
                 navigate={~p"/settings"}
                 class="link link-primary"
@@ -619,7 +691,7 @@
 
             <p>
               This batch is estimated at <span class="font-semibold">
-                {Format.compact_number(@capacity_info.estimated_tokens)} tokens
+                {Format.compact_number((@capacity_info && @capacity_info.estimated_tokens) || 0)} tokens
               </span>, therefore starting it now would exceed the rate limit and cause errors.
             </p>
           </div>

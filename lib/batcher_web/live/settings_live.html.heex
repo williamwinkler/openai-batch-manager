@@ -67,8 +67,17 @@
             required
           />
           <div class="flex h-full items-end md:pb-3">
-            <button type="submit" class="btn btn-primary w-full md:w-auto cursor-pointer">
-              Save Override
+            <button
+              type="submit"
+              id="save-override"
+              class="btn btn-primary w-full md:w-auto cursor-pointer"
+              disabled={pending_action?(@pending_actions, :save_override)}
+            >
+              <%= if pending_action?(@pending_actions, :save_override) do %>
+                <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Saving...
+              <% else %>
+                Save Override
+              <% end %>
             </button>
           </div>
         </.form>
@@ -99,11 +108,19 @@
                 <td class="text-right font-mono">{format_token_cap(override.token_limit)}</td>
                 <td class="text-right">
                   <button
+                    id={"delete-override-#{override.model_prefix}"}
                     class="btn btn-xs btn-ghost text-warning"
                     phx-click="delete_override"
                     phx-value-model_prefix={override.model_prefix}
+                    disabled={
+                      pending_action?(@pending_actions, :delete_override, override.model_prefix)
+                    }
                   >
-                    Reset
+                    <%= if pending_action?(@pending_actions, :delete_override, override.model_prefix) do %>
+                      <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" /> Resetting...
+                    <% else %>
+                      Reset
+                    <% end %>
                   </button>
                 </td>
               </tr>
@@ -157,11 +174,17 @@
             </div>
             <button
               type="button"
+              id="erase-db"
               phx-click="erase_db"
               class="btn btn-sm btn-error cursor-pointer"
               data-confirm="Are you sure? This will erase all local app data and cannot be undone."
+              disabled={pending_action?(@pending_actions, :erase_db)}
             >
-              <.icon name="hero-trash" class="w-4 h-4" /> Erase DB
+              <%= if pending_action?(@pending_actions, :erase_db) do %>
+                <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Erasing...
+              <% else %>
+                <.icon name="hero-trash" class="w-4 h-4" /> Erase DB
+              <% end %>
             </button>
           </div>
         </div>

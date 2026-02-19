@@ -6,8 +6,8 @@
       "type": "bigint",
       "source": "id",
       "references": null,
-      "primary_key?": true,
       "allow_nil?": false,
+      "primary_key?": true,
       "generated?": true
     },
     {
@@ -16,8 +16,8 @@
       "type": "text",
       "source": "name",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -26,8 +26,8 @@
       "type": "map",
       "source": "model_token_overrides",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -36,8 +36,8 @@
       "type": "utc_datetime_usec",
       "source": "inserted_at",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     },
     {
@@ -46,18 +46,18 @@
       "type": "utc_datetime_usec",
       "source": "updated_at",
       "references": null,
-      "primary_key?": false,
       "allow_nil?": false,
+      "primary_key?": false,
       "generated?": false
     }
   ],
   "table": "settings",
-  "hash": "59DF7617DBC724FEC7B3F1D4E5590D2680DD1809929A30F4FE623CDB124E43A4",
+  "hash": "13EF315265A1A12FAC98AAD2377CCE1D3D95F6C3F57790022D213FA5DB4E9358",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [
     {
@@ -70,8 +70,8 @@
     }
   ],
   "strict?": false,
-  "base_filter": null,
   "custom_indexes": [],
   "custom_statements": [],
+  "base_filter": null,
   "has_create_action": true
 }

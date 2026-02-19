@@ -71,6 +71,7 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> render_click()
 
       # The batch state should change
+      :timer.sleep(150)
       html = render(view)
       assert html =~ "uploading" or html =~ "Batch upload started"
     end
@@ -91,8 +92,9 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> element("button[phx-click='cancel_batch']")
       |> render_click()
 
+      :timer.sleep(150)
       html = render(view)
-      assert html =~ "cancelled"
+      assert html =~ "Batch cancelled successfully" or html =~ "cancelled"
     end
   end
 
@@ -110,6 +112,13 @@ defmodule BatcherWeb.BatchShowLiveTest do
       # First cancel the batch so delete is available
       {:ok, cancelled_batch} = Batching.cancel_batch(batch)
 
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 150)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
       {:ok, view, _html} = live(conn, ~p"/batches/#{cancelled_batch.id}")
 
       # Click delete button
@@ -117,8 +126,10 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> element("button[phx-click='delete_batch']")
       |> render_click()
 
+      assert has_element?(view, "button#delete-batch[disabled]", "Deleting...")
+
       # Should redirect to batches list
-      assert_redirect(view, ~p"/batches")
+      assert_redirect(view, ~p"/batches", 1_000)
     end
   end
 
@@ -128,6 +139,17 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Should have timeline section
       assert html =~ "Timeline"
+    end
+
+    test "shows future expected states when waiting for capacity", %{conn: conn} do
+      batch = generate(seeded_batch(state: :waiting_for_capacity))
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      :timer.sleep(120)
+      html = render(view)
+      assert html =~ "OpenAI processing"
+      assert html =~ "OpenAI completed"
     end
   end
 
@@ -251,9 +273,32 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> element("button[phx-click='restart_batch']")
       |> render_click()
 
+      :timer.sleep(150)
       html = render(view)
       assert html =~ "Batch restart initiated successfully"
       assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
+    end
+  end
+
+  describe "async action UX" do
+    test "shows cancel spinner while pending", %{conn: conn, batch: batch} do
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 250)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("button[phx-click='cancel_batch']")
+      |> render_click()
+
+      assert has_element?(view, "button#cancel-batch[disabled]", "Cancelling...")
+
+      :timer.sleep(400)
+      refute render(view) =~ "Cancelling..."
     end
   end
 

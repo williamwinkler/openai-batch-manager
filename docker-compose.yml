@@ -1,5 +1,8 @@
 services:
   openai-batch-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: williamwinkler/openai-batch-manager:latest
     ports:
       - "4001:${PORT}"

@@ -248,6 +248,108 @@ defmodule BatcherWeb.RequestShowLiveTest do
       # Should show success flash or updated config
       assert html =~ "Edit" or html =~ "new-webhook.example.com"
     end
+
+    test "shows saving spinner/disabled while submit is pending", %{conn: conn, request: request} do
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 200)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/requests/#{request.id}")
+
+      view
+      |> element("button[phx-click='edit_delivery_config']")
+      |> render_click()
+
+      view
+      |> form("#save-delivery-config-form", %{
+        "form" => %{
+          "delivery_type" => "webhook",
+          "webhook_url" => "https://new-webhook.example.com/callback"
+        }
+      })
+      |> render_submit()
+
+      assert has_element?(view, "button#save-delivery-config[disabled]", "Saving...")
+      :timer.sleep(300)
+      refute render(view) =~ "Saving..."
+    end
+  end
+
+  describe "mutating action loading states" do
+    test "shows redelivery spinner and disables button while pending", %{conn: conn} do
+      batch = generate(seeded_batch(state: :delivering))
+
+      request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :delivery_failed,
+            response_payload: %{"output" => "response"},
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
+          )
+        )
+
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 200)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/requests/#{request.id}")
+
+      view
+      |> element("button#retry-delivery")
+      |> render_click()
+
+      assert has_element?(view, "button#retry-delivery[disabled]", "Redelivering...")
+      :timer.sleep(300)
+      refute render(view) =~ "Redelivering..."
+    end
+
+    test "shows delete spinner while pending", %{conn: conn} do
+      batch = generate(batch())
+
+      {:ok, request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "delete_req_show",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "delete_req_show",
+            body: %{input: "test input", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 200)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/requests/#{request.id}")
+
+      view
+      |> element("button#delete-request")
+      |> render_click()
+
+      assert has_element?(view, "button#delete-request[disabled]", "Deleting...")
+      assert_redirect(view, ~p"/requests", 1_000)
+    end
   end
 
   describe "validate_delivery_config event" do

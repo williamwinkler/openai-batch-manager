@@ -2,6 +2,7 @@ defmodule BatcherWeb.RequestIndexLive do
   use BatcherWeb, :live_view
 
   alias Batcher.Batching
+  alias BatcherWeb.Live.Utils.AsyncPagination
   alias Batcher.Utils.Format
 
   @impl true
@@ -14,6 +15,7 @@ defmodule BatcherWeb.RequestIndexLive do
     socket =
       socket
       |> assign(:page_title, "Requests")
+      |> AsyncPagination.init()
 
     {:ok, socket}
   end
@@ -38,7 +40,7 @@ defmodule BatcherWeb.RequestIndexLive do
 
     page_opts =
       AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 25)
-      |> Keyword.put(:count, true)
+      |> Keyword.put(:count, false)
 
     page =
       Batching.search_requests!(
@@ -60,6 +62,7 @@ defmodule BatcherWeb.RequestIndexLive do
       |> assign(:sort_by, sort_by)
       |> assign(:batch_id, batch_id)
       |> assign(:page, page)
+      |> schedule_count(query_text, sort_input, batch_id)
 
     {:noreply, socket}
   end
@@ -132,7 +135,7 @@ defmodule BatcherWeb.RequestIndexLive do
   @impl true
   def handle_info(%{topic: "requests:created", payload: %{data: _request}}, socket) do
     # Reload requests to include the new one (respects current filters/sort)
-    {:noreply, reload_page(socket)}
+    {:noreply, reload_page(socket, refresh_count?: false)}
   end
 
   @impl true
@@ -141,7 +144,7 @@ defmodule BatcherWeb.RequestIndexLive do
         socket
       ) do
     # Reload the page to reflect state changes
-    {:noreply, reload_page(socket)}
+    {:noreply, reload_page(socket, refresh_count?: false)}
   end
 
   @impl true
@@ -149,7 +152,12 @@ defmodule BatcherWeb.RequestIndexLive do
     {:noreply, socket}
   end
 
-  defp reload_page(socket) do
+  @impl true
+  def handle_async({:page_count, count_request_key}, result, socket) do
+    {:noreply, AsyncPagination.handle_count_async(socket, count_request_key, result)}
+  end
+
+  defp reload_page(socket, opts) do
     query_text = socket.assigns[:query_text] || ""
     sort_by = socket.assigns[:sort_by] || "-created_at"
     batch_id = socket.assigns[:batch_id]
@@ -165,11 +173,66 @@ defmodule BatcherWeb.RequestIndexLive do
         page: [
           offset: socket.assigns.page.offset,
           limit: socket.assigns.page.limit,
-          count: true
+          count: false
         ]
       )
 
-    assign(socket, :page, page)
+    socket = assign(socket, :page, page)
+
+    if Keyword.get(opts, :refresh_count?, true) do
+      schedule_count(socket, query_text, sort_input, batch_id)
+    else
+      socket
+    end
+  end
+
+  defp schedule_count(socket, query_text, sort_input, batch_id) do
+    count_request_key = {:requests_count, query_text, sort_input, batch_id}
+
+    AsyncPagination.schedule_count(socket, count_request_key, fn ->
+      count_requests(query_text, batch_id)
+    end)
+  end
+
+  defp count_requests(query_text, batch_id) do
+    maybe_test_count_delay(query_text)
+
+    if maybe_test_count_error?(query_text) do
+      {:error, :forced_count_error}
+    else
+      case Batching.count_requests_for_search(
+             query_text,
+             %{batch_id: batch_id},
+             page: [limit: 1, count: true]
+           ) do
+        {:ok, page} -> {:ok, page.count || 0}
+        {:error, error} -> {:error, error}
+      end
+    end
+  end
+
+  defp maybe_test_count_delay(query_text) do
+    if test_env?() do
+      delay_map = Application.get_env(:batcher, :request_index_count_delay_ms_by_query, %{})
+      delay_ms = Map.get(delay_map, query_text, 0)
+
+      if delay_ms > 0 do
+        Process.sleep(delay_ms)
+      end
+    end
+  end
+
+  defp maybe_test_count_error?(query_text) do
+    if test_env?() do
+      error_queries = Application.get_env(:batcher, :request_index_count_error_queries, [])
+      query_text in error_queries
+    else
+      false
+    end
+  end
+
+  defp test_env? do
+    Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) and Mix.env() == :test
   end
 
   defp parse_batch_id(nil), do: nil
@@ -188,16 +251,6 @@ defmodule BatcherWeb.RequestIndexLive do
     [
       {"Newest first", "-created_at"},
       {"Oldest first", "created_at"},
-      {"Recently updated", "-updated_at"},
-      {"Least recently updated", "updated_at"},
-      {"State (A-Z)", "state"},
-      {"State (Z-A)", "-state"},
-      {"Custom ID (A-Z)", "custom_id"},
-      {"Custom ID (Z-A)", "-custom_id"},
-      {"Model (A-Z)", "model"},
-      {"Model (Z-A)", "-model"},
-      {"Batch ID (High)", "-batch_id"},
-      {"Batch ID (Low)", "batch_id"},
       {"Filter by Batch", "batch_filter"}
     ]
   end

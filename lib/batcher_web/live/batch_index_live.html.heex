@@ -86,7 +86,7 @@
                     end
                   }
                 >
-                  {status_duration(batch)}
+                  {status_duration(batch, @processing_since_by_batch_id)}
                 </span>
               </:col>
               <:col :let={batch} label="Created" width="w-40">
@@ -103,13 +103,24 @@
               </:col>
               <:action :let={batch}>
                 <div class="flex items-center justify-end gap-2">
+                  <% upload_pending = pending_action?(@pending_actions, :upload, batch.id) %>
+                  <% redeliver_pending = pending_action?(@pending_actions, :redeliver, batch.id) %>
+                  <% restart_pending = pending_action?(@pending_actions, :restart, batch.id) %>
+                  <% cancel_pending = pending_action?(@pending_actions, :cancel, batch.id) %>
+                  <% delete_pending = pending_action?(@pending_actions, :delete, batch.id) %>
                   <button
                     :if={batch.state == :building and batch.request_count > 0}
+                    id={"upload-batch-#{batch.id}"}
                     phx-click="upload_batch"
                     phx-value-id={batch.id}
                     class="btn btn-sm btn-primary"
+                    disabled={upload_pending}
                   >
-                    <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
+                    <%= if upload_pending do %>
+                      <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Uploading...
+                    <% else %>
+                      <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
+                    <% end %>
                   </button>
                   <div
                     :if={batch.state in [:partially_delivered, :delivery_failed]}
@@ -117,22 +128,35 @@
                     data-tip="Redeliver all failed requests"
                   >
                     <button
+                      id={"redeliver-batch-#{batch.id}"}
                       phx-click="redeliver_batch"
                       phx-value-id={batch.id}
                       class="btn btn-sm btn-primary"
                       data-confirm="Redeliver all failed requests in this batch?"
+                      disabled={redeliver_pending}
                     >
-                      <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
+                      <%= if redeliver_pending do %>
+                        <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
+                        Redelivering...
+                      <% else %>
+                        <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
+                      <% end %>
                     </button>
                   </div>
                   <button
                     :if={batch.state == :failed}
+                    id={"restart-batch-#{batch.id}"}
                     phx-click="restart_batch"
                     phx-value-id={batch.id}
                     class="btn btn-sm btn-primary"
                     data-confirm="Restart this failed batch?"
+                    disabled={restart_pending}
                   >
-                    <.icon name="hero-arrow-path" class="w-4 h-4" /> Restart
+                    <%= if restart_pending do %>
+                      <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Restarting...
+                    <% else %>
+                      <.icon name="hero-arrow-path" class="w-4 h-4" /> Restart
+                    <% end %>
                   </button>
                   <button
                     :if={
@@ -145,18 +169,27 @@
                         :delivery_failed
                       ]
                     }
+                    id={"cancel-batch-#{batch.id}"}
                     phx-click="cancel_batch"
                     phx-value-id={batch.id}
                     class="btn btn-sm btn-soft btn-warning"
                     data-confirm="Cancel this batch?"
+                    disabled={cancel_pending}
                   >
-                    <.icon name="hero-x-circle" class="w-4 h-4" /> Cancel
+                    <%= if cancel_pending do %>
+                      <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Cancelling...
+                    <% else %>
+                      <.icon name="hero-x-circle" class="w-4 h-4" /> Cancel
+                    <% end %>
                   </button>
                   <.delete_batch_button
                     batch_id={batch.id}
                     batch_state={batch.state}
+                    id={"delete-batch-#{batch.id}"}
                     class="btn btn-sm btn-soft btn-error"
                     label="Delete"
+                    loading={delete_pending}
+                    loading_label="Deleting..."
                   />
                 </div>
               </:action>
@@ -167,8 +200,20 @@
       
 <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
-        <.numbered_pagination
+        <div
+          :if={
+            loading_processing_since?(@processing_since_status) and
+              @processing_since_status != :loading_initial
+          }
+          class="text-xs text-base-content/60 mb-2 flex items-center gap-1"
+        >
+          <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" />
+          Refreshing time-in-state...
+        </div>
+        <.async_count_pagination
           page={@page}
+          page_count_status={@page_count_status}
+          page_total_count={@page_total_count}
           base_path="/batches"
           extra_params={[q: @query_text, sort_by: @sort_by]}
         />

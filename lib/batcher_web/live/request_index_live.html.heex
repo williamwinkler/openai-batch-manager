@@ -14,7 +14,7 @@
         <.sort_changer selected={@sort_by} batch_id={@batch_id} />
       </div>
     </div>
-    
+
 <!-- Table container - takes remaining space -->
     <div class="flex-1 flex flex-col min-h-0">
       <div class="flex-1 min-h-0 border border-base-300/50 rounded-lg overflow-hidden">
@@ -57,7 +57,7 @@
               <:col :let={request} label="Model" width="w-44">
                 <span class="font-mono text-sm truncate block">{request.model}</span>
               </:col>
-              <:col :let={request} label="Est. tokens" width="w-28">
+              <:col :let={request} label="Est. tokens" width="w-20">
                 <span class="font-mono text-sm">
                   {Format.compact_number(request.estimated_request_input_tokens || 0)}
                 </span>
@@ -96,11 +96,13 @@
           </div>
         <% end %>
       </div>
-      
+
 <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
-        <.numbered_pagination
+        <.async_count_pagination
           page={@page}
+          page_count_status={@page_count_status}
+          page_total_count={@page_total_count}
           base_path="/requests"
           extra_params={[q: @query_text, sort_by: @sort_by, batch_id: @batch_id]}
         />

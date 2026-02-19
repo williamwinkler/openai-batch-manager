@@ -392,6 +392,26 @@ const ModelTokenLimitPlaceholder = {
   }
 }
 
+// Auto-dismisses flash messages after a timeout.
+const FlashAutoDismiss = {
+  mounted() {
+    const key = this.el.dataset.flashKey
+    if (!key) return
+
+    const timeoutMs = Number(this.el.dataset.timeoutMs || 10_000)
+    this.dismissTimer = setTimeout(() => {
+      this.pushEvent("lv:clear-flash", { key })
+      this.el.style.display = "none"
+    }, timeoutMs)
+  },
+  destroyed() {
+    if (this.dismissTimer) {
+      clearTimeout(this.dismissTimer)
+      this.dismissTimer = null
+    }
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
@@ -405,7 +425,8 @@ const liveSocket = new LiveSocket("/live", Socket, {
     RabbitMQModal,
     Tooltip,
     TokenLimitInput,
-    ModelTokenLimitPlaceholder
+    ModelTokenLimitPlaceholder,
+    FlashAutoDismiss
   },
 })
 
