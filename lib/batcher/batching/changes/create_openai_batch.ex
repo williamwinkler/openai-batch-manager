@@ -9,17 +9,12 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
   def change(changeset, _opts, _context) do
     batch = changeset.data
 
-    latest_batch = Batching.get_batch_by_id!(batch.id)
-
-    valid_state? =
-      latest_batch.state in [:uploaded, :waiting_for_capacity] or
-        (latest_batch.state == :expired and is_nil(latest_batch.openai_output_file_id) and
-           is_nil(latest_batch.openai_error_file_id))
-
     changeset
     |> Ash.Changeset.before_transaction(fn changeset ->
+      latest_batch = Batching.get_batch_by_id!(batch.id)
+
       cond do
-        not valid_state? ->
+        not valid_creation_state?(latest_batch) ->
           Logger.info(
             "Skipping create_openai_batch for batch #{batch.id}, invalid state #{inspect(latest_batch.state)}"
           )
@@ -33,6 +28,12 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
           Ash.Changeset.add_error(
             changeset,
             "Batch #{batch.id} has no input file id for OpenAI batch creation"
+          )
+
+        not is_nil(latest_batch.openai_batch_id) ->
+          Ash.Changeset.add_error(
+            changeset,
+            "Batch #{batch.id} already has an OpenAI batch id (#{latest_batch.openai_batch_id})"
           )
 
         true ->
@@ -51,6 +52,9 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
                     DateTime.utc_now()
                   )
                   |> Ash.Changeset.force_change_attribute(:capacity_wait_reason, nil)
+                  |> Ash.Changeset.force_change_attribute(:token_limit_retry_attempts, 0)
+                  |> Ash.Changeset.force_change_attribute(:token_limit_retry_next_at, nil)
+                  |> Ash.Changeset.force_change_attribute(:token_limit_retry_last_error, nil)
 
                 {:error, {:bad_request, body}} ->
                   if token_limit_exceeded?(body) do
@@ -90,6 +94,12 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
 
       {:ok, batch}
     end)
+  end
+
+  defp valid_creation_state?(batch) do
+    batch.state in [:uploaded, :waiting_for_capacity] or
+      (batch.state == :expired and is_nil(batch.openai_output_file_id) and
+         is_nil(batch.openai_error_file_id))
   end
 
   defp move_to_waiting(batch, reason) do

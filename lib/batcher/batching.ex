@@ -18,6 +18,10 @@ defmodule Batcher.Batching do
         args: [:query]
 
       define :cancel_batch, action: :cancel
+      define :begin_batch_redeliver, action: :begin_redeliver
+      define :restart_batch, action: :restart
+      define :handle_batch_token_limit_exceeded, action: :handle_token_limit_exceeded
+      define :fail_batch_token_limit_exhausted, action: :fail_token_limit_exhausted
       define :destroy_batch, action: :destroy
       define :redeliver_batch, action: :redeliver, args: [:id]
     end

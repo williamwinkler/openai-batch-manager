@@ -16,7 +16,17 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
   describe "create_openai_batch action (uses CreateOpenaiBatch change)" do
     test "creates OpenAI batch and assigns openai_batch_id", %{server: server} do
       # Start with uploaded state (after file upload)
-      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+      batch =
+        generate(
+          seeded_batch(
+            state: :uploaded,
+            openai_input_file_id: "file-123",
+            token_limit_retry_attempts: 3,
+            token_limit_retry_next_at: DateTime.add(DateTime.utc_now(), 300, :second),
+            token_limit_retry_last_error: ~s({"code":"token_limit_exceeded"}),
+            capacity_wait_reason: "token_limit_exceeded_backoff"
+          )
+        )
 
       openai_response = %{
         "id" => "batch_abc123",
@@ -33,6 +43,10 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
 
       assert updated_batch.openai_batch_id == "batch_abc123"
       assert updated_batch.state == :openai_processing
+      assert updated_batch.capacity_wait_reason == nil
+      assert updated_batch.token_limit_retry_attempts == 0
+      assert updated_batch.token_limit_retry_next_at == nil
+      assert updated_batch.token_limit_retry_last_error == nil
     end
 
     test "bulk updates requests to processing state after batch creation", %{server: server} do
@@ -172,7 +186,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
           seeded_batch(
             model: model,
             state: :openai_processing,
-            estimated_input_tokens_total: 1_950_000
+            estimated_request_input_tokens_total: 1_950_000
           )
         )
 
@@ -182,7 +196,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
             model: model,
             state: :uploaded,
             openai_input_file_id: "file-123",
-            estimated_input_tokens_total: 100_000
+            estimated_request_input_tokens_total: 100_000
           )
         )
 
@@ -207,7 +221,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
           seeded_batch(
             model: model,
             state: :openai_processing,
-            estimated_input_tokens_total: 1_950_000
+            estimated_request_input_tokens_total: 1_950_000
           )
         )
 
@@ -217,7 +231,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
             model: model,
             state: :uploaded,
             openai_input_file_id: "file-123",
-            estimated_input_tokens_total: 100_000
+            estimated_request_input_tokens_total: 100_000
           )
         )
 
@@ -412,6 +426,24 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
       # Should succeed even with no requests to update
       assert updated_batch.openai_batch_id == "batch_abc123"
       assert updated_batch.state == :openai_processing
+    end
+
+    test "rejects create when batch already has openai_batch_id" do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            openai_input_file_id: "file-123",
+            openai_batch_id: "batch_existing"
+          )
+        )
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
     end
   end
 end

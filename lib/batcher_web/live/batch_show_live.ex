@@ -23,6 +23,9 @@ defmodule BatcherWeb.BatchShowLive do
         {:ok,
          socket
          |> assign(batch: batch, transitions: transitions, show_capacity_modal: false)
+         |> assign(:show_error_modal, false)
+         |> assign(:error_modal_content, "")
+         |> assign(:error_modal_is_json, false)
          |> assign(:capacity_info, build_capacity_info(batch))
          |> assign(delivery_bar_width_styles(batch))}
 
@@ -45,7 +48,8 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.start_batch_upload(batch) do
       {:ok, updated_batch} ->
-        updated_batch = Ash.load!(updated_batch, [:transitions, :delivery_stats])
+        updated_batch =
+          Batching.get_batch_by_id!(updated_batch.id, load: [:transitions, :delivery_stats])
 
         transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
@@ -75,7 +79,8 @@ defmodule BatcherWeb.BatchShowLive do
 
     case Batching.cancel_batch(batch) do
       {:ok, updated_batch} ->
-        updated_batch = Ash.load!(updated_batch, [:transitions, :delivery_stats])
+        updated_batch =
+          Batching.get_batch_by_id!(updated_batch.id, load: [:transitions, :delivery_stats])
 
         transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
@@ -129,6 +134,40 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
+  def handle_event("restart_batch", _params, socket) do
+    batch = socket.assigns.batch
+
+    case Batching.restart_batch(batch) do
+      {:ok, updated_batch} ->
+        updated_batch =
+          Batching.get_batch_by_id!(updated_batch.id, load: [:transitions, :delivery_stats])
+
+        transitions = updated_batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
+
+        {:noreply,
+         socket
+         |> assign(batch: updated_batch, transitions: transitions, show_error_modal: false)
+         |> assign(:error_modal_content, "")
+         |> assign(:error_modal_is_json, false)
+         |> assign(:capacity_info, build_capacity_info(updated_batch))
+         |> assign(delivery_bar_width_styles(updated_batch))
+         |> put_flash(:info, "Batch restart initiated successfully")}
+
+      {:error, error} ->
+        error_msg =
+          case error do
+            %Ash.Error.Invalid{errors: errors} ->
+              Enum.map_join(errors, ", ", &Exception.message/1)
+
+            other ->
+              "Failed to restart batch: #{Exception.message(other)}"
+          end
+
+        {:noreply, put_flash(socket, :error, error_msg)}
+    end
+  end
+
+  @impl true
   def handle_event("redeliver_batch", _params, socket) do
     batch = socket.assigns.batch
 
@@ -151,6 +190,22 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
+  def handle_event("show_batch_error", _params, socket) do
+    {content, is_json} = format_content_with_type(socket.assigns.batch.error_msg)
+
+    {:noreply,
+     socket
+     |> assign(:show_error_modal, true)
+     |> assign(:error_modal_content, content)
+     |> assign(:error_modal_is_json, is_json)}
+  end
+
+  @impl true
+  def handle_event("close_batch_error_modal", _params, socket) do
+    {:noreply, assign(socket, :show_error_modal, false)}
+  end
+
+  @impl true
   def handle_event("open_capacity_modal", _params, socket) do
     {:noreply, assign(socket, :show_capacity_modal, true)}
   end
@@ -165,7 +220,7 @@ defmodule BatcherWeb.BatchShowLive do
         %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}},
         socket
       ) do
-    batch = Ash.load!(batch, [:transitions, :delivery_stats])
+    batch = Batching.get_batch_by_id!(batch.id, load: [:transitions, :delivery_stats])
     transitions = batch.transitions |> Enum.sort_by(& &1.transitioned_at, DateTime)
 
     {:noreply,
@@ -267,7 +322,7 @@ defmodule BatcherWeb.BatchShowLive do
     {:ok, reserved_other} =
       CapacityControl.reserved_tokens_for_model(batch.model, exclude_batch_id: batch.id)
 
-    estimated_tokens = batch.estimated_input_tokens_total || 0
+    estimated_tokens = batch.estimated_request_input_tokens_total || 0
     reserved_total = reserved_other + estimated_tokens
     headroom = max(limit - reserved_other, 0)
     would_exceed_by = max(reserved_total - limit, 0)
@@ -281,7 +336,9 @@ defmodule BatcherWeb.BatchShowLive do
       headroom: headroom,
       would_exceed_by: would_exceed_by,
       limit_source: limit_source,
-      waiting_reason: format_wait_reason(batch.capacity_wait_reason)
+      waiting_reason: format_wait_reason(batch.capacity_wait_reason),
+      token_limit_retry_attempts: batch.token_limit_retry_attempts || 0,
+      token_limit_retry_next_at: batch.token_limit_retry_next_at
     }
   end
 
@@ -290,11 +347,42 @@ defmodule BatcherWeb.BatchShowLive do
   defp format_wait_reason("token_limit_exceeded"),
     do: "OpenAI rejected batch (token limit exceeded)"
 
+  defp format_wait_reason("token_limit_exceeded_backoff"),
+    do: "OpenAI queue backoff in progress (token limit exceeded)"
+
   defp format_wait_reason(nil), do: "Waiting for queue capacity"
   defp format_wait_reason(other), do: other
 
-  defp estimated_input_from_actual(batch) do
-    input_tokens = batch.input_tokens || 0
-    trunc(Float.ceil(input_tokens * 1.1))
+  defp format_content_with_type(nil), do: {"", false}
+
+  defp format_content_with_type(content) when is_binary(content) do
+    case Jason.decode(content) do
+      {:ok, decoded} -> {Jason.encode!(decoded, pretty: true), true}
+      {:error, _} -> {content, false}
+    end
+  end
+
+  defp format_content_with_type(content) when is_map(content) do
+    {Jason.encode!(content, pretty: true), true}
+  end
+
+  defp format_content_with_type(content), do: {inspect(content), false}
+
+  defp token_limit_backoff_waiting?(batch) do
+    batch.state == :waiting_for_capacity and
+      batch.capacity_wait_reason == "token_limit_exceeded_backoff"
+  end
+
+  defp token_limit_retry_time_remaining(nil), do: "—"
+
+  defp token_limit_retry_time_remaining(next_at) do
+    seconds = DateTime.diff(next_at, DateTime.utc_now(), :second)
+
+    cond do
+      seconds <= 0 -> "Retrying now"
+      seconds < 60 -> "<1m"
+      seconds < 3600 -> "#{div(seconds, 60)}m"
+      true -> "#{div(seconds, 3600)}h #{rem(div(seconds, 60), 60)}m"
+    end
   end
 end

@@ -178,6 +178,37 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   @impl true
+  def handle_event("restart_batch", %{"id" => id}, socket) do
+    id = String.to_integer(id)
+
+    case Batching.get_batch_by_id(id) do
+      {:ok, batch} ->
+        case Batching.restart_batch(batch) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Batch restart initiated successfully")
+             |> reload_page()}
+
+          {:error, error} ->
+            error_msg =
+              case error do
+                %Ash.Error.Invalid{errors: errors} ->
+                  Enum.map_join(errors, ", ", &Exception.message/1)
+
+                other ->
+                  "Failed to restart batch: #{Exception.message(other)}"
+              end
+
+            {:noreply, put_flash(socket, :error, error_msg)}
+        end
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Batch not found")}
+    end
+  end
+
+  @impl true
   def handle_event("redeliver_batch", %{"id" => id}, socket) do
     id = String.to_integer(id)
 
@@ -423,6 +454,17 @@ defmodule BatcherWeb.BatchIndexLive do
     if is_integer(total) and total > 0 and is_integer(completed) do
       "#{completed}/#{total}"
     end
+  end
+
+  defp token_limit_backoff_waiting?(batch) do
+    batch.state == :waiting_for_capacity and
+      batch.capacity_wait_reason == "token_limit_exceeded_backoff"
+  end
+
+  defp token_limit_next_retry_title(nil), do: nil
+
+  defp token_limit_next_retry_title(next_at) do
+    "Next retry #{Calendar.strftime(next_at, "%d %b %Y, %H:%M UTC")}"
   end
 
   defp sort_options do

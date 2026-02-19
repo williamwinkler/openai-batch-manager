@@ -61,7 +61,10 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacity do
 
   defp fetch_waiting_batches(model) do
     Batching.Batch
-    |> Ash.Query.filter(model == ^model and state == :waiting_for_capacity)
+    |> Ash.Query.filter(
+      model == ^model and state == :waiting_for_capacity and
+        (is_nil(token_limit_retry_next_at) or token_limit_retry_next_at <= now())
+    )
     |> Ash.Query.sort(waiting_for_capacity_since_at: :asc, id: :asc)
     |> Ash.read!()
   end

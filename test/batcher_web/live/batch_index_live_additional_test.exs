@@ -212,4 +212,65 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
       refute html =~ "id=\"batches-row-#{batch.id}\""
     end
   end
+
+  describe "restart batch action" do
+    test "restart button is visible only for failed batches", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed))
+      active_batch = generate(batch())
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(
+               view,
+               "button[phx-click='restart_batch'][phx-value-id='#{failed_batch.id}']"
+             )
+
+      refute has_element?(
+               view,
+               "button[phx-click='restart_batch'][phx-value-id='#{active_batch.id}']"
+             )
+    end
+
+    test "clicking restart moves failed batch back into processing flow", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed, openai_input_file_id: "file_in"))
+      generate(seeded_request(batch_id: failed_batch.id, state: :failed))
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      view
+      |> element("button[phx-click='restart_batch'][phx-value-id='#{failed_batch.id}']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "Batch restart initiated successfully"
+      assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
+    end
+  end
+
+  describe "token-limit backoff badge" do
+    test "shows backoff badge only for waiting token-limit batches", %{conn: conn} do
+      backoff_batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "token_limit_exceeded_backoff",
+            token_limit_retry_attempts: 2,
+            token_limit_retry_next_at: DateTime.add(DateTime.utc_now(), 300, :second)
+          )
+        )
+
+      normal_waiting =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "insufficient_headroom"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(view, "#batches-row-#{backoff_batch.id}", "Backoff 2/5")
+      refute has_element?(view, "#batches-row-#{normal_waiting.id}", "Backoff")
+    end
+  end
 end

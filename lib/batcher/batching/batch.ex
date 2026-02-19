@@ -24,7 +24,8 @@ defmodule Batcher.Batching.Batch do
     migration_defaults request_count: "0",
                        size_bytes: "0",
                        estimated_input_tokens_total: "0",
-                       estimated_request_input_tokens_total: "0"
+                       estimated_request_input_tokens_total: "0",
+                       token_limit_retry_attempts: "0"
 
     custom_indexes do
       index [:state, :model, :url], name: "batches_state_model_url_index"
@@ -76,6 +77,7 @@ defmodule Batcher.Batching.Batch do
         to: :openai_processing
 
       transition :mark_expired, from: :openai_processing, to: :expired
+      transition :handle_token_limit_exceeded, from: :openai_processing, to: :waiting_for_capacity
       transition :handle_partial_expiration, from: :openai_processing, to: :expired
       transition :reupload_unprocessed, from: :expired, to: :uploading
       transition :openai_processing_completed, from: :openai_processing, to: :openai_completed
@@ -119,6 +121,12 @@ defmodule Batcher.Batching.Batch do
           :delivering
         ],
         to: :cancelled
+
+      transition :restart, from: :failed, to: :waiting_for_capacity
+
+      transition :fail_token_limit_exhausted,
+        from: [:openai_processing, :waiting_for_capacity],
+        to: :failed
     end
   end
 
@@ -127,6 +135,7 @@ defmodule Batcher.Batching.Batch do
       trigger :expire_stale_building_batch do
         action :expire_stale_building_batch
         where expr(state == :building and created_at < datetime_add(now(), -1, "hour"))
+        scheduler_cron "*/5 * * * *"
         queue :default
         worker_module_name Batching.Batch.AshOban.Worker.ExpireStaleBuildingBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.ExpireStaleBuildingBatch
@@ -134,24 +143,11 @@ defmodule Batcher.Batching.Batch do
 
       trigger :upload do
         action :upload
+        scheduler_cron "*/5 * * * *"
         queue :batch_uploads
         where expr(state == :uploading)
         worker_module_name Batching.Batch.AshOban.Worker.UploadBatch
         scheduler_module_name Batching.Batch.AshOban.Scheduler.UploadBatch
-      end
-
-      trigger :create_openai_batch do
-        action :create_openai_batch
-
-        where expr(
-                state == :uploaded or
-                  (state == :expired and is_nil(openai_output_file_id) and
-                     is_nil(openai_error_file_id))
-              )
-
-        queue :default
-        worker_module_name Batching.Batch.AshOban.Worker.CreateOpenaiBatch
-        scheduler_module_name Batching.Batch.AshOban.Scheduler.CreateOpenaiBatch
       end
 
       trigger :dispatch_waiting_for_capacity do
@@ -166,6 +162,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :process_expired_batch do
         action :process_expired_batch
+        scheduler_cron "*/5 * * * *"
 
         where expr(
                 state == :expired and
@@ -187,6 +184,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :start_downloading do
         action :start_downloading
+        scheduler_cron "*/5 * * * *"
         where expr(state == :openai_completed)
         # Use dedicated queue with concurrency 1 to prevent parallel downloads
         queue :batch_processing
@@ -196,6 +194,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :process_downloaded_file do
         action :process_downloaded_file
+        scheduler_cron "*/5 * * * *"
         where expr(state == :downloading)
         # Use dedicated queue with concurrency 1 to prevent parallel processing
         queue :batch_processing
@@ -215,6 +214,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :check_delivery_completion do
         action :check_delivery_completion
+        scheduler_cron "*/5 * * * *"
         where expr(state == :delivering)
         # Use batch_processing queue (concurrency 1) to prevent race conditions
         # when multiple jobs try to transition the batch simultaneously
@@ -348,6 +348,35 @@ defmodule Batcher.Batching.Batch do
       change transition_state(:failed)
     end
 
+    update :handle_token_limit_exceeded do
+      description "Requeue OpenAI batch after token limit rejection with retry backoff"
+      require_atomic? false
+      accept [:token_limit_retry_last_error]
+      change Batching.Changes.ResetRequestsForTokenLimitRetry
+      change Batching.Changes.ApplyTokenLimitBackoff
+      change set_attribute(:error_msg, nil)
+      change set_attribute(:openai_batch_id, nil)
+      change set_attribute(:openai_status_last_checked_at, nil)
+      change set_attribute(:openai_requests_completed, nil)
+      change set_attribute(:openai_requests_failed, nil)
+      change set_attribute(:openai_requests_total, nil)
+      change set_attribute(:capacity_last_checked_at, &DateTime.utc_now/0)
+      change set_attribute(:capacity_wait_reason, "token_limit_exceeded_backoff")
+      change Batching.Changes.SetWaitingSince
+      change transition_state(:waiting_for_capacity)
+      change run_oban_trigger(:dispatch_waiting_for_capacity)
+    end
+
+    update :fail_token_limit_exhausted do
+      description "Fail batch permanently after exhausting token-limit backoff retries"
+      require_atomic? false
+      accept [:error_msg]
+      change set_attribute(:token_limit_retry_next_at, nil)
+      change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+      change Batching.Changes.FailBatch
+      change transition_state(:failed)
+    end
+
     update :openai_processing_completed do
       description "Mark batch as completed processing on OpenAI"
       require_atomic? false
@@ -429,6 +458,39 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       change Batching.Changes.CancelBatch
       change transition_state(:cancelled)
+    end
+
+    update :restart do
+      description "Restart a failed batch using the existing uploaded input file"
+      require_atomic? false
+
+      validate present(:openai_input_file_id) do
+        message "Cannot restart batch without an uploaded OpenAI input file"
+      end
+
+      change Batching.Changes.DeleteOpenaiFilesForRestart
+      change Batching.Changes.ResetRequestsForRestart
+      change set_attribute(:error_msg, nil)
+      change set_attribute(:openai_batch_id, nil)
+      change set_attribute(:openai_output_file_id, nil)
+      change set_attribute(:openai_error_file_id, nil)
+      change set_attribute(:openai_status_last_checked_at, nil)
+      change set_attribute(:openai_requests_completed, nil)
+      change set_attribute(:openai_requests_failed, nil)
+      change set_attribute(:openai_requests_total, nil)
+      change set_attribute(:capacity_last_checked_at, nil)
+      change set_attribute(:capacity_wait_reason, nil)
+      change set_attribute(:token_limit_retry_attempts, 0)
+      change set_attribute(:token_limit_retry_next_at, nil)
+      change set_attribute(:token_limit_retry_last_error, nil)
+      change Batching.Changes.SetWaitingSince
+      change set_attribute(:input_tokens, nil)
+      change set_attribute(:cached_tokens, nil)
+      change set_attribute(:reasoning_tokens, nil)
+      change set_attribute(:output_tokens, nil)
+      change set_attribute(:expires_at, nil)
+      change transition_state(:waiting_for_capacity)
+      change run_oban_trigger(:dispatch_waiting_for_capacity)
     end
 
     action :expire_stale_building_batch, :struct do
@@ -622,6 +684,23 @@ defmodule Batcher.Batching.Batch do
 
     attribute :error_msg, :string do
       description "Error message if batch failed"
+    end
+
+    attribute :token_limit_retry_attempts, :integer do
+      description "Number of token-limit retry attempts performed for this batch"
+      allow_nil? true
+      default 0
+      public? true
+    end
+
+    attribute :token_limit_retry_next_at, :utc_datetime do
+      description "Next time this batch is eligible for retry after token-limit rejection"
+      public? true
+    end
+
+    attribute :token_limit_retry_last_error, :string do
+      description "Last OpenAI token-limit error payload received for this batch"
+      public? true
     end
 
     attribute :input_tokens, :integer

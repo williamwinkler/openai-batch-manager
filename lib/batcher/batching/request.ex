@@ -138,8 +138,21 @@ defmodule Batcher.Batching.Request do
         from: [:openai_processed, :delivered, :delivery_failed],
         to: :openai_processed
 
-      transition :reset_to_pending, from: :openai_processing, to: :pending
+      transition :reset_to_pending, from: [:openai_processing, :failed], to: :pending
       transition :bulk_reset_to_pending, from: :openai_processing, to: :pending
+
+      transition :restart_to_pending,
+        from: [
+          :openai_processing,
+          :openai_processed,
+          :delivering,
+          :delivered,
+          :failed,
+          :delivery_failed,
+          :expired,
+          :cancelled
+        ],
+        to: :pending
 
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
 
@@ -154,6 +167,7 @@ defmodule Batcher.Batching.Request do
       trigger :deliver do
         action :deliver
         where expr(state == :openai_processed)
+        scheduler_cron "*/5 * * * *"
         queue :delivery
         max_attempts 3
         backoff 10
@@ -331,6 +345,13 @@ defmodule Batcher.Batching.Request do
     update :bulk_reset_to_pending do
       description "Bulk reset requests from openai_processing back to pending"
       require_atomic? false
+      change transition_state(:pending)
+    end
+
+    update :restart_to_pending do
+      description "Reset a request to pending state for batch restart"
+      require_atomic? false
+      accept [:error_msg, :response_payload]
       change transition_state(:pending)
     end
 

@@ -40,15 +40,12 @@ defmodule BatcherWeb.RequestIndexLive do
       AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 25)
       |> Keyword.put(:count, true)
 
-    query =
-      Batching.Request
-      |> Ash.Query.for_read(:search,
-        query: query_text,
-        sort_input: sort_input,
-        batch_id: batch_id
+    page =
+      Batching.search_requests!(
+        query_text,
+        %{sort_input: sort_input, batch_id: batch_id},
+        page: page_opts
       )
-
-    page = Ash.read!(query, page: page_opts)
 
     # Subscribe to state changes for requests on current page
     if connected?(socket) do
@@ -161,17 +158,10 @@ defmodule BatcherWeb.RequestIndexLive do
     sort_input =
       if sort_by == "batch_filter" and is_nil(batch_id), do: "-created_at", else: sort_by
 
-    query =
-      Batching.Request
-      |> Ash.Query.for_read(:search,
-        query: query_text,
-        sort_input: sort_input,
-        batch_id: batch_id
-      )
-
     page =
-      Ash.read!(
-        query,
+      Batching.search_requests!(
+        query_text,
+        %{sort_input: sort_input, batch_id: batch_id},
         page: [
           offset: socket.assigns.page.offset,
           limit: socket.assigns.page.limit,

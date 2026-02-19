@@ -231,4 +231,100 @@ defmodule BatcherWeb.BatchShowLiveTest do
       refute html =~ "Older waiting batch has priority (FIFO)"
     end
   end
+
+  describe "restart batch action" do
+    test "restart button is visible for failed batches", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed))
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{failed_batch.id}")
+
+      assert html =~ "Restart Batch"
+    end
+
+    test "clicking restart transitions failed batch back into processing flow", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed, openai_input_file_id: "file_in"))
+      generate(seeded_request(batch_id: failed_batch.id, state: :failed))
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{failed_batch.id}")
+
+      view
+      |> element("button[phx-click='restart_batch']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "Batch restart initiated successfully"
+      assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
+    end
+  end
+
+  describe "batch error modal" do
+    test "opens and closes modal for JSON error", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :failed,
+            error_msg: ~s({"error":{"message":"boom","code":"bad_request"}})
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("div[phx-click='show_batch_error']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "Batch Error"
+      assert html =~ "boom"
+      assert html =~ "bad_request"
+      assert has_element?(view, "button[phx-click='close_batch_error_modal']")
+
+      view
+      |> element("button[phx-click='close_batch_error_modal']")
+      |> render_click()
+
+      refute has_element?(view, "button[phx-click='close_batch_error_modal']")
+    end
+
+    test "shows plain text for non-json error", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :failed,
+            error_msg: "Something went wrong without JSON"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("div[phx-click='show_batch_error']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "Batch Error"
+      assert html =~ "Something went wrong without JSON"
+    end
+  end
+
+  describe "token-limit backoff visibility" do
+    test "shows backoff panel for token_limit_exceeded_backoff waiting batch", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "token_limit_exceeded_backoff",
+            token_limit_retry_attempts: 2,
+            token_limit_retry_next_at: DateTime.add(DateTime.utc_now(), 300, :second)
+          )
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+
+      assert html =~ "OpenAI Queue Backoff"
+      assert html =~ "Retry attempt"
+      assert html =~ "2/5"
+      assert html =~ "This batch will retry automatically"
+    end
+  end
 end

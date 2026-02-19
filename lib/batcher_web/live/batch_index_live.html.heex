@@ -5,7 +5,7 @@
       <div class="flex-1 flex items-center ">
         <div class="shrink-0">
           <h1 class="text-2xl font-bold">Batches</h1>
-          <p class="text-sm text-base-content/60 mt-1">Manage your batches and requests</p>
+          <p class="text-sm text-base-content/60 mt-1">Manage your batches</p>
         </div>
       </div>
       <.search_box query={@query_text} />
@@ -54,7 +54,16 @@
                 </span>
               </:col>
               <:col :let={batch} label="Status" width="w-32">
-                <.status_badge status={batch.state} />
+                <div class="flex items-center gap-2">
+                  <.status_badge status={batch.state} />
+                  <span
+                    :if={token_limit_backoff_waiting?(batch)}
+                    class="badge badge-warning badge-outline badge-xs"
+                    title={token_limit_next_retry_title(batch.token_limit_retry_next_at)}
+                  >
+                    Backoff {batch.token_limit_retry_attempts || 0}/5
+                  </span>
+                </div>
               </:col>
               <:col :let={batch} label="Time in state" width="w-28">
                 <span
@@ -116,6 +125,15 @@
                       <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
                     </button>
                   </div>
+                  <button
+                    :if={batch.state == :failed}
+                    phx-click="restart_batch"
+                    phx-value-id={batch.id}
+                    class="btn btn-sm btn-primary"
+                    data-confirm="Restart this failed batch?"
+                  >
+                    <.icon name="hero-arrow-path" class="w-4 h-4" /> Restart
+                  </button>
                   <button
                     :if={
                       batch.state not in [

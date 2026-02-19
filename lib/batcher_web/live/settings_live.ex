@@ -1,6 +1,8 @@
 defmodule BatcherWeb.SettingsLive do
   use BatcherWeb, :live_view
 
+  require Logger
+
   alias Batcher.OpenaiRateLimits
   alias Batcher.Settings
   alias Batcher.Utils.Format
@@ -67,6 +69,29 @@ defmodule BatcherWeb.SettingsLive do
      |> assign_override_form(build_override_form(updated_settings))}
   end
 
+  @impl true
+  def handle_event("erase_db", _params, socket) do
+    Logger.info("Settings erase_db requested")
+
+    case data_reset_module().erase_all() do
+      :ok ->
+        settings = Settings.ensure_rate_limit_settings!()
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Database erased successfully")
+         |> assign(:settings, settings)
+         |> assign(:overrides, Settings.list_model_overrides!())
+         |> assign(:token_limit_preview, nil)
+         |> assign_override_form(build_override_form(settings))}
+
+      {:error, reason} ->
+        Logger.error("Failed to erase database from settings liveview: #{inspect(reason)}")
+        message = "Failed to erase database: #{exception_message(reason)}"
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
   defp build_override_form(settings) do
     AshPhoenix.Form.for_update(settings, :upsert_model_override,
       as: "override",
@@ -111,6 +136,14 @@ defmodule BatcherWeb.SettingsLive do
   defp model_default_limits do
     OpenaiRateLimits.model_prefix_default_limits()
   end
+
+  defp data_reset_module do
+    Application.get_env(:batcher, :data_reset_module, Batcher.Storage.DataReset)
+  end
+
+  defp exception_message(%{message: message}) when is_binary(message), do: message
+  defp exception_message(reason) when is_binary(reason), do: reason
+  defp exception_message(reason), do: inspect(reason)
 
   def format_token_cap(token_limit) when is_integer(token_limit) and token_limit >= 0 do
     "#{format_with_delimiters(token_limit)} (#{Format.compact_number(token_limit)})"

@@ -15,10 +15,8 @@ defmodule BatcherWeb.RequestShowLive do
       BatcherWeb.Endpoint.subscribe("request_delivery_attempts:created:#{request_id}")
     end
 
-    case Batching.get_request_by_id(request_id) do
+    case Batching.get_request_by_id(request_id, load: [:batch]) do
       {:ok, request} ->
-        request = Ash.load!(request, :batch)
-
         socket =
           socket
           |> load_request_data(request, 0)
@@ -134,8 +132,8 @@ defmodule BatcherWeb.RequestShowLive do
 
     case Batching.retry_request_delivery(request) do
       {:ok, updated_request} ->
-        updated_request = Ash.load!(updated_request, :batch)
-        {:noreply, assign(socket, :request, updated_request)}
+        refreshed_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
+        {:noreply, assign(socket, :request, refreshed_request)}
 
       {:error, _error} ->
         {:noreply, put_flash(socket, :error, "Failed to retry delivery")}
@@ -244,7 +242,7 @@ defmodule BatcherWeb.RequestShowLive do
            params: %{"delivery_config" => delivery_config}
          ) do
       {:ok, updated_request} ->
-        updated_request = Ash.load!(updated_request, :batch)
+        updated_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
 
         socket =
           socket
@@ -266,8 +264,7 @@ defmodule BatcherWeb.RequestShowLive do
         %{topic: "requests:state_changed:" <> _request_id, payload: %{data: request}},
         socket
       ) do
-    # Reload with batch relationship
-    request = Ash.load!(request, :batch)
+    request = Batching.get_request_by_id!(request.id, load: [:batch])
     {:noreply, assign(socket, :request, request)}
   end
 
@@ -297,21 +294,25 @@ defmodule BatcherWeb.RequestShowLive do
   end
 
   defp load_delivery_attempts(socket, request_id, offset) do
-    query =
-      Batching.RequestDeliveryAttempt
-      |> Ash.Query.for_read(:list_paginated,
-        request_id: request_id,
-        skip: offset,
-        limit: @per_page
+    page =
+      Batching.list_delivery_attempts_paginated!(
+        request_id,
+        offset,
+        @per_page,
+        page: [offset: offset, limit: @per_page, count: true]
       )
-
-    page = Ash.read!(query, page: [offset: offset, limit: @per_page, count: true])
 
     socket
     |> stream(:delivery_attempts, page.results, reset: true)
     |> assign(:delivery_attempts_page, page)
   end
 
+  @doc """
+  Returns the request input estimate shown in the UI.
+
+  Prefers actual token usage from response payload when available, otherwise uses the
+  persisted estimate, and applies the default 10% safety buffer.
+  """
   def estimated_input_from_actual(request) do
     actual_input_tokens = extract_actual_input_tokens(request.response_payload)
 
@@ -545,6 +546,9 @@ defmodule BatcherWeb.RequestShowLive do
   defp non_empty?(""), do: false
   defp non_empty?(_), do: true
 
+  @doc """
+  Returns the normalized delivery type (`\"webhook\"` or `\"rabbitmq\"`) from config.
+  """
   def current_delivery_type(nil), do: nil
 
   def current_delivery_type(config) when is_map(config) do

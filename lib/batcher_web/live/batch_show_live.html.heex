@@ -49,6 +49,14 @@
         >
           Cancel Batch
         </button>
+        <button
+          :if={@batch.state == :failed}
+          phx-click="restart_batch"
+          class="btn btn-sm btn-primary"
+          data-confirm="Restart this failed batch?"
+        >
+          <.icon name="hero-arrow-path" class="w-4 h-4" /> Restart Batch
+        </button>
         <.delete_batch_button
           batch_id={@batch.id}
           batch_state={@batch.state}
@@ -153,9 +161,58 @@
 
       <div
         :if={@batch.error_msg}
-        class="text-sm text-error bg-error/10 px-3 py-2 rounded"
+        class="border border-error/30 rounded-lg overflow-hidden cursor-pointer hover:border-error/60 transition-colors"
+        phx-click="show_batch_error"
       >
-        {@batch.error_msg}
+        <div class="px-4 py-3 border-b border-error/20 bg-error/10 flex items-center justify-between">
+          <span class="font-medium text-error">Batch Error</span>
+          <.icon name="hero-arrows-pointing-out" class="w-4 h-4 text-error/70" />
+        </div>
+        <div class="p-4">
+          <pre class="text-xs font-mono leading-relaxed overflow-hidden max-h-24 whitespace-pre-wrap break-all text-error/90">{@batch.error_msg}</pre>
+          <div class="mt-2 text-xs text-error/80">Click to expand</div>
+        </div>
+      </div>
+
+      <div
+        :if={token_limit_backoff_waiting?(@batch)}
+        class="border border-warning/30 rounded-lg overflow-hidden"
+      >
+        <div class="px-4 py-3 border-b border-warning/20 bg-warning/10">
+          <span class="font-medium text-warning-content">OpenAI Queue Backoff</span>
+        </div>
+        <div class="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div>
+            <div class="text-base-content/50 mb-1">Retry attempt</div>
+            <div class="font-mono">{@batch.token_limit_retry_attempts || 0}/5</div>
+          </div>
+          <div>
+            <div class="text-base-content/50 mb-1">Next retry at</div>
+            <div>
+              <%= if @batch.token_limit_retry_next_at do %>
+                <span
+                  id="batch-token-limit-next-retry-at"
+                  phx-hook="LocalTime"
+                  data-utc={DateTime.to_iso8601(@batch.token_limit_retry_next_at)}
+                  data-format="datetime"
+                >
+                  {Calendar.strftime(@batch.token_limit_retry_next_at, "%d %b %Y, %H:%M")}
+                </span>
+              <% else %>
+                —
+              <% end %>
+            </div>
+          </div>
+          <div>
+            <div class="text-base-content/50 mb-1">Time remaining</div>
+            <div class="font-mono">
+              {token_limit_retry_time_remaining(@batch.token_limit_retry_next_at)}
+            </div>
+          </div>
+          <div class="md:col-span-3 text-base-content/70">
+            OpenAI reported enqueued token limit reached. This batch will retry automatically.
+          </div>
+        </div>
       </div>
     </div>
 
@@ -255,7 +312,7 @@
             <div class="flex justify-between">
               <span class="text-base-content/50">Est. input</span>
               <span class="font-mono">
-                {Format.compact_number(estimated_input_from_actual(@batch))}
+                {Format.compact_number(@batch.estimated_request_input_tokens_total || 0)}
               </span>
             </div>
             <div class="flex justify-between">
@@ -480,6 +537,38 @@
   </div>
 
   <div
+    :if={@show_error_modal}
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+  >
+    <div class="absolute inset-0 bg-black/50" phx-click="close_batch_error_modal"></div>
+
+    <div class="relative bg-base-100 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div class="px-6 py-4 border-b border-base-300 flex items-center justify-between shrink-0">
+        <h3 class="text-lg font-semibold">Batch Error</h3>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-circle"
+          phx-click="close_batch_error_modal"
+        >
+          <.icon name="hero-x-mark" class="w-5 h-5" />
+        </button>
+      </div>
+
+      <div class="p-6 overflow-auto flex-1">
+        <%= if @error_modal_is_json do %>
+          <pre
+            id="batch-error-modal-content"
+            class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
+            phx-hook="JsonSyntaxHighlight"
+          >{@error_modal_content}</pre>
+        <% else %>
+          <pre class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all">{@error_modal_content}</pre>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <div
     :if={@show_capacity_modal and @batch.state == :waiting_for_capacity}
     class="fixed inset-0 z-50 flex items-center justify-center p-4"
   >
@@ -493,30 +582,48 @@
       </div>
 
       <div class="p-5 space-y-4">
-        <div class="space-y-2 text-sm leading-6">
-          <p>
-            Right now, we already have
-            <span class="font-semibold">
-              {Format.compact_number(@capacity_info.reserved_other)} tokens
-            </span>
-            queued/processing on OpenAI for model <span class="font-semibold">{@capacity_info.model}</span>.
-          </p>
+        <%= if @batch.capacity_wait_reason == "token_limit_exceeded_backoff" do %>
+          <div class="space-y-2 text-sm leading-6">
+            <p>
+              OpenAI reported <span class="font-semibold">token limit exceeded</span>
+              for this model.
+              We are applying an automatic cooldown before trying again.
+            </p>
+            <p>
+              Retry attempt: <span class="font-semibold">{@batch.token_limit_retry_attempts || 0}/5</span>.
+            </p>
+            <p>
+              Next retry in <span class="font-semibold">
+                {token_limit_retry_time_remaining(@batch.token_limit_retry_next_at)}
+              </span>.
+            </p>
+          </div>
+        <% else %>
+          <div class="space-y-2 text-sm leading-6">
+            <p>
+              Right now, we already have
+              <span class="font-semibold">
+                {Format.compact_number(@capacity_info.reserved_other)} tokens
+              </span>
+              queued/processing on OpenAI for model <span class="font-semibold">{@capacity_info.model}</span>.
+            </p>
 
-          <p>
-            To avoid rate-limit errors, we keep total queued tokens below <span class="font-semibold">
-              {Format.compact_number(@capacity_info.limit)} tokens</span>.
-            You can adjust model-specific caps on the <.link
-              navigate={~p"/settings"}
-              class="link link-primary"
-            >Settings page</.link>.
-          </p>
+            <p>
+              To avoid rate-limit errors, we keep total queued tokens below <span class="font-semibold">
+                {Format.compact_number(@capacity_info.limit)} tokens</span>.
+              You can adjust model-specific caps on the <.link
+                navigate={~p"/settings"}
+                class="link link-primary"
+              >Settings page</.link>.
+            </p>
 
-          <p>
-            This batch is estimated at <span class="font-semibold">
-              {Format.compact_number(@capacity_info.estimated_tokens)} tokens
-            </span>, therefore starting it now would exceed the rate limit and cause errors.
-          </p>
-        </div>
+            <p>
+              This batch is estimated at <span class="font-semibold">
+                {Format.compact_number(@capacity_info.estimated_tokens)} tokens
+              </span>, therefore starting it now would exceed the rate limit and cause errors.
+            </p>
+          </div>
+        <% end %>
       </div>
     </div>
   </div>

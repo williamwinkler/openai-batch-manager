@@ -2,18 +2,24 @@ services:
   openai-batch-manager:
     image: williamwinkler/openai-batch-manager:latest
     ports:
-      - "4000:4000"
+      - "4001:${PORT}"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PORT=${PORT} # Optional
       - RABBITMQ_URL=${RABBITMQ_URL} # Optional
       - RABBITMQ_INPUT_QUEUE=${RABBITMQ_INPUT_QUEUE} # Optional
       - RABBITMQ_INPUT_EXCHANGE=${RABBITMQ_INPUT_EXCHANGE} # Optional
       - RABBITMQ_INPUT_ROUTING_KEY=${RABBITMQ_INPUT_ROUTING_KEY} # Optional
     volumes:
-      - ./data:/data
+      - openai-batch-manager-data:/data
+    logging: # Optional
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT}/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -30,3 +36,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  openai-batch-manager-data:

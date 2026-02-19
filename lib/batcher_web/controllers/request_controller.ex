@@ -4,6 +4,7 @@ defmodule BatcherWeb.RequestController do
 
   alias Batcher.Batching
   alias Batcher.Batching.Handlers
+  alias Batcher.System.MaintenanceGate
 
   alias BatcherWeb.Schemas.{
     ErrorResponseSchema,
@@ -42,58 +43,74 @@ defmodule BatcherWeb.RequestController do
   def create(conn, _params) do
     require Logger
 
-    # Request body is already validated and cast by OpenApiSpex plug
-    # Access the validated body from conn.body_params
-    request_body = conn.body_params
+    if MaintenanceGate.enabled?() do
+      conn
+      |> put_status(:service_unavailable)
+      |> json(%{
+        errors: [
+          %{
+            code: "maintenance_mode",
+            title: "Service Temporarily Unavailable",
+            detail: "Request intake is temporarily paused for maintenance. Please retry shortly."
+          }
+        ]
+      })
+    else
+      # Request body is already validated and cast by OpenApiSpex plug
+      # Access the validated body from conn.body_params
+      request_body = conn.body_params
 
-    Logger.debug("Incomming request received with custom_id=#{request_body.custom_id}")
+      Logger.debug("Incomming request received with custom_id=#{request_body.custom_id}")
 
-    case Handlers.RequestHandler.handle(request_body) do
-      {:ok, request} ->
-        Logger.info("Request #{request.custom_id} added succesfully to batch #{request.batch_id}")
+      case Handlers.RequestHandler.handle(request_body) do
+        {:ok, request} ->
+          Logger.info(
+            "Request #{request.custom_id} added succesfully to batch #{request.batch_id}"
+          )
 
-        conn
-        |> put_status(:accepted)
-        |> json(%RequestResponseSchema{
-          custom_id: request.custom_id
-        })
+          conn
+          |> put_status(:accepted)
+          |> json(%RequestResponseSchema{
+            custom_id: request.custom_id
+          })
 
-      {:error, :custom_id_already_taken} ->
-        Logger.info("Duplicate custom_id rejected",
-          custom_id: request_body.custom_id
-        )
+        {:error, :custom_id_already_taken} ->
+          Logger.info("Duplicate custom_id rejected",
+            custom_id: request_body.custom_id
+          )
 
-        conn
-        |> put_status(:conflict)
-        |> json(%{
-          errors: [
-            %{
-              code: "duplicate_custom_id",
-              title: "Custom ID Already Exists",
-              detail: "A request with this custom_id already exists in the batch"
-            }
-          ]
-        })
+          conn
+          |> put_status(:conflict)
+          |> json(%{
+            errors: [
+              %{
+                code: "duplicate_custom_id",
+                title: "Custom ID Already Exists",
+                detail: "A request with this custom_id already exists in the batch"
+              }
+            ]
+          })
 
-      {:error, error} ->
-        # Log the internal error details at error level
-        Logger.error("Failed to create request",
-          custom_id: request_body.custom_id,
-          error: inspect(error, pretty: true)
-        )
+        {:error, error} ->
+          # Log the internal error details at error level
+          Logger.error("Failed to create request",
+            custom_id: request_body.custom_id,
+            error: inspect(error, pretty: true)
+          )
 
-        # Return generic error to client (don't leak internal details)
-        conn
-        |> put_status(:internal_server_error)
-        |> json(%{
-          errors: [
-            %{
-              code: "internal_error",
-              title: "Internal Server Error",
-              detail: "An error occurred while processing your request. Please try again later."
-            }
-          ]
-        })
+          # Return generic error to client (don't leak internal details)
+          conn
+          |> put_status(:internal_server_error)
+          |> json(%{
+            errors: [
+              %{
+                code: "internal_error",
+                title: "Internal Server Error",
+                detail: "An error occurred while processing your request. Please try again later."
+              }
+            ]
+          })
+      end
     end
   end
 
@@ -312,9 +329,7 @@ defmodule BatcherWeb.RequestController do
         {:ok, batch}
 
       state when state in [:partially_delivered, :delivery_failed] ->
-        batch
-        |> Ash.Changeset.for_update(:begin_redeliver)
-        |> Ash.update()
+        Batching.begin_batch_redeliver(batch)
 
       _ ->
         {:error, :invalid_batch_state}

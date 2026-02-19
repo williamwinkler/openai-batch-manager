@@ -251,6 +251,9 @@ defmodule Batcher.Batching.BatchTest do
 
       assert Enum.at(updated_batch.transitions, 2).from == :uploading
       assert Enum.at(updated_batch.transitions, 2).to == :uploaded
+
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
+      refute_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
     end
   end
 
@@ -621,6 +624,164 @@ defmodule Batcher.Batching.BatchTest do
       req_after = Ash.get!(Batcher.Batching.Request, req.id)
       assert req_after.state == :pending
       assert req_after.error_msg == nil
+    end
+  end
+
+  describe "Batcher.Batching.Batch.restart" do
+    test "transitions failed batch to waiting_for_capacity, clears runtime fields, and enqueues dispatch",
+         %{
+           server: server
+         } do
+      expect_json_response(server, :delete, "/v1/files/file_out", %{"id" => "file_out"}, 200)
+      expect_json_response(server, :delete, "/v1/files/file_err", %{"id" => "file_err"}, 200)
+
+      batch =
+        seeded_batch(
+          state: :failed,
+          error_msg: ~s({"error":"failed"}),
+          openai_batch_id: "batch_old",
+          openai_input_file_id: "file_in",
+          openai_output_file_id: "file_out",
+          openai_error_file_id: "file_err",
+          openai_status_last_checked_at: DateTime.utc_now(),
+          openai_requests_completed: 4,
+          openai_requests_failed: 1,
+          openai_requests_total: 5,
+          capacity_last_checked_at: DateTime.utc_now(),
+          capacity_wait_reason: "insufficient_headroom",
+          waiting_for_capacity_since_at: DateTime.utc_now(),
+          input_tokens: 1000,
+          cached_tokens: 100,
+          reasoning_tokens: 50,
+          output_tokens: 900,
+          expires_at: DateTime.utc_now()
+        )
+        |> generate()
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          state: :failed,
+          error_msg: "failed request",
+          response_payload: %{"foo" => "bar"}
+        )
+      )
+
+      batch_after =
+        batch
+        |> Ash.Changeset.for_update(:restart)
+        |> Ash.update!(load: [:transitions, :requests])
+
+      assert batch_after.state == :waiting_for_capacity
+      assert batch_after.error_msg == nil
+      assert batch_after.openai_batch_id == nil
+      assert batch_after.openai_input_file_id == "file_in"
+      assert batch_after.openai_output_file_id == nil
+      assert batch_after.openai_error_file_id == nil
+      assert batch_after.openai_status_last_checked_at == nil
+      assert batch_after.openai_requests_completed == nil
+      assert batch_after.openai_requests_failed == nil
+      assert batch_after.openai_requests_total == nil
+      assert batch_after.capacity_last_checked_at == nil
+      assert batch_after.capacity_wait_reason == nil
+      assert batch_after.waiting_for_capacity_since_at
+      assert batch_after.input_tokens == nil
+      assert batch_after.cached_tokens == nil
+      assert batch_after.reasoning_tokens == nil
+      assert batch_after.output_tokens == nil
+      assert batch_after.expires_at == nil
+
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :failed
+      assert latest_transition.to == :waiting_for_capacity
+
+      assert_enqueued(
+        worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity,
+        queue: :capacity_dispatch
+      )
+    end
+
+    test "resets restartable request states to pending and clears response/error fields" do
+      batch =
+        seeded_batch(
+          state: :failed,
+          openai_input_file_id: "file_in"
+        )
+        |> generate()
+
+      failed_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :failed,
+            error_msg: "request failed",
+            response_payload: %{"status" => "failed"}
+          )
+        )
+
+      processed_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :openai_processed,
+            error_msg: "old error",
+            response_payload: %{"status" => "ok"}
+          )
+        )
+
+      pending_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :pending,
+            error_msg: nil,
+            response_payload: nil
+          )
+        )
+
+      _batch_after =
+        batch
+        |> Ash.Changeset.for_update(:restart)
+        |> Ash.update!()
+
+      failed_request_after = Ash.get!(Batching.Request, failed_request.id)
+      processed_request_after = Ash.get!(Batching.Request, processed_request.id)
+      pending_request_after = Ash.get!(Batching.Request, pending_request.id)
+
+      assert failed_request_after.state == :pending
+      assert failed_request_after.error_msg == nil
+      assert failed_request_after.response_payload == nil
+
+      assert processed_request_after.state == :pending
+      assert processed_request_after.error_msg == nil
+      assert processed_request_after.response_payload == nil
+
+      assert pending_request_after.state == :pending
+    end
+
+    test "rejects restart for non-failed batch" do
+      batch = generate(batch())
+
+      assert_raise Ash.Error.Invalid, fn ->
+        batch
+        |> Ash.Changeset.for_update(:restart)
+        |> Ash.update!()
+      end
+    end
+
+    test "rejects restart for failed batch without input file id" do
+      batch =
+        seeded_batch(
+          state: :failed,
+          openai_input_file_id: nil
+        )
+        |> generate()
+
+      assert_raise Ash.Error.Invalid, fn ->
+        batch
+        |> Ash.Changeset.for_update(:restart)
+        |> Ash.update!()
+      end
     end
   end
 

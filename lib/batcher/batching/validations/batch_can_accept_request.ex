@@ -118,7 +118,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
 
     with true <- is_binary(model),
          true <- is_binary(url),
-         {:ok, %{capacity_tokens: tokens}} <-
+         {:ok, %{request_tokens: tokens}} <-
            Batcher.TokenEstimation.RequestEstimator.estimate(url, model, payload) do
       tokens
     else
@@ -128,7 +128,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequest do
 
   defp batch_tokens_within_queue_limit(batch, incoming_tokens) do
     with {:ok, %{limit: limit}} <- Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model) do
-      current_tokens = batch.estimated_input_tokens_total || 0
+      current_tokens = batch.estimated_request_input_tokens_total || 0
       prospective_total = current_tokens + incoming_tokens
 
       if prospective_total <= limit do

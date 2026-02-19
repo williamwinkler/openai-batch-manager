@@ -9,6 +9,18 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
 
   alias Batcher.RabbitMQ.Consumer
 
+  defmodule GateOn do
+    def enabled?, do: true
+  end
+
+  defmodule ValidatorOk do
+    def validate_json(_payload), do: {:ok, %{custom_id: "x"}}
+  end
+
+  defmodule HandlerOk do
+    def handle(_validated), do: {:ok, %{id: 1}}
+  end
+
   defp stop_consumer do
     if pid = Process.whereis(Consumer) do
       try do
@@ -179,6 +191,12 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
 
       # Should receive another disconnected broadcast
       assert_receive {:rabbitmq_status, %{process: :consumer, status: :disconnected}}, 2000
+    end
+  end
+
+  describe "maintenance gate behavior" do
+    test "requeues intake messages while maintenance mode is enabled" do
+      assert Consumer.decide_message_action("{}", ValidatorOk, HandlerOk, GateOn) == {:nack, true}
     end
   end
 end
