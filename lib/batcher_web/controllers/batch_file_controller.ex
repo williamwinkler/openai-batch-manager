@@ -12,7 +12,8 @@ defmodule BatcherWeb.BatchFileController do
 
   def download(conn, %{"batch_id" => batch_id, "file_type" => file_type}) do
     with {:ok, field} <- validate_file_type(file_type),
-         {:ok, batch} <- Batching.get_batch_by_id(String.to_integer(batch_id)),
+         {:ok, parsed_batch_id} <- parse_batch_id(batch_id),
+         {:ok, batch} <- Batching.get_batch_by_id(parsed_batch_id),
          {:ok, file_id} <- extract_file_id(batch, field),
          {:ok, content} <- OpenaiApiClient.get_file_content(file_id) do
       filename = "#{file_id}.jsonl"
@@ -24,6 +25,9 @@ defmodule BatcherWeb.BatchFileController do
     else
       {:error, :invalid_file_type} ->
         conn |> put_flash(:error, "Invalid file type") |> redirect(to: referer_or_home(conn))
+
+      {:error, :invalid_batch_id} ->
+        conn |> put_flash(:error, "Invalid batch id") |> redirect(to: referer_or_home(conn))
 
       {:error, :no_file_id} ->
         conn
@@ -46,6 +50,15 @@ defmodule BatcherWeb.BatchFileController do
       :error -> {:error, :invalid_file_type}
     end
   end
+
+  defp parse_batch_id(batch_id) when is_binary(batch_id) do
+    case Integer.parse(batch_id) do
+      {id, ""} when id > 0 -> {:ok, id}
+      _ -> {:error, :invalid_batch_id}
+    end
+  end
+
+  defp parse_batch_id(_), do: {:error, :invalid_batch_id}
 
   defp extract_file_id(batch, field) do
     case Map.get(batch, field) do

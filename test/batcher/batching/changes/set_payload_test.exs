@@ -43,7 +43,7 @@ defmodule Batcher.Batching.Changes.SetPayloadTest do
       assert String.contains?(Ash.Changeset.get_attribute(changeset, :request_payload), model)
       assert Ash.Changeset.get_attribute(changeset, :estimated_request_input_tokens) > 0
 
-      assert Ash.Changeset.get_attribute(changeset, :estimated_input_tokens) >
+      assert Ash.Changeset.get_attribute(changeset, :estimated_input_tokens) >=
                Ash.Changeset.get_attribute(changeset, :estimated_request_input_tokens)
     end
 

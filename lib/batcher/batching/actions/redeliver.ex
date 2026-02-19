@@ -33,34 +33,77 @@ defmodule Batcher.Batching.Actions.Redeliver do
   end
 
   defp redeliver_batch(batch) do
-    # Find all requests with delivery_failed state
-    failed_requests =
+    failed_query =
       Batching.Request
       |> Ash.Query.filter(batch_id == ^batch.id and state == :delivery_failed)
-      |> Ash.read!()
 
+    failed_requests = Ash.read!(failed_query)
     failed_count = length(failed_requests)
+
     Logger.info("Redelivering batch #{batch.id}: found #{failed_count} failed requests")
 
     if failed_count == 0 do
       # No failed requests to redeliver
       {:ok, batch}
     else
-      # Transition batch to delivering state
-      batch =
-        batch
-        |> Ash.Changeset.for_update(:begin_redeliver)
-        |> Ash.update!()
+      if rabbitmq_redelivery_blocked?(failed_requests) do
+        {:error,
+         Ash.Error.Invalid.exception(
+           errors: [
+             %Ash.Error.Changes.InvalidAttribute{
+               field: :delivery_config,
+               message:
+                 "RabbitMQ is disconnected. Reconnect RabbitMQ before redelivering RabbitMQ requests."
+             }
+           ]
+         )}
+      else
+        # Transition batch to delivering state
+        batch =
+          batch
+          |> Ash.Changeset.for_update(:begin_redeliver)
+          |> Ash.update!()
 
-      # Trigger retry_delivery on each failed request
-      Enum.each(failed_requests, fn request ->
-        request
-        |> Ash.Changeset.for_update(:retry_delivery)
-        |> Ash.update!()
-      end)
+        # Retry all currently failed requests in a single query-based update.
+        # This avoids stale-record errors when request rows were updated concurrently.
+        case Ash.bulk_update(failed_query, :retry_delivery, %{}, strategy: :stream) do
+          %Ash.BulkResult{status: :success} ->
+            Logger.info("Batch #{batch.id} redelivery initiated for #{failed_count} requests")
+            {:ok, batch}
 
-      Logger.info("Batch #{batch.id} redelivery initiated for #{failed_count} requests")
-      {:ok, batch}
+          %Ash.BulkResult{status: :error, errors: errors} ->
+            {:error,
+             Ash.Error.Invalid.exception(
+               errors:
+                 Enum.map(errors, fn error ->
+                   if is_exception(error) do
+                     error
+                   else
+                     %Ash.Error.Changes.InvalidAttribute{
+                       field: :state,
+                       message: inspect(error)
+                     }
+                   end
+                 end)
+             )}
+
+          {:error, error} ->
+            {:error, error}
+        end
+      end
     end
   end
+
+  defp rabbitmq_redelivery_blocked?(requests) do
+    Enum.any?(requests, fn request ->
+      rabbitmq_delivery?(request.delivery_config)
+    end) and not Batcher.RabbitMQ.Publisher.connected?()
+  end
+
+  defp rabbitmq_delivery?(delivery_config) when is_map(delivery_config) do
+    Map.get(delivery_config, "type") == "rabbitmq" or
+      Map.get(delivery_config, :type) == "rabbitmq"
+  end
+
+  defp rabbitmq_delivery?(_), do: false
 end

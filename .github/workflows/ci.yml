@@ -69,6 +69,9 @@ jobs:
       - name: Check formatting
         run: mix format --check-formatted
 
+      - name: Run quality gates
+        run: mix quality.gates
+
       - name: Setup test database
         run: mix ash.setup --quiet
 

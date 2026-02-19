@@ -25,7 +25,7 @@ defmodule Batcher.Batching.CapacityControl do
            Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model),
          {:ok, reserved} <- reserved_tokens_for_model(batch.model, exclude_batch_id: batch.id) do
       headroom = max(limit - reserved, 0)
-      needed = batch.estimated_input_tokens_total || 0
+      needed = batch.estimated_request_input_tokens_total || 0
 
       context = %{
         model: batch.model,
@@ -52,7 +52,7 @@ defmodule Batcher.Batching.CapacityControl do
   """
   @spec fits_headroom?(Batching.Batch.t(), non_neg_integer(), pos_integer()) :: boolean()
   def fits_headroom?(batch, reserved, limit) do
-    needed = batch.estimated_input_tokens_total || 0
+    needed = batch.estimated_request_input_tokens_total || 0
     headroom = max(limit - reserved, 0)
     needed <= headroom
   end
@@ -71,12 +71,14 @@ defmodule Batcher.Batching.CapacityControl do
       Batching.Batch
       |> Ash.Query.filter(model == ^model and state in ^@active_reservation_states)
       |> maybe_exclude_batch(exclude_batch_id)
-      |> Ash.Query.select([:estimated_input_tokens_total])
+      |> Ash.Query.select([:estimated_request_input_tokens_total])
 
     total =
       query
       |> Ash.read!()
-      |> Enum.reduce(0, fn batch, acc -> acc + (batch.estimated_input_tokens_total || 0) end)
+      |> Enum.reduce(0, fn batch, acc ->
+        acc + (batch.estimated_request_input_tokens_total || 0)
+      end)
 
     {:ok, total}
   rescue
@@ -96,7 +98,7 @@ defmodule Batcher.Batching.CapacityControl do
   @spec should_rotate_building_batch?(Batching.Batch.t()) :: boolean()
   def should_rotate_building_batch?(batch) do
     with {:ok, %{limit: limit}} <- Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model) do
-      (batch.estimated_input_tokens_total || 0) >= limit
+      (batch.estimated_request_input_tokens_total || 0) >= limit
     else
       _ -> false
     end

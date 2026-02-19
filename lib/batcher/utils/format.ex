@@ -114,7 +114,7 @@ defmodule Batcher.Utils.Format do
 
     cond do
       diff < 60 ->
-        "<1m"
+        "less than 1m ago"
 
       diff < 3600 ->
         "#{div(diff, 60)}m"

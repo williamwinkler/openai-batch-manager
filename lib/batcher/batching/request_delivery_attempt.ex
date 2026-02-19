@@ -17,6 +17,7 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
 
     custom_indexes do
       index [:request_id]
+      index [:request_id, :attempted_at]
     end
   end
 

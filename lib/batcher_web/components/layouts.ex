@@ -129,13 +129,14 @@ defmodule BatcherWeb.Layouts do
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <div id={@id} aria-live="polite" class="toast toast-top toast-end z-50">
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 
       <.flash
         id="client-error"
         kind={:error}
+        auto_dismiss={false}
         title={gettext("We can't find the internet")}
         phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
@@ -148,6 +149,7 @@ defmodule BatcherWeb.Layouts do
       <.flash
         id="server-error"
         kind={:error}
+        auto_dismiss={false}
         title={gettext("Something went wrong!")}
         phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}

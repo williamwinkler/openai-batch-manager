@@ -14,27 +14,7 @@
       "default": "nil",
       "size": null,
       "type": "text",
-      "source": "outcome",
-      "references": null,
-      "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "map",
-      "source": "delivery_config",
-      "references": null,
-      "allow_nil?": false,
-      "primary_key?": false,
-      "generated?": false
-    },
-    {
-      "default": "nil",
-      "size": null,
-      "type": "text",
-      "source": "error_msg",
+      "source": "from",
       "references": null,
       "allow_nil?": true,
       "primary_key?": false,
@@ -43,8 +23,18 @@
     {
       "default": "nil",
       "size": null,
+      "type": "text",
+      "source": "to",
+      "references": null,
+      "allow_nil?": false,
+      "primary_key?": false,
+      "generated?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
       "type": "utc_datetime_usec",
-      "source": "attempted_at",
+      "source": "transitioned_at",
       "references": null,
       "allow_nil?": false,
       "primary_key?": false,
@@ -54,18 +44,18 @@
       "default": "nil",
       "size": null,
       "type": "bigint",
-      "source": "request_id",
+      "source": "batch_id",
       "references": {
-        "name": "request_delivery_attempts_request_id_fkey",
-        "table": "requests",
+        "name": "batch_transitions_batch_id_fkey",
+        "table": "batches",
         "multitenancy": {
           "global": null,
-          "strategy": null,
-          "attribute": null
+          "attribute": null,
+          "strategy": null
         },
         "destination_attribute": "id",
-        "primary_key?": true,
         "on_update": null,
+        "primary_key?": true,
         "on_delete": "delete",
         "deferrable": false,
         "destination_attribute_default": null,
@@ -76,13 +66,13 @@
       "generated?": false
     }
   ],
-  "table": "request_delivery_attempts",
-  "hash": "C770013DC3AF53D3213AEC91F827536EFD28F7C132FDBF6B4CB503BBB3A44F47",
+  "table": "batch_transitions",
+  "hash": "FC053FD675AE0E4BE29D8BF7940CD06D2AC9A616ED2EF89AD786FAE7C07DFA53",
   "repo": "Elixir.Batcher.Repo",
   "multitenancy": {
     "global": null,
-    "strategy": null,
-    "attribute": null
+    "attribute": null,
+    "strategy": null
   },
   "identities": [],
   "strict?": false,
@@ -93,7 +83,20 @@
       "table": null,
       "include": null,
       "fields": [
-        "request_id"
+        "batch_id"
+      ],
+      "where": null,
+      "unique": false,
+      "using": null
+    },
+    {
+      "message": null,
+      "name": null,
+      "table": null,
+      "include": null,
+      "fields": [
+        "batch_id",
+        "transitioned_at"
       ],
       "where": null,
       "unique": false,

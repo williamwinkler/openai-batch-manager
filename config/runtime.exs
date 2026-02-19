@@ -9,17 +9,26 @@ import Dotenvy
 # The block below contains prod specific runtime configuration.
 
 if config_env() != :test do
-  source!([Path.absname(".env"), System.get_env()])
+  env_dir_prefix = System.get_env("RELEASE_ROOT") || Path.expand(".")
+
+  source!([
+    Path.absname(".env", env_dir_prefix),
+    Path.absname(".#{config_env()}.env", env_dir_prefix),
+    Path.absname(".#{config_env()}.overrides.env", env_dir_prefix),
+    System.get_env()
+  ])
+
   openai_api_key = env!("OPENAI_API_KEY", :string)
+  rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
+  rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
+  rabbitmq_input_exchange = env!("RABBITMQ_INPUT_EXCHANGE", :string, nil)
+  rabbitmq_input_routing_key = env!("RABBITMQ_INPUT_ROUTING_KEY", :string, nil)
 
   config :batcher, Batcher.OpenaiApiClient, openai_api_key: openai_api_key
 
   # RabbitMQ configuration (optional)
   # - RABBITMQ_URL: Enables RabbitMQ publisher for output delivery
   # - RABBITMQ_INPUT_QUEUE: Enables RabbitMQ consumer for input (requires RABBITMQ_URL)
-  rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
-  rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
-
   # Publisher: enabled when RABBITMQ_URL is set (used for output delivery)
   if rabbitmq_url do
     config :batcher, :rabbitmq_publisher, url: rabbitmq_url
@@ -29,9 +38,6 @@ if config_env() != :test do
   if rabbitmq_url && rabbitmq_input_queue do
     # Exchange and routing_key are optional for binding to an exchange
     # If exchange is set, routing_key must also be set
-    rabbitmq_input_exchange = env!("RABBITMQ_INPUT_EXCHANGE", :string, nil)
-    rabbitmq_input_routing_key = env!("RABBITMQ_INPUT_ROUTING_KEY", :string, nil)
-
     if rabbitmq_input_exchange && !rabbitmq_input_routing_key do
       raise "RABBITMQ_INPUT_ROUTING_KEY is required when RABBITMQ_INPUT_EXCHANGE is set"
     end

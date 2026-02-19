@@ -42,7 +42,7 @@ config :batcher, Batcher.BatchBuilder,
   check_interval_minutes: 5
 
 config :batcher, :token_estimation,
-  request_safety_buffer: 1.0,
+  request_safety_buffer: 1.10,
   safety_buffer: 1.10,
   fallback_chars_per_token: 3.5,
   max_tokenizer_payload_bytes: 200_000

@@ -550,7 +550,7 @@ defmodule Batcher.BatchBuilder do
 
         if request_capacity_reached or size_capacity_reached or token_capacity_reached do
           Logger.info(
-            "Batch #{state.batch_id} reached upload threshold, triggering upload (count=#{batch.request_count}, size=#{batch.size_bytes}, estimated_tokens=#{batch.estimated_input_tokens_total})"
+            "Batch #{state.batch_id} reached upload threshold, triggering upload (count=#{batch.request_count}, size=#{batch.size_bytes}, estimated_tokens=#{batch.estimated_request_input_tokens_total})"
           )
 
           trigger_upload_and_stop(state, {:ok, request})

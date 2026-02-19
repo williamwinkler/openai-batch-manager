@@ -394,6 +394,40 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
       batch_after_drain = Batching.get_batch_by_id!(cancelled_batch.id)
       assert batch_after_drain.state == :cancelled
     end
+
+    test "does not cancel requests when batch cancel fails", %{server: server} do
+      openai_batch_id = "batch_cancel_failure_123"
+
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id
+        )
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :pending
+        )
+        |> generate()
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/batches/#{openai_batch_id}/cancel",
+        %{"error" => %{"message" => "Internal server error", "type" => "server_error"}},
+        500
+      )
+
+      assert {:error, %Ash.Error.Invalid{} = error} = Batching.cancel_batch(batch)
+      assert Exception.message(error) =~ "Failed to cancel OpenAI batch"
+
+      assert Batching.get_batch_by_id!(batch.id).state == :openai_processing
+      assert Batching.get_request_by_id!(request.id).state == :pending
+    end
   end
 
   defp find_upload_job_for_batch(batch_id) do

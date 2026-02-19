@@ -5,6 +5,8 @@ defmodule Batcher.Batching.Changes.CancelBatch do
 
   alias Batcher.Batching.ObanJobs
 
+  @cancellable_request_states [:pending, :openai_processing, :openai_processed, :delivering]
+
   @impl true
   def change(changeset, _opts, _ctx) do
     changeset
@@ -41,27 +43,35 @@ defmodule Batcher.Batching.Changes.CancelBatch do
         changeset
       end
     end)
-    |> Ash.Changeset.before_action(fn changeset ->
-      batch = changeset.data
-      cancellable_request_states = [:pending, :openai_processing, :openai_processed, :delivering]
+    |> Ash.Changeset.after_transaction(fn _changeset, result ->
+      case result do
+        {:ok, batch} ->
+          cancel_oban_jobs(batch.id)
+          cancel_requests(batch.id)
+          {:ok, batch}
 
-      Logger.info("Cancelling requests for batch #{batch.id}")
-
-      case ObanJobs.cancel_batch_jobs(batch.id) do
-        :ok ->
-          Batcher.Batching.Request
-          |> Ash.Query.filter(batch_id == ^batch.id)
-          |> Ash.Query.filter(state in ^cancellable_request_states)
-          |> Ash.bulk_update!(:cancel, %{}, strategy: :stream)
-
-          changeset
-
-        {:error, errors} ->
-          Ash.Changeset.add_error(
-            changeset,
-            "Failed to cancel Oban jobs for batch #{batch.id}: #{inspect(errors)}"
-          )
+        {:error, _error} = error ->
+          error
       end
     end)
+  end
+
+  defp cancel_oban_jobs(batch_id) do
+    case ObanJobs.cancel_batch_jobs(batch_id) do
+      :ok ->
+        :ok
+
+      {:error, errors} ->
+        Logger.error("Failed to cancel Oban jobs for batch #{batch_id}: #{inspect(errors)}")
+    end
+  end
+
+  defp cancel_requests(batch_id) do
+    Logger.info("Cancelling requests for batch #{batch_id}")
+
+    Batcher.Batching.Request
+    |> Ash.Query.filter(batch_id == ^batch_id)
+    |> Ash.Query.filter(state in ^@cancellable_request_states)
+    |> Ash.bulk_update!(:cancel, %{}, strategy: :stream)
   end
 end

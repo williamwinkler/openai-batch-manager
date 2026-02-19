@@ -35,10 +35,10 @@ A build [docker image](https://hub.docker.com/r/williamwinkler/openai-batch-mana
 docker run -d --name openai-batch-manager \
   -p 4000:4000 \
   -e OPENAI_API_KEY="sk-your-key-here" \
-  -v "$(pwd)/data:/data" \
+  -v openai-batch-manager-data:/data \
   williamwinkler/openai-batch-manager:latest
 ```
-> The volume is for the SQLite database, where requests and responses are stored locally.
+> The named volume stores the SQLite database and batch files persistently.
 
 Or with Docker Compose — save as `docker-compose.yml`:
 
@@ -53,7 +53,7 @@ services:
       - RABBITMQ_URL=${RABBITMQ_URL}                  # Optional
       - RABBITMQ_INPUT_QUEUE=${RABBITMQ_INPUT_QUEUE}  # Optional
     volumes:
-      - ./data:/data
+      - openai-batch-manager-data:/data
     logging: # Optional
       driver: "json-file"
       options:
@@ -78,6 +78,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  openai-batch-manager-data:
 ```
 
 Then set environment variables (e.g. in a `.env` file) and run:
@@ -85,6 +88,22 @@ Then set environment variables (e.g. in a `.env` file) and run:
 ```shell
 docker compose up -d
 ```
+
+### Why use a named Docker volume for `/data`?
+
+`/data` contains the SQLite database and batch files. It's recommended to use a **named Docker volume** instead of a host bind mount because it usually performs better for SQLite-heavy write workloads.
+
+- On **macOS** (and often **Windows** with Docker Desktop), bind-mounted filesystem I/O can be significantly slower, which can hurt write throughput.
+- On **Linux**, bind mounts are typically faster than on Docker Desktop, but named volumes are still a solid default for database performance and portability.
+
+If you need host-visible artifacts, bind-mount only those specific paths (for example `./exports:/exports`) and keep `/data` on a named volume.
+
+### Database export and reset from UI
+
+When using named volumes, the SQLite file is not directly visible in your project folder.
+
+- Open **`/settings`** and use **Download DB Snapshot** to export a consistent `.db` backup file.
+- Use **Erase DB** (typed confirmation required) to reset local data to a clean slate.
 
 ### RabbitMQ configuration
 
@@ -165,17 +184,31 @@ When `DISABLE_DELIVERY_RETRY=true` (also accepts `1`/`yes`), failed delivery att
 
 ### Capacity limits behavior
 
+- Token estimation uses one canonical user-visible metric:
+  - `estimated_request_input_tokens_total` (sum of per-request estimates)
+  - Includes the default safety buffer (`request_safety_buffer`, default `1.10`)
+- Admission/capacity checks use that same canonical metric, so the estimate shown in batch views matches queue-admission decisions.
 - The app uses **Tier 1 default batch queue limits** for known models.
 - If a model is not covered by Tier 1 defaults, the app uses a conservative unknown-model fallback limit.
 - OpenAI's "TPD" value on the organization limits page behaves like a **max enqueued batch-token headroom** limit per model (tokens in active OpenAI states), not a strict 24-hour cumulative send cap. After earlier batches leave active queue usage, new batches can start the same day.
 
+#### Backfill token estimates
+
+After changing token-estimation settings, run:
+
+```bash
+mix batcher.backfill_request_token_estimates
+```
+
+This recomputes request-level token estimates and refreshes batch totals.
+
 #### Queue token cap overrides in UI
 
 - Open **`/settings`** to override queue token caps per model.
-- Overrides use **exact model matching** (case-insensitive), not prefixes.
-  - Example: overriding `gpt-4o` does **not** affect `gpt-4o-mini-2024-07-18`.
+- Overrides use **prefix matching** (case-insensitive), with longest-prefix wins.
+  - Example: overriding `gpt-4o` **does** affect `gpt-4o-mini-2024-07-18` unless a more specific prefix override exists.
 - Limit resolution order is:
-  1. Exact model override from `/settings`
+  1. Longest matching model-prefix override from `/settings`
   2. Built-in Tier 1 default for known model families
   3. Unknown-model fallback limit
 
@@ -192,6 +225,23 @@ OpenAI Batch Manager is a standalone [Phoenix](https://phoenixframework.org/) pr
 Use `mix ash.*` for migrations and codegen.
 
 To run RabbitMQ tests, spin up a RabbitMQ instance and run `mix test --include rabbitmq`.
+
+## Contributing Quality
+
+This repository enforces a structured, reproducible audit standard for OSS-quality maintenance.
+
+- Audit spec (source of truth): [`docs/audit_spec.md`](docs/audit_spec.md)
+- Latest V2 audit report: [`docs/audits/2026-02-18_full_repo_audit.md`](docs/audits/2026-02-18_full_repo_audit.md)
+- Latest findings data: [`docs/audits/2026-02-18_findings.json`](docs/audits/2026-02-18_findings.json)
+- Latest full file matrix: [`docs/audits/2026-02-18_file_matrix.csv`](docs/audits/2026-02-18_file_matrix.csv)
+
+Default quality gates:
+
+1. No unresolved `P0/P1` findings in runtime-critical scope.
+2. No direct `Ash.*` orchestration in web modules unless explicitly justified.
+3. `mix format --check-formatted` must pass.
+4. No committed tooling/noise artifacts (`.DS_Store`, editor logs, local caches).
+5. Runtime docs policy in `lib/**`: `@moduledoc` and `@doc` coverage (with explicit allowlist for generated boilerplate).
 
 ## Contributing
 

@@ -43,20 +43,33 @@ defmodule BatcherWeb.CoreComponents do
   attr :flash, :map, default: %{}, doc: "the map of flash messages to display"
   attr :title, :string, default: nil
   attr :kind, :atom, values: [:info, :error], doc: "used for styling and flash lookup"
+  attr :auto_dismiss, :boolean, default: true, doc: "auto dismiss after timeout"
   attr :rest, :global, doc: "the arbitrary HTML attributes to add to the flash container"
 
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
     assigns = assign_new(assigns, :id, fn -> "flash-#{assigns.kind}" end)
+    assigns = assign(assigns, :flash_key, to_string(assigns.kind))
+    flash_hook = if assigns.auto_dismiss, do: "FlashAutoDismiss"
+
+    dismiss_js =
+      JS.push("lv:clear-flash", value: %{key: assigns.flash_key}) |> hide("##{assigns.id}")
+
+    assigns =
+      assigns
+      |> assign(:dismiss_js, dismiss_js)
+      |> assign(:flash_hook, flash_hook)
 
     ~H"""
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
-      phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
+      phx-hook={@flash_hook}
+      data-flash-key={@flash_key}
+      data-timeout-ms="10000"
       role="alert"
-      class="toast toast-top toast-end z-50"
+      class="w-full max-w-sm mb-2"
       {@rest}
     >
       <div class={[
@@ -70,7 +83,12 @@ defmodule BatcherWeb.CoreComponents do
           <p :if={@title} class="font-semibold">{@title}</p>
           <p>{msg}</p>
         </div>
-        <button type="button" class="btn btn-ghost btn-xs" aria-label={gettext("close")}>
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs"
+          aria-label={gettext("close")}
+          phx-click={@dismiss_js}
+        >
           <.icon name="hero-x-mark" class="size-4" />
         </button>
       </div>
@@ -884,6 +902,72 @@ defmodule BatcherWeb.CoreComponents do
     """
   end
 
+  @doc """
+  Renders pagination with async count states.
+  """
+  attr :page, :map, required: true
+  attr :page_count_status, :atom, required: true
+  attr :page_total_count, :any, default: nil
+  attr :base_path, :string, required: true
+  attr :extra_params, :list, default: []
+
+  def async_count_pagination(assigns) do
+    offset = assigns.page.offset || 0
+    limit = assigns.page.limit || 20
+    current_page = div(offset, limit) + 1
+    has_prev = offset > 0
+    has_next = length(assigns.page.results || []) >= limit
+
+    assigns =
+      assigns
+      |> assign(:offset, offset)
+      |> assign(:limit, limit)
+      |> assign(:current_page, current_page)
+      |> assign(:has_prev, has_prev)
+      |> assign(:has_next, has_next)
+
+    ~H"""
+    <%= if @page_count_status == :ready and is_integer(@page_total_count) do %>
+      <.numbered_pagination
+        page={Map.put(@page, :count, @page_total_count)}
+        base_path={@base_path}
+        extra_params={@extra_params}
+      />
+    <% else %>
+      <div class="flex items-center justify-between py-3 px-4 bg-base-200/50 border border-base-300/50 rounded-box shrink-0">
+        <div class="text-sm text-base-content/50">
+          <%= if @page_count_status == :loading do %>
+            Calculating...
+          <% else %>
+            Count unavailable
+          <% end %>
+        </div>
+        <div class="join">
+          <.link
+            patch={build_pagination_url(@base_path, @extra_params, 0, @limit)}
+            class={["join-item btn btn-sm", !@has_prev && "btn-disabled"]}
+          >
+            <.icon name="hero-chevron-double-left" class="w-4 h-4" />
+          </.link>
+          <.link
+            patch={build_pagination_url(@base_path, @extra_params, max(0, @offset - @limit), @limit)}
+            class={["join-item btn btn-sm", !@has_prev && "btn-disabled"]}
+          >
+            <.icon name="hero-chevron-left" class="w-4 h-4" />
+          </.link>
+          <span class="join-item btn btn-sm btn-disabled">Page {@current_page}</span>
+          <.link
+            patch={build_pagination_url(@base_path, @extra_params, @offset + @limit, @limit)}
+            class={["join-item btn btn-sm", !@has_next && "btn-disabled"]}
+          >
+            <.icon name="hero-chevron-right" class="w-4 h-4" />
+          </.link>
+        </div>
+      </div>
+    <% end %>
+    """
+  end
+
   # Generate page numbers with ellipsis for large page counts
   # Shows: 1 2 3 ... 8 or 1 ... 5 6 7 8 or 1 2 3 4 5 6 7 8
   defp generate_page_numbers(_current_page, total_pages) when total_pages <= 7 do
@@ -969,6 +1053,9 @@ defmodule BatcherWeb.CoreComponents do
 
   attr :show_icon, :boolean, default: true, doc: "whether to show the trash icon"
   attr :label, :string, default: "Delete Batch", doc: "the button label text"
+  attr :loading, :boolean, default: false, doc: "whether the button is in loading state"
+  attr :loading_label, :string, default: "Deleting...", doc: "label shown while loading"
+  attr :rest, :global
 
   def delete_batch_button(assigns) do
     deletable_states = [
@@ -991,11 +1078,18 @@ defmodule BatcherWeb.CoreComponents do
       phx-value-id={@batch_id}
       class={@class}
       data-confirm={@confirm_message}
+      disabled={@loading}
+      {@rest}
     >
-      <%= if @show_icon do %>
-        <.icon name="hero-trash" class="w-4 h-4" />
+      <%= if @loading do %>
+        <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
+        {@loading_label}
+      <% else %>
+        <%= if @show_icon do %>
+          <.icon name="hero-trash" class="w-4 h-4" />
+        <% end %>
+        {@label}
       <% end %>
-      {@label}
     </button>
     """
   end

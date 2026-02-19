@@ -30,6 +30,7 @@ defmodule Batcher.RabbitMQ.Consumer do
 
   alias Batcher.RequestValidator
   alias Batcher.Batching.Handlers.RequestHandler
+  alias Batcher.System.MaintenanceGate
 
   @initial_backoff_ms 1_000
   @max_backoff_ms 30_000
@@ -265,31 +266,55 @@ defmodule Batcher.RabbitMQ.Consumer do
   end
 
   defp process_message(payload, %{delivery_tag: tag}, %{chan: chan}) do
-    case RequestValidator.validate_json(payload) do
-      {:ok, validated} ->
-        # Same code path as HTTP from here
-        case RequestHandler.handle(validated) do
-          {:ok, _request} ->
-            Basic.ack(chan, tag)
-            Logger.debug("Successfully processed RabbitMQ message")
+    case decide_message_action(payload) do
+      :ack ->
+        Basic.ack(chan, tag)
 
-          {:error, :custom_id_already_taken} ->
-            # Processed, just duplicate - ack to remove from queue
-            Basic.ack(chan, tag)
-            Logger.debug("Duplicate custom_id from RabbitMQ (already processed)")
+      {:nack, requeue} ->
+        Basic.nack(chan, tag, requeue: requeue)
 
-          {:error, reason} ->
-            Logger.error("Failed to process request from RabbitMQ: #{inspect(reason)}")
-            Basic.nack(chan, tag, requeue: true)
-        end
+      {:reject, requeue} ->
+        Basic.reject(chan, tag, requeue: requeue)
+    end
+  end
 
-      {:error, {:invalid_json, reason}} ->
-        Logger.error("Invalid JSON from RabbitMQ: #{inspect(reason)}")
-        Basic.reject(chan, tag, requeue: false)
+  @doc false
+  def decide_message_action(
+        payload,
+        validator \\ RequestValidator,
+        request_handler \\ RequestHandler,
+        gate \\ MaintenanceGate
+      ) do
+    if gate.enabled?() do
+      Logger.warning("Maintenance mode enabled, requeuing RabbitMQ intake message")
+      {:nack, true}
+    else
+      case validator.validate_json(payload) do
+        {:ok, validated} ->
+          # Same code path as HTTP from here
+          case request_handler.handle(validated) do
+            {:ok, _request} ->
+              Logger.debug("Successfully processed RabbitMQ message")
+              :ack
 
-      {:error, {:validation_failed, errors}} ->
-        Logger.error("Validation failed for RabbitMQ message: #{inspect(errors)}")
-        Basic.reject(chan, tag, requeue: false)
+            {:error, :custom_id_already_taken} ->
+              # Processed, just duplicate - ack to remove from queue
+              Logger.debug("Duplicate custom_id from RabbitMQ (already processed)")
+              :ack
+
+            {:error, reason} ->
+              Logger.error("Failed to process request from RabbitMQ: #{inspect(reason)}")
+              {:nack, true}
+          end
+
+        {:error, {:invalid_json, reason}} ->
+          Logger.error("Invalid JSON from RabbitMQ: #{inspect(reason)}")
+          {:reject, false}
+
+        {:error, {:validation_failed, errors}} ->
+          Logger.error("Validation failed for RabbitMQ message: #{inspect(errors)}")
+          {:reject, false}
+      end
     end
   end
 

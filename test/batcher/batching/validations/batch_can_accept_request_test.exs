@@ -304,6 +304,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
                 url: batch.url
               }),
             request_payload_size: 10,
+            estimated_request_input_tokens: 1_999_990,
             estimated_input_tokens: 1_999_990
           )
         )
@@ -343,6 +344,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
                 url: batch.url
               }),
             request_payload_size: 10,
+            estimated_request_input_tokens: 1_980_000,
             estimated_input_tokens: 1_980_000
           )
         )
@@ -382,6 +384,7 @@ defmodule Batcher.Batching.Validations.BatchCanAcceptRequestTest do
                 url: batch.url
               }),
             request_payload_size: 10,
+            estimated_request_input_tokens: 1_999_990,
             estimated_input_tokens: 1_999_990
           )
         )

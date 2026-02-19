@@ -5,7 +5,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStats do
   Returns a map with counts of:
   - delivered: count of requests in :delivered state
   - delivering: count of requests in :delivering state
-  - failed: count of requests in terminal failure states (:delivery_failed, :failed, :expired, :cancelled)
+  - failed: count of requests that failed during delivery (:delivery_failed)
   """
   use Ash.Resource.Calculation
 
@@ -30,7 +30,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStats do
       failed_count =
         Request
         |> Ash.Query.filter(batch_id == ^record.id)
-        |> Ash.Query.filter(state in [:delivery_failed, :failed, :expired, :cancelled])
+        |> Ash.Query.filter(state == :delivery_failed)
         |> Ash.count!()
 
       %{delivered: delivered_count, delivering: delivering_count, failed: failed_count}

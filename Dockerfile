@@ -76,8 +76,9 @@ RUN mix release
 # the compiled release and other runtime necessities
 FROM ${RUNNER_IMAGE} AS final
 
+# util-linux for runuser (drop privileges after entrypoint chown)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses5 locales ca-certificates \
+  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses5 locales ca-certificates util-linux \
   && rm -rf /var/lib/apt/lists/*
 
 # Set the locale
@@ -98,11 +99,9 @@ ENV DATABASE_PATH="/data/openai-batch-manager.db"
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/batcher ./
 
-USER nobody
+# Entrypoint runs as root, chowns /data so nobody can write DB and batch files, then exec's as nobody
+COPY docker/entrypoint.sh /app/bin/entrypoint.sh
+RUN chmod +x /app/bin/entrypoint.sh
 
-# If using an environment that doesn't automatically reap zombie processes, it is
-# advised to add an init process such as tini via `apt-get install`
-# above and adding an entrypoint. See https://github.com/krallin/tini for details
-# ENTRYPOINT ["/tini", "--"]
-
+ENTRYPOINT ["/app/bin/entrypoint.sh"]
 CMD ["/app/bin/server"]

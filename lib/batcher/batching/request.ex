@@ -17,7 +17,12 @@ defmodule Batcher.Batching.Request do
     custom_indexes do
       # Ensure custom_id is globally unique across all requests
       index [:custom_id], unique: true
+      index [:state]
       index [:batch_id]
+      index [:batch_id, :state]
+      index [:created_at]
+      index [:updated_at]
+      index [:batch_id, :created_at]
     end
 
     custom_statements do
@@ -138,8 +143,21 @@ defmodule Batcher.Batching.Request do
         from: [:openai_processed, :delivered, :delivery_failed],
         to: :openai_processed
 
-      transition :reset_to_pending, from: :openai_processing, to: :pending
+      transition :reset_to_pending, from: [:openai_processing, :failed], to: :pending
       transition :bulk_reset_to_pending, from: :openai_processing, to: :pending
+
+      transition :restart_to_pending,
+        from: [
+          :openai_processing,
+          :openai_processed,
+          :delivering,
+          :delivered,
+          :failed,
+          :delivery_failed,
+          :expired,
+          :cancelled
+        ],
+        to: :pending
 
       transition :mark_expired, from: [:pending, :openai_processing], to: :expired
 
@@ -154,6 +172,7 @@ defmodule Batcher.Batching.Request do
       trigger :deliver do
         action :deliver
         where expr(state == :openai_processed)
+        scheduler_cron "*/5 * * * *"
         queue :delivery
         max_attempts 3
         backoff 10
@@ -244,20 +263,41 @@ defmodule Batcher.Batching.Request do
 
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)
-        batch_id = Ash.Query.get_argument(query, :batch_id)
 
         query =
           query
           |> apply_sorting(sort_input)
+          |> apply_batch_filter()
 
-        if batch_id do
-          Ash.Query.filter(query, batch_id == ^batch_id)
-        else
-          query
-        end
+        query
       end
 
       pagination offset?: true, default_limit: 15, countable: true
+    end
+
+    read :count_for_search do
+      description "Count requests matching the search filters"
+
+      argument :query, :ci_string do
+        description "Filter requests by custom_id or model"
+        constraints allow_empty?: true
+        default ""
+      end
+
+      argument :batch_id, :integer do
+        description "Filter requests by batch ID"
+      end
+
+      filter expr(
+               contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)) or
+                 contains(url, ^arg(:query))
+             )
+
+      prepare fn query, _context ->
+        apply_batch_filter(query)
+      end
+
+      pagination offset?: true, countable: true
     end
 
     update :begin_processing do
@@ -334,6 +374,13 @@ defmodule Batcher.Batching.Request do
       change transition_state(:pending)
     end
 
+    update :restart_to_pending do
+      description "Reset a request to pending state for batch restart"
+      require_atomic? false
+      accept [:error_msg, :response_payload]
+      change transition_state(:pending)
+    end
+
     update :update_delivery_config do
       description "Update the delivery configuration for a request"
       accept [:delivery_config]
@@ -344,6 +391,7 @@ defmodule Batcher.Batching.Request do
     update :retry_delivery do
       description "Retry delivery of a request that failed"
       require_atomic? false
+      validate Batcher.Batching.Validations.RabbitmqConnectedForRetryDelivery
       change transition_state(:openai_processed)
       change run_oban_trigger(:deliver)
     end
@@ -475,6 +523,16 @@ defmodule Batcher.Batching.Request do
 
       _ ->
         Ash.Query.sort(query, created_at: :desc)
+    end
+  end
+
+  defp apply_batch_filter(query) do
+    batch_id = Ash.Query.get_argument(query, :batch_id)
+
+    if batch_id do
+      Ash.Query.filter(query, batch_id == ^batch_id)
+    else
+      query
     end
   end
 

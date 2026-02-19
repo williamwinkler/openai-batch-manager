@@ -10,6 +10,14 @@ defmodule Mix.Tasks.Batcher.BackfillRequestTokenEstimates do
   def run(_args) do
     Mix.Task.run("app.start")
 
+    token_estimation_config = Application.get_env(:batcher, :token_estimation, [])
+    request_safety_buffer = Keyword.get(token_estimation_config, :request_safety_buffer, 1.10)
+    capacity_safety_buffer = Keyword.get(token_estimation_config, :safety_buffer, 1.10)
+
+    Mix.shell().info(
+      "Running token estimate backfill with request_safety_buffer=#{request_safety_buffer}, safety_buffer=#{capacity_safety_buffer}"
+    )
+
     {updated_requests, failed_requests} = backfill_requests()
     backfill_batch_totals()
 

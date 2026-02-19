@@ -106,6 +106,106 @@ defmodule Batcher.Batching.Actions.CheckBatchStatusTest do
       assert latest_transition.to == :failed
     end
 
+    test "token_limit_exceeded moves batch back to waiting_for_capacity with retry backoff", %{
+      server: server
+    } do
+      openai_batch_id = "batch_token_limit_123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          token_limit_retry_attempts: 0
+        )
+        |> generate()
+
+      request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            state: :openai_processing,
+            error_msg: "old error",
+            response_payload: %{"foo" => "bar"}
+          )
+        )
+
+      response = %{
+        "status" => "failed",
+        "errors" => %{
+          "data" => [
+            %{
+              "code" => "token_limit_exceeded",
+              "message" => "Enqueued token limit reached"
+            }
+          ]
+        }
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      batch_after = Ash.load!(batch_after, [:transitions])
+      request_after = Ash.get!(Batching.Request, request.id)
+
+      assert batch_after.state == :waiting_for_capacity
+      assert batch_after.capacity_wait_reason == "token_limit_exceeded_backoff"
+      assert batch_after.token_limit_retry_attempts == 1
+      assert batch_after.token_limit_retry_next_at
+      assert batch_after.token_limit_retry_last_error
+      assert batch_after.openai_batch_id == nil
+      assert batch_after.openai_status_last_checked_at == nil
+
+      assert request_after.state == :pending
+      assert request_after.error_msg == nil
+      assert request_after.response_payload == nil
+
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :openai_processing
+      assert latest_transition.to == :waiting_for_capacity
+    end
+
+    test "token_limit_exceeded fails terminally after max retries exhausted", %{server: server} do
+      openai_batch_id = "batch_token_limit_exhausted_123"
+
+      batch_before =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id,
+          token_limit_retry_attempts: 5
+        )
+        |> generate()
+
+      response = %{
+        "status" => "failed",
+        "errors" => %{
+          "data" => [
+            %{
+              "code" => "token_limit_exceeded",
+              "message" => "Enqueued token limit reached"
+            }
+          ]
+        }
+      }
+
+      expect_json_response(server, :get, "/v1/batches/#{openai_batch_id}", response, 200)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:check_batch_status, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      assert batch_after.state == :failed
+      assert batch_after.token_limit_retry_attempts == 5
+      assert batch_after.token_limit_retry_next_at == nil
+      assert batch_after.error_msg =~ "retries exhausted"
+    end
+
     test "transitions to expired and reschedules when status is expired with no file IDs", %{
       server: server
     } do

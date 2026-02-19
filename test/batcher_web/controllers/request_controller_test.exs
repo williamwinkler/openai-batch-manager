@@ -2,6 +2,7 @@ defmodule BatcherWeb.RequestControllerTest do
   use BatcherWeb.ConnCase, async: false
 
   alias Batcher.Batching
+  alias Batcher.System.MaintenanceGate
   import Batcher.Generator
 
   setup do
@@ -30,6 +31,36 @@ defmodule BatcherWeb.RequestControllerTest do
   end
 
   describe "POST /api/requests" do
+    setup do
+      on_exit(fn -> MaintenanceGate.disable!() end)
+      :ok
+    end
+
+    test "returns 503 when maintenance mode is enabled", %{conn: conn} do
+      MaintenanceGate.enable!()
+
+      request_body = %{
+        "custom_id" => "maintenance_blocked_req",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => %{
+          "model" => "gpt-4o-mini",
+          "input" => "Blocked by maintenance"
+        },
+        "delivery_config" => %{
+          "type" => "webhook",
+          "webhook_url" => "https://example.com/webhook"
+        }
+      }
+
+      conn = post(conn, ~p"/api/requests", request_body)
+
+      assert response(conn, 503)
+      body = JSON.decode!(conn.resp_body)
+      assert [error | _] = body["errors"]
+      assert error["code"] == "maintenance_mode"
+    end
+
     test "creates request successfully and returns 202 Accepted", %{conn: conn} do
       request_body = %{
         "custom_id" => "test_req_1",
