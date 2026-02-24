@@ -5,7 +5,11 @@ config :ash, :pub_sub, debug?: true
 
 # Configure your database
 config :batcher, Batcher.Repo,
-  url: System.get_env("DATABASE_URL_DEV", "ecto://postgres:postgres@localhost:5432/openai_batch_manager_dev"),
+  url:
+    System.get_env(
+      "DATABASE_URL_DEV",
+      "ecto://postgres:postgres@localhost:5432/openai_batch_manager_dev"
+    ),
   pool_size: 20,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
