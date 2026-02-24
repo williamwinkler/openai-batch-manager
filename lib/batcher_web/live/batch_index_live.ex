@@ -372,13 +372,7 @@ defmodule BatcherWeb.BatchIndexLive do
     socket =
       socket
       |> assign(:processing_since_request_key, request_key)
-      |> assign(
-        :processing_since_status,
-        if(socket.assigns.processing_since_status in [:idle],
-          do: :loading_initial,
-          else: :refreshing
-        )
-      )
+      |> assign(:processing_since_status, next_processing_since_status(socket))
 
     if connected?(socket) do
       start_async(socket, {:batch_processing_since, request_key}, fn ->
@@ -867,7 +861,7 @@ defmodule BatcherWeb.BatchIndexLive do
       end
 
     duration = Format.duration_since(datetime)
-    ratio = openai_progress_ratio(batch)
+    ratio = state_progress_ratio(batch)
 
     cond do
       duration == "" and is_nil(ratio) -> ""
@@ -876,6 +870,11 @@ defmodule BatcherWeb.BatchIndexLive do
       true -> "#{duration} (#{ratio})"
     end
   end
+
+  defp state_progress_ratio(%{state: :openai_processing} = batch),
+    do: openai_progress_ratio(batch)
+
+  defp state_progress_ratio(_batch), do: nil
 
   defp openai_progress_ratio(batch) do
     total = batch.openai_requests_total
@@ -897,7 +896,12 @@ defmodule BatcherWeb.BatchIndexLive do
     "Next retry #{Calendar.strftime(next_at, "%d %b %Y, %H:%M UTC")}"
   end
 
-  def loading_processing_since?(status), do: status in [:loading_initial, :refreshing]
+  defp next_processing_since_status(socket) do
+    case socket.assigns.processing_since_status do
+      :idle -> :loading_initial
+      status -> status
+    end
+  end
 
   defp sort_options do
     [

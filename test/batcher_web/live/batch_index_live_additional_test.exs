@@ -93,11 +93,11 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
     end
   end
 
-  describe "openai progress in time in state column" do
-    test "renders completed/total ratio when available", %{conn: conn} do
+  describe "state-specific progress in time in state column" do
+    test "renders completed/total ratio for openai_processing", %{conn: conn} do
       generate(
         seeded_batch(
-          state: :uploading,
+          state: :openai_processing,
           openai_requests_completed: 468,
           openai_requests_total: 471,
           openai_requests_failed: 0
@@ -106,11 +106,13 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       {:ok, _view, html} = live(conn, ~p"/batches")
 
-      assert html =~ "(468/471)"
+      assert html =~ "468/471"
     end
 
-    test "updates ratio from progress_updated pubsub event without reload", %{conn: conn} do
-      batch = generate(seeded_batch(state: :uploading))
+    test "updates openai_processing ratio from progress_updated pubsub event without reload", %{
+      conn: conn
+    } do
+      batch = generate(seeded_batch(state: :openai_processing))
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
@@ -132,7 +134,36 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
         |> element("#batches-row-#{batch.id}")
         |> render()
 
-      assert row_html =~ "(10/20)"
+      assert row_html =~ "10/20"
+    end
+
+    test "does not show ratio for downloading", %{conn: conn} do
+      generate(
+        seeded_batch(
+          state: :downloading,
+          openai_requests_completed: 5,
+          openai_requests_total: 10
+        )
+      )
+
+      {:ok, _view, html} = live(conn, ~p"/batches")
+
+      refute html =~ "5/10"
+    end
+
+    test "does not show ratio for delivering", %{conn: conn} do
+      generate(
+        seeded_batch(
+          state: :delivering,
+          request_count: 3,
+          openai_requests_completed: 2,
+          openai_requests_total: 3
+        )
+      )
+
+      {:ok, _view, html} = live(conn, ~p"/batches")
+
+      refute html =~ "2/3"
     end
   end
 

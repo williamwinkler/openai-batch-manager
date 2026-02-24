@@ -350,6 +350,11 @@
                 {Format.compact_number(@batch.estimated_request_input_tokens_total || 0)}
               </span>
             </div>
+            <div class="pt-2 mt-1 border-t border-base-300/50">
+              <span class="text-xs text-base-content/50 uppercase tracking-wide">
+                OpenAI reported usage
+              </span>
+            </div>
             <div class="flex justify-between">
               <span class="text-base-content/50">Input</span>
               <span class="font-mono">{@batch.input_tokens || 0}</span>
