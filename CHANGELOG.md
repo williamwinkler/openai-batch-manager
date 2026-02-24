@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.15...v0.1.16) (2026-02-24)
+
+
+### Features
+
+* use postgres instead of sqlite ([#42](https://github.com/williamwinkler/openai-batch-manager/issues/42)) ([fed0410](https://github.com/williamwinkler/openai-batch-manager/commit/fed0410a65abbd320798fb1fe0006fef0956d426))
+
 ## [Unreleased]
 
 ### Refactors
