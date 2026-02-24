@@ -1,11 +1,15 @@
 defmodule Batcher.Batching.Changes.UploadBatchFile do
+  @moduledoc """
+  Runs an Ash change callback for batch lifecycle updates.
+  """
   use Ash.Resource.Change
   require Logger
 
   alias Batcher.Batching
-  alias Batcher.{OpenaiApiClient}
+  alias Batcher.Clients.OpenAI.ApiClient
 
   @impl true
+  @doc false
   def change(changeset, _opts, _context) do
     batch = changeset.data
 
@@ -98,7 +102,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
       file_id ->
         Logger.info("Cleaning up existing OpenAI file: #{file_id}")
 
-        case OpenaiApiClient.delete_file(file_id) do
+        case ApiClient.delete_file(file_id) do
           {:ok, _} ->
             Logger.info("Successfully deleted OpenAI file: #{file_id}")
             # Remove the file_id from changeset
@@ -112,7 +116,7 @@ defmodule Batcher.Batching.Changes.UploadBatchFile do
   end
 
   defp upload_file(file_path) do
-    case OpenaiApiClient.upload_file(file_path) do
+    case ApiClient.upload_file(file_path) do
       {:ok, response} ->
         {:ok, %{file_id: response["id"], expires_at: response["expires_at"]}}
 

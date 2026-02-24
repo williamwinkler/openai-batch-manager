@@ -14,7 +14,7 @@ defmodule Batcher.Batching.CapacityControlTest do
           seeded_batch(
             model: model,
             state: :openai_processing,
-            estimated_input_tokens_total: 1_200_000
+            estimated_request_input_tokens_total: 1_200_000
           )
         )
 
@@ -23,7 +23,7 @@ defmodule Batcher.Batching.CapacityControlTest do
           seeded_batch(
             model: model,
             state: :waiting_for_capacity,
-            estimated_input_tokens_total: 800_000
+            estimated_request_input_tokens_total: 800_000
           )
         )
 
@@ -38,7 +38,7 @@ defmodule Batcher.Batching.CapacityControlTest do
           seeded_batch(
             model: model,
             state: :openai_processing,
-            estimated_input_tokens_total: 1_200_000
+            estimated_request_input_tokens_total: 1_200_000
           )
         )
 
@@ -47,7 +47,7 @@ defmodule Batcher.Batching.CapacityControlTest do
           seeded_batch(
             model: model,
             state: :waiting_for_capacity,
-            estimated_input_tokens_total: 800_001
+            estimated_request_input_tokens_total: 800_001
           )
         )
 
@@ -65,7 +65,7 @@ defmodule Batcher.Batching.CapacityControlTest do
             model: model,
             state: :waiting_for_capacity,
             waiting_for_capacity_since_at: DateTime.add(now, -120, :second),
-            estimated_input_tokens_total: 1_700_000
+            estimated_request_input_tokens_total: 1_700_000
           )
         )
 
@@ -75,7 +75,7 @@ defmodule Batcher.Batching.CapacityControlTest do
             model: model,
             state: :waiting_for_capacity,
             waiting_for_capacity_since_at: DateTime.add(now, -60, :second),
-            estimated_input_tokens_total: 100_000
+            estimated_request_input_tokens_total: 100_000
           )
         )
 
@@ -85,7 +85,7 @@ defmodule Batcher.Batching.CapacityControlTest do
 
   describe "fits_headroom?/3" do
     test "returns true only when batch estimate is <= remaining headroom" do
-      batch = generate(seeded_batch(estimated_input_tokens_total: 200_000))
+      batch = generate(seeded_batch(estimated_request_input_tokens_total: 200_000))
 
       assert CapacityControl.fits_headroom?(batch, 1_700_000, 2_000_000)
       refute CapacityControl.fits_headroom?(batch, 1_900_001, 2_000_000)

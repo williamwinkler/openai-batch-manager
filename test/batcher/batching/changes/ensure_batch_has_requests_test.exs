@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.Changes.EnsureBatchHasRequestsTest do
-  use Batcher.DataCase, async: false
+  use Batcher.DataCase, async: true
 
   alias Batcher.Batching
 

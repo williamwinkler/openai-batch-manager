@@ -66,9 +66,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       assert batch_after.state == :delivering
 
       # Check Transitions
-      last_transition = List.last(batch_after.transitions)
-      assert last_transition.from == :ready_to_deliver
-      assert last_transition.to == :delivering
+      assert Enum.any?(batch_after.transitions, fn transition ->
+               transition.from == :ready_to_deliver and transition.to == :delivering
+             end)
 
       # Check Requests
       assert length(batch_after.requests) == 2
@@ -318,9 +318,9 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       assert batch_after.state == :delivering
 
       # Verify transition
-      last_transition = List.last(batch_after.transitions)
-      assert last_transition.from == :ready_to_deliver
-      assert last_transition.to == :delivering
+      assert Enum.any?(batch_after.transitions, fn transition ->
+               transition.from == :ready_to_deliver and transition.to == :delivering
+             end)
     end
 
     test "processes error_file_id when batch has failed requests", %{server: server} do
@@ -1807,7 +1807,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       # something other than {:ok, response} or {:error, reason}, which is unlikely
       # in practice. This is a defensive programming measure.
       #
-      # To properly test this, we would need to mock OpenaiApiClient.download_file/1
+      # To properly test this, we would need to mock ApiClient.download_file/1
       # to return an unexpected value like :unexpected or {:unexpected, value}.
       # However, this requires advanced mocking techniques.
       #

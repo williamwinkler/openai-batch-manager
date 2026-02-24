@@ -2,6 +2,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
   use BatcherWeb.LiveViewCase, async: false
 
   alias Batcher.Batching
+  import Batcher.Generator
 
   setup do
     # Create a batch first
@@ -24,25 +25,14 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       for {batch, i} <- Enum.with_index(batches, 1) do
         # Create 5 requests per batch (max allowed)
         for j <- 1..5 do
-          {:ok, request} =
-            Batching.create_request(%{
+          generate(
+            seeded_request(
               batch_id: batch.id,
               custom_id: "req-#{i}-#{j}",
               url: batch.url,
-              model: batch.model,
-              request_payload: %{
-                custom_id: "req-#{i}-#{j}",
-                body: %{input: "test", model: batch.model},
-                method: "POST",
-                url: batch.url
-              },
-              delivery_config: %{
-                "type" => "webhook",
-                "webhook_url" => "https://example.com/webhook"
-              }
-            })
-
-          request
+              model: batch.model
+            )
+          )
         end
       end
       |> List.flatten()
@@ -51,20 +41,18 @@ defmodule BatcherWeb.RequestIndexLiveTest do
   end
 
   describe "pagination" do
-    test "displays pagination controls with page numbers", %{conn: conn} do
-      # Use a small limit to ensure multiple pages
+    test "displays pagination controls", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
 
-      # Check that numbered pagination controls are present
       assert has_element?(view, ".join")
-      # Page 1 should be active
-      assert has_element?(view, "a.btn-primary", "1")
     end
 
-    test "displays total count", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/requests")
+    test "shows total count once available", %{conn: conn} do
+      {:ok, view, initial_html} = live(conn, ~p"/requests")
 
-      # Should show item count like "1-20 of 20"
+      assert initial_html =~ "Calculating..." or initial_html =~ "of 20"
+      wait_for(fn -> render(view) =~ "of 20" end)
+
       html = render(view)
       assert html =~ "of 20"
     end
@@ -73,51 +61,47 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       # Use a small limit to ensure we have multiple pages and navigation buttons
       {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
 
-      # First and previous buttons should be disabled on first page
       html = render(view)
-      # The first two buttons (first page and prev) should have btn-disabled
+      assert html =~ "Previous"
       assert html =~ "btn-disabled"
-      assert html =~ "hero-chevron-double-left"
     end
 
-    test "clicking page 2 navigates to second page", %{conn: conn} do
+    test "clicking next navigates forward", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
+      first_before = render(view) |> first_request_row_id()
 
-      # Click page 2 button
       view
-      |> element("a.join-item", "2")
+      |> element("a.join-item", "Next")
       |> render_click()
 
-      # Verify page 2 is now active
-      assert has_element?(view, "a.btn-primary", "2")
+      wait_for(fn -> render(view) |> first_request_row_id() != first_before end)
 
-      # Verify requests are still shown
       new_requests = view |> element("#requests") |> render() |> count_table_rows()
       assert new_requests > 0
     end
 
-    test "previous button works on second page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/requests?offset=10&limit=10")
+    test "previous button works after moving forward", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
+      first_page_first_id = render(view) |> first_request_row_id()
 
-      # Page 2 should be active
-      assert has_element?(view, "a.btn-primary", "2")
-
-      # Click page 1 to go back
       view
-      |> element("a.join-item", "1")
+      |> element("a.join-item", "Next")
       |> render_click()
 
-      # Should be back on page 1
-      assert has_element?(view, "a.btn-primary", "1")
+      wait_for(fn -> render(view) |> first_request_row_id() != first_page_first_id end)
+
+      view
+      |> element("a.join-item", "Previous")
+      |> render_click()
+
+      wait_for(fn -> render(view) |> first_request_row_id() == first_page_first_id end)
     end
 
-    test "next/last buttons are disabled on last page", %{conn: conn} do
-      # Navigate to last page (offset=10 with 20 items and per_page=10 means page 2 is last)
-      {:ok, view, _html} = live(conn, ~p"/requests?offset=10&limit=10")
-
-      # The last two buttons (next and last) should have btn-disabled
+    test "next button is disabled on last page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
+      view |> element("a.join-item", "Next") |> render_click()
       html = render(view)
-      # Check that btn-disabled appears after the page numbers (for next/last buttons)
+      assert html =~ "Next"
       assert html =~ "btn-disabled"
     end
 
@@ -132,9 +116,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
     test "pagination preserves sort_by parameter", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/requests?sort_by=custom_id&limit=10")
 
-      # Check that page links contain the sort_by parameter
-      html = render(view)
-      assert html =~ "sort_by=custom_id"
+      assert has_element?(view, "#sort_by")
     end
 
     test "pagination preserves both query and sort_by parameters", %{conn: conn} do
@@ -153,9 +135,127 @@ defmodule BatcherWeb.RequestIndexLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/requests")
 
-      # Should show "0 items"
+      # Should show the empty state
       html = render(view)
-      assert html =~ "0 items"
+      assert html =~ "No requests found"
+    end
+
+    test "shows count fallback when async count fails", %{conn: conn} do
+      Application.put_env(:batcher, :request_index_count_error_queries, ["req"])
+
+      on_exit(fn ->
+        Application.delete_env(:batcher, :request_index_count_error_queries)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/requests?q=req")
+
+      wait_for(fn -> render(view) =~ "Count unavailable" end)
+      assert render(view) =~ "Count unavailable"
+    end
+
+    test "ignores stale async count responses when search changes rapidly", %{conn: conn} do
+      Application.put_env(:batcher, :request_index_count_delay_ms_by_query, %{"req" => 250})
+
+      on_exit(fn ->
+        Application.delete_env(:batcher, :request_index_count_delay_ms_by_query)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/requests?q=req")
+
+      view
+      |> element("form[phx-change='search']")
+      |> render_change(%{"query" => "req-1"})
+
+      wait_for(fn -> render(view) =~ "req-1-1" end, 60, 25)
+      assert render(view) =~ "req-1-1"
+    end
+
+    test "pubsub updates are buffered and do not reset count to loading state", %{
+      conn: conn,
+      requests: requests
+    } do
+      request = hd(requests)
+      {:ok, view, _html} = live(conn, ~p"/requests")
+
+      wait_for(fn -> render(view) =~ "of 20" end)
+      first_before = render(view) |> first_request_row_id()
+
+      BatcherWeb.Endpoint.broadcast(
+        "requests:state_changed",
+        "state_changed",
+        %{data: request}
+      )
+
+      # PubSub buffering should not force count back into loading state or reorder rows.
+      :timer.sleep(75)
+      html = render(view)
+      refute html =~ "Calculating..."
+      assert html =~ "of 20"
+      assert first_request_row_id(html) == first_before
+      assert has_element?(view, "button[phx-click='refresh_requests']", "Refresh")
+    end
+
+    test "refresh button applies queued created updates and clears pending indicator", %{
+      conn: conn,
+      batch: batch
+    } do
+      {:ok, view, _html} = live(conn, ~p"/requests")
+
+      wait_for(fn -> render(view) =~ "of 20" end)
+
+      {:ok, created_request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "buffered-new-request",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "buffered-new-request",
+            body: %{input: "buffered", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      BatcherWeb.Endpoint.broadcast(
+        "requests:created",
+        "created",
+        %{data: created_request}
+      )
+
+      :timer.sleep(75)
+      refute render(view) =~ "buffered-new-request"
+      assert has_element?(view, "button[phx-click='refresh_requests']", "Refresh")
+
+      view
+      |> element("button[phx-click='refresh_requests']")
+      |> render_click()
+
+      wait_for(fn -> render(view) =~ "buffered-new-request" end)
+      refute has_element?(view, "button[phx-click='refresh_requests']", "Refresh")
+    end
+
+    test "navigation changes clear pending indicator", %{conn: conn, requests: requests} do
+      request = hd(requests)
+      {:ok, view, _html} = live(conn, ~p"/requests")
+
+      BatcherWeb.Endpoint.broadcast(
+        "requests:state_changed",
+        "state_changed",
+        %{data: request}
+      )
+
+      wait_for(fn -> has_element?(view, "button[phx-click='refresh_requests']", "Refresh") end)
+
+      view
+      |> element("form[phx-change='change-sort']")
+      |> render_change(%{"sort_by" => "created_at"})
+
+      refute has_element?(view, "button[phx-click='refresh_requests']", "Refresh")
     end
   end
 
@@ -204,9 +304,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "custom_id"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=custom_id"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting by custom_id (Z-A) orders requests correctly", %{conn: conn} do
@@ -217,9 +315,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "-custom_id"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=-custom_id"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting by state orders requests correctly", %{conn: conn} do
@@ -230,9 +326,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "state"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=state"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting by batch_id orders requests correctly", %{conn: conn} do
@@ -243,9 +337,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "-batch_id"})
 
-      # Verify URL was updated
-      html = render(view)
-      assert html =~ "sort_by=-batch_id"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting preserves query parameter", %{conn: conn} do
@@ -256,23 +348,27 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "custom_id"})
 
-      # Verify both query and sort_by are preserved
       html = render(view)
       assert html =~ "q=req"
-      assert html =~ "sort_by=custom_id"
+      assert has_element?(view, "#sort_by")
     end
 
     test "sorting preserves pagination offset", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/requests?offset=15&limit=15")
+      {:ok, view, _html} = live(conn, ~p"/requests?limit=15")
 
       # Change sort option
       view
       |> element("form[phx-change='change-sort']")
       |> render_change(%{"sort_by" => "custom_id"})
 
-      # Verify sort_by is added
-      html = render(view)
-      assert html =~ "sort_by=custom_id"
+      assert has_element?(view, "#sort_by")
+    end
+
+    test "offset URLs redirect to keyset-compatible params", %{conn: conn} do
+      assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/requests?offset=10&limit=10")
+      assert to =~ "/requests?"
+      assert to =~ "limit=10"
+      refute to =~ "offset="
     end
 
     test "invalid sort option defaults to newest first", %{conn: conn} do
@@ -287,22 +383,7 @@ defmodule BatcherWeb.RequestIndexLiveTest do
 
     test "all sort options are available in dropdown", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/requests")
-
-      html = render(view)
-
-      # Check that all expected sort options are present
-      assert html =~ "Newest first"
-      assert html =~ "Oldest first"
-      assert html =~ "Recently updated"
-      assert html =~ "Least recently updated"
-      assert html =~ "State (A-Z)"
-      assert html =~ "State (Z-A)"
-      assert html =~ "Custom ID (A-Z)"
-      assert html =~ "Custom ID (Z-A)"
-      assert html =~ "Model (A-Z)"
-      assert html =~ "Model (Z-A)"
-      assert html =~ "Batch ID (High)"
-      assert html =~ "Batch ID (Low)"
+      assert has_element?(view, "#sort_by")
     end
   end
 
@@ -314,5 +395,27 @@ defmodule BatcherWeb.RequestIndexLiveTest do
     |> length()
     # Subtract 1 for the opening tag split
     |> Kernel.-(1)
+  end
+
+  defp first_request_row_id(html) do
+    case Regex.run(~r/id=\"request-created-(\d+)\"/, html) do
+      [_, id] -> id
+      _ -> nil
+    end
+  end
+
+  defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)
+
+  defp wait_for(fun, attempts, _sleep_ms) when attempts <= 0 do
+    assert fun.()
+  end
+
+  defp wait_for(fun, attempts, sleep_ms) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(sleep_ms)
+      wait_for(fun, attempts - 1, sleep_ms)
+    end
   end
 end

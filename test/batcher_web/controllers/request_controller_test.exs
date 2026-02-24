@@ -2,6 +2,7 @@ defmodule BatcherWeb.RequestControllerTest do
   use BatcherWeb.ConnCase, async: false
 
   alias Batcher.Batching
+  alias Batcher.System.MaintenanceGate
   import Batcher.Generator
 
   setup do
@@ -10,7 +11,7 @@ defmodule BatcherWeb.RequestControllerTest do
 
     # Clear any existing BatchBuilders to avoid stale state from previous tests
     for {url, model} <- [{"/v1/responses", "gpt-4o-mini"}] do
-      case Registry.lookup(Batcher.BatchRegistry, {url, model}) do
+      case Registry.lookup(Batcher.Batching.Registry, {url, model}) do
         [{pid, _}] ->
           ref = Process.monitor(pid)
           Process.exit(pid, :kill)
@@ -30,6 +31,36 @@ defmodule BatcherWeb.RequestControllerTest do
   end
 
   describe "POST /api/requests" do
+    setup do
+      on_exit(fn -> MaintenanceGate.disable!() end)
+      :ok
+    end
+
+    test "returns 503 when maintenance mode is enabled", %{conn: conn} do
+      MaintenanceGate.enable!()
+
+      request_body = %{
+        "custom_id" => "maintenance_blocked_req",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => %{
+          "model" => "gpt-4o-mini",
+          "input" => "Blocked by maintenance"
+        },
+        "delivery_config" => %{
+          "type" => "webhook",
+          "webhook_url" => "https://example.com/webhook"
+        }
+      }
+
+      conn = post(conn, ~p"/api/requests", request_body)
+
+      assert response(conn, 503)
+      body = JSON.decode!(conn.resp_body)
+      assert [error | _] = body["errors"]
+      assert error["code"] == "maintenance_mode"
+    end
+
     test "creates request successfully and returns 202 Accepted", %{conn: conn} do
       request_body = %{
         "custom_id" => "test_req_1",
@@ -108,7 +139,7 @@ defmodule BatcherWeb.RequestControllerTest do
       assert Map.has_key?(response_body, "errors")
     end
 
-    test "handles RabbitMQ delivery type with queue only (default exchange)", %{conn: conn} do
+    test "handles RabbitMQ delivery type with queue", %{conn: conn} do
       request_body = %{
         "custom_id" => "rabbitmq_req",
         "url" => "/v1/responses",
@@ -134,7 +165,7 @@ defmodule BatcherWeb.RequestControllerTest do
       assert length(batches) >= 1
     end
 
-    test "handles RabbitMQ delivery type with exchange and routing_key", %{conn: conn} do
+    test "returns 422 for RabbitMQ delivery type with exchange and routing_key", %{conn: conn} do
       request_body = %{
         "custom_id" => "rabbitmq_exchange_req",
         "url" => "/v1/responses",
@@ -152,9 +183,9 @@ defmodule BatcherWeb.RequestControllerTest do
 
       conn = post(conn, ~p"/api/requests", request_body)
 
-      assert response(conn, 202)
-      body = JSON.decode!(conn.resp_body)
-      assert body["custom_id"] == "rabbitmq_exchange_req"
+      assert response(conn, 422)
+      response_body = JSON.decode!(conn.resp_body)
+      assert Map.has_key?(response_body, "errors")
     end
 
     test "returns 422 for invalid delivery type", %{conn: conn} do
@@ -199,10 +230,7 @@ defmodule BatcherWeb.RequestControllerTest do
       assert Map.has_key?(response_body, "errors")
     end
 
-    test "returns 500 for rabbitmq exchange without routing_key (Ash validation)", %{conn: conn} do
-      # This test validates that exchange without routing_key is rejected.
-      # OpenAPI schema allows this through (can't do conditional required),
-      # but Ash validation catches it and returns an internal error.
+    test "returns 422 for rabbitmq exchange without routing_key", %{conn: conn} do
       invalid_body = %{
         "custom_id" => "missing_routing_key",
         "url" => "/v1/responses",
@@ -219,16 +247,14 @@ defmodule BatcherWeb.RequestControllerTest do
 
       conn = post(conn, ~p"/api/requests", invalid_body)
 
-      # Ash validation returns 500 (internal error) for validation failures
-      assert response(conn, 500)
+      assert response(conn, 422)
       response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
 
-    test "returns 500 for rabbitmq with neither queue nor exchange (Ash validation)", %{
+    test "returns 422 for rabbitmq with missing queue", %{
       conn: conn
     } do
-      # Neither queue nor exchange provided
       invalid_body = %{
         "custom_id" => "missing_both",
         "url" => "/v1/responses",
@@ -244,8 +270,7 @@ defmodule BatcherWeb.RequestControllerTest do
 
       conn = post(conn, ~p"/api/requests", invalid_body)
 
-      # Ash validation returns 500 (internal error) for validation failures
-      assert response(conn, 500)
+      assert response(conn, 422)
       response_body = JSON.decode!(conn.resp_body)
       assert Map.has_key?(response_body, "errors")
     end
@@ -314,7 +339,7 @@ defmodule BatcherWeb.RequestControllerTest do
       batch = List.first(batches)
 
       # Get the BatchBuilder PID
-      case Registry.lookup(Batcher.BatchRegistry, {batch.url, batch.model}) do
+      case Registry.lookup(Batcher.Batching.Registry, {batch.url, batch.model}) do
         [{_pid, _}] ->
           # Delete the batch - this will publish a pub_sub event that terminates the BatchBuilder
           Ash.destroy!(batch)
@@ -323,7 +348,7 @@ defmodule BatcherWeb.RequestControllerTest do
           Process.sleep(50)
 
           # Verify BatchBuilder was terminated
-          assert Registry.lookup(Batcher.BatchRegistry, {batch.url, batch.model}) == []
+          assert Registry.lookup(Batcher.Batching.Registry, {batch.url, batch.model}) == []
 
           # Now try to add a request - since BatchBuilder was terminated,
           # it will create a new BatchBuilder and new batch (correct behavior)

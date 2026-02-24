@@ -5,31 +5,23 @@ defmodule Batcher.RabbitMQ.Consumer do
   Only starts if RABBITMQ_URL and RABBITMQ_INPUT_QUEUE are configured.
   On connection failure, enters disconnected state and retries with exponential backoff.
 
-  ## Configuration Modes
+  ## Configuration
 
-  ### 1. Direct Queue Consumption (simple)
   Consume directly from a queue:
 
       RABBITMQ_URL=amqp://user:pass@host:5672
       RABBITMQ_INPUT_QUEUE=my-queue
 
-  ### 2. Exchange with Routing Key (advanced)
-  Bind a queue to an exchange with a routing key:
-
-      RABBITMQ_URL=amqp://user:pass@host:5672
-      RABBITMQ_INPUT_QUEUE=my-queue
-      RABBITMQ_INPUT_EXCHANGE=my-exchange
-      RABBITMQ_INPUT_ROUTING_KEY=my.routing.key
-
-  **Important**: The queue and exchange must be pre-created by the developer.
-  This consumer will only bind to existing queues/exchanges and consume messages.
+  **Important**: The queue must be pre-created by the developer.
+  This consumer will only consume from existing queues.
   """
   use GenServer
   use AMQP
   require Logger
 
-  alias Batcher.RequestValidator
+  alias Batcher.Batching.Validation.RequestValidator
   alias Batcher.Batching.Handlers.RequestHandler
+  alias Batcher.System.MaintenanceGate
 
   @initial_backoff_ms 1_000
   @max_backoff_ms 30_000
@@ -59,30 +51,18 @@ defmodule Batcher.RabbitMQ.Consumer do
   def init(opts) do
     url = Keyword.fetch!(opts, :url)
     queue = Keyword.fetch!(opts, :queue)
-    exchange = Keyword.get(opts, :exchange)
-    routing_key = Keyword.get(opts, :routing_key)
-
-    mode_info =
-      if exchange && routing_key do
-        "exchange=#{exchange}, routing_key=#{routing_key}, queue=#{queue}"
-      else
-        "queue=#{queue} (direct)"
-      end
-
-    Logger.info("RabbitMQ consumer starting: #{mode_info}")
+    Logger.info("RabbitMQ consumer starting: queue=#{queue}")
 
     state = %{
       url: url,
       queue: queue,
-      exchange: exchange,
-      routing_key: routing_key,
       conn: nil,
       chan: nil,
       backoff_ms: @initial_backoff_ms,
       reconnect_ref: nil
     }
 
-    case connect_and_setup(url, queue, exchange, routing_key) do
+    case connect_and_setup(url, queue) do
       {:ok, conn_state} ->
         broadcast_status(:connected)
         {:ok, Map.merge(state, conn_state) |> Map.put(:backoff_ms, @initial_backoff_ms)}
@@ -143,7 +123,7 @@ defmodule Batcher.RabbitMQ.Consumer do
   def handle_info(:reconnect, state) do
     Logger.info("Attempting to reconnect to RabbitMQ...")
 
-    case connect_and_setup(state.url, state.queue, state.exchange, state.routing_key) do
+    case connect_and_setup(state.url, state.queue) do
       {:ok, conn_state} ->
         Logger.info("Successfully reconnected to RabbitMQ")
         broadcast_status(:connected)
@@ -188,7 +168,7 @@ defmodule Batcher.RabbitMQ.Consumer do
 
   ## Private Functions
 
-  defp connect_and_setup(url, queue, exchange, routing_key) do
+  defp connect_and_setup(url, queue) do
     case Connection.open(url) do
       {:ok, conn} ->
         Logger.info("Connected to RabbitMQ")
@@ -201,55 +181,23 @@ defmodule Batcher.RabbitMQ.Consumer do
             # Limit unacknowledged messages to 10
             :ok = Basic.qos(chan, prefetch_count: 10)
 
-            # Bind queue to exchange if both are provided (queue and exchange must exist)
-            bind_result =
-              if exchange && routing_key do
-                try do
-                  case Queue.bind(chan, queue, exchange, routing_key: routing_key) do
-                    :ok ->
-                      Logger.info(
-                        "Bound queue #{queue} to exchange #{exchange} with routing_key #{routing_key}"
-                      )
+            # Subscribe to queue (will fail if queue doesn't exist)
+            try do
+              case Basic.consume(chan, queue, nil, no_ack: false) do
+                {:ok, _consumer_tag} ->
+                  Logger.info("Started consuming from RabbitMQ queue: #{queue}")
+                  {:ok, %{conn: conn, chan: chan}}
 
-                      :ok
-
-                    {:error, reason} ->
-                      Logger.error("Failed to bind queue: #{inspect(reason)}")
-                      {:error, {:queue_bind_failed, reason}}
-                  end
-                catch
-                  :exit, reason ->
-                    Logger.error("Failed to bind queue (exit): #{inspect(reason)}")
-                    {:error, {:queue_bind_failed, reason}}
-                end
-              else
-                :ok
+                {:error, reason} ->
+                  Logger.error("Failed to start consuming from queue: #{inspect(reason)}")
+                  safely_close_connection(conn)
+                  {:error, {:consume_failed, reason}}
               end
-
-            case bind_result do
-              :ok ->
-                # Subscribe to queue (will fail if queue doesn't exist)
-                try do
-                  case Basic.consume(chan, queue, nil, no_ack: false) do
-                    {:ok, _consumer_tag} ->
-                      Logger.info("Started consuming from RabbitMQ queue: #{queue}")
-                      {:ok, %{conn: conn, chan: chan}}
-
-                    {:error, reason} ->
-                      Logger.error("Failed to start consuming from queue: #{inspect(reason)}")
-                      safely_close_connection(conn)
-                      {:error, {:consume_failed, reason}}
-                  end
-                catch
-                  :exit, reason ->
-                    Logger.error("Failed to consume from queue (exit): #{inspect(reason)}")
-                    safely_close_connection(conn)
-                    {:error, {:consume_failed, reason}}
-                end
-
-              {:error, _} = error ->
+            catch
+              :exit, reason ->
+                Logger.error("Failed to consume from queue (exit): #{inspect(reason)}")
                 safely_close_connection(conn)
-                error
+                {:error, {:consume_failed, reason}}
             end
 
           {:error, reason} ->
@@ -265,31 +213,55 @@ defmodule Batcher.RabbitMQ.Consumer do
   end
 
   defp process_message(payload, %{delivery_tag: tag}, %{chan: chan}) do
-    case RequestValidator.validate_json(payload) do
-      {:ok, validated} ->
-        # Same code path as HTTP from here
-        case RequestHandler.handle(validated) do
-          {:ok, _request} ->
-            Basic.ack(chan, tag)
-            Logger.debug("Successfully processed RabbitMQ message")
+    case decide_message_action(payload) do
+      :ack ->
+        Basic.ack(chan, tag)
 
-          {:error, :custom_id_already_taken} ->
-            # Processed, just duplicate - ack to remove from queue
-            Basic.ack(chan, tag)
-            Logger.debug("Duplicate custom_id from RabbitMQ (already processed)")
+      {:nack, requeue} ->
+        Basic.nack(chan, tag, requeue: requeue)
 
-          {:error, reason} ->
-            Logger.error("Failed to process request from RabbitMQ: #{inspect(reason)}")
-            Basic.nack(chan, tag, requeue: true)
-        end
+      {:reject, requeue} ->
+        Basic.reject(chan, tag, requeue: requeue)
+    end
+  end
 
-      {:error, {:invalid_json, reason}} ->
-        Logger.error("Invalid JSON from RabbitMQ: #{inspect(reason)}")
-        Basic.reject(chan, tag, requeue: false)
+  @doc false
+  def decide_message_action(
+        payload,
+        validator \\ RequestValidator,
+        request_handler \\ RequestHandler,
+        gate \\ MaintenanceGate
+      ) do
+    if gate.enabled?() do
+      Logger.warning("Maintenance mode enabled, requeuing RabbitMQ intake message")
+      {:nack, true}
+    else
+      case validator.validate_json(payload) do
+        {:ok, validated} ->
+          # Same code path as HTTP from here
+          case request_handler.handle(validated) do
+            {:ok, _request} ->
+              Logger.debug("Successfully processed RabbitMQ message")
+              :ack
 
-      {:error, {:validation_failed, errors}} ->
-        Logger.error("Validation failed for RabbitMQ message: #{inspect(errors)}")
-        Basic.reject(chan, tag, requeue: false)
+            {:error, :custom_id_already_taken} ->
+              # Processed, just duplicate - ack to remove from queue
+              Logger.debug("Duplicate custom_id from RabbitMQ (already processed)")
+              :ack
+
+            {:error, reason} ->
+              Logger.error("Failed to process request from RabbitMQ: #{inspect(reason)}")
+              {:nack, true}
+          end
+
+        {:error, {:invalid_json, reason}} ->
+          Logger.error("Invalid JSON from RabbitMQ: #{inspect(reason)}")
+          {:reject, false}
+
+        {:error, {:validation_failed, errors}} ->
+          Logger.error("Validation failed for RabbitMQ message: #{inspect(errors)}")
+          {:reject, false}
+      end
     end
   end
 

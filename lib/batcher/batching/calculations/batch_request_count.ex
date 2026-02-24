@@ -1,7 +1,7 @@
 defmodule Batcher.Batching.Calculations.BatchRequestCount do
   @moduledoc """
   Calculation to count the number of requests in a batch.
-  This is done in the application since SQLite does not support it natively.
+  This is done in the application layer for compatibility with existing callers.
   """
   use Ash.Resource.Calculation
 
@@ -9,6 +9,7 @@ defmodule Batcher.Batching.Calculations.BatchRequestCount do
   alias Batcher.Batching.Request
 
   @impl true
+  @doc false
   def calculate(records, _opts, _context) do
     # record is a batch here
     Enum.map(records, fn record ->

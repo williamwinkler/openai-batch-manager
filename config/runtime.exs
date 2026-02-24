@@ -9,40 +9,57 @@ import Dotenvy
 # The block below contains prod specific runtime configuration.
 
 if config_env() != :test do
-  source!([Path.absname(".env"), System.get_env()])
-  openai_api_key = env!("OPENAI_API_KEY", :string)
+  env_dir_prefix = System.get_env("RELEASE_ROOT") || Path.expand(".")
 
-  config :batcher, Batcher.OpenaiApiClient, openai_api_key: openai_api_key
+  source!([
+    Path.absname(".env", env_dir_prefix),
+    Path.absname(".#{config_env()}.env", env_dir_prefix),
+    Path.absname(".#{config_env()}.overrides.env", env_dir_prefix),
+    System.get_env()
+  ])
+
+  openai_api_key = env!("OPENAI_API_KEY", :string)
+  rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
+  rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
+  rabbitmq_publisher_pool_size = 4
+
+  config :batcher, Batcher.Clients.OpenAI.ApiClient, openai_api_key: openai_api_key
 
   # RabbitMQ configuration (optional)
   # - RABBITMQ_URL: Enables RabbitMQ publisher for output delivery
   # - RABBITMQ_INPUT_QUEUE: Enables RabbitMQ consumer for input (requires RABBITMQ_URL)
-  rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
-  rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
-
   # Publisher: enabled when RABBITMQ_URL is set (used for output delivery)
   if rabbitmq_url do
-    config :batcher, :rabbitmq_publisher, url: rabbitmq_url
+    config :batcher, :rabbitmq_publisher,
+      url: rabbitmq_url,
+      pool_size: rabbitmq_publisher_pool_size
+
+    config :batcher, :rabbitmq_publisher_pool_size, rabbitmq_publisher_pool_size
   end
 
   # Consumer: enabled when both RABBITMQ_URL and RABBITMQ_INPUT_QUEUE are set
   if rabbitmq_url && rabbitmq_input_queue do
-    # Exchange and routing_key are optional for binding to an exchange
-    # If exchange is set, routing_key must also be set
-    rabbitmq_input_exchange = env!("RABBITMQ_INPUT_EXCHANGE", :string, nil)
-    rabbitmq_input_routing_key = env!("RABBITMQ_INPUT_ROUTING_KEY", :string, nil)
-
-    if rabbitmq_input_exchange && !rabbitmq_input_routing_key do
-      raise "RABBITMQ_INPUT_ROUTING_KEY is required when RABBITMQ_INPUT_EXCHANGE is set"
-    end
-
     config :batcher, :rabbitmq_input,
       url: rabbitmq_url,
-      queue: rabbitmq_input_queue,
-      exchange: rabbitmq_input_exchange,
-      routing_key: rabbitmq_input_routing_key
+      queue: rabbitmq_input_queue
   end
 end
+
+delivery_queue_concurrency = 24
+batch_processing_queue_concurrency = 4
+
+oban_config = Application.get_env(:batcher, Oban, [])
+oban_queues = Keyword.get(oban_config, :queues, [])
+
+config :batcher,
+       Oban,
+       Keyword.put(
+         oban_config,
+         :queues,
+         oban_queues
+         |> Keyword.put(:delivery, delivery_queue_concurrency)
+         |> Keyword.put(:batch_processing, batch_processing_queue_concurrency)
+       )
 
 # Delivery retry toggle
 # - DISABLE_DELIVERY_RETRY=true: force delivery to a single attempt (no retries)
@@ -78,25 +95,20 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
+  database_url = System.get_env("DATABASE_URL")
+
+  if is_nil(database_url) or database_url == "" do
+    raise "DATABASE_URL is missing. Example: ecto://postgres:postgres@postgres:5432/openai_batch_manager"
+  end
+
+  pool_size = 20
+
   config :batcher, Batcher.Repo,
-    database: System.get_env("DATABASE_PATH", "/data/openai-batch-manager.db"),
-    pool_size: 1,
-    # SQLite production optimizations
+    url: database_url,
+    pool_size: pool_size,
     timeout: 60_000,
     queue_target: 5_000,
-    queue_interval: 1_000,
-    after_connect:
-      {Exqlite.Sqlite3, :execute,
-       [
-         """
-         PRAGMA journal_mode=WAL;
-         PRAGMA busy_timeout=10000;
-         PRAGMA synchronous=NORMAL;
-         PRAGMA cache_size=-64000;
-         PRAGMA temp_store=memory;
-         PRAGMA mmap_size=30000000000;
-         """
-       ]}
+    queue_interval: 1_000
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # If not provided, we auto-generate one (fine for localhost use).
@@ -168,22 +180,4 @@ if config_env() == :prod do
   #       force_ssl: [hsts: true]
   #
   # Check `Plug.SSL` for all available options in `force_ssl`.
-
-  # ## Configuring the mailer
-  #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
-  #
-  #     config :batcher, Batcher.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
-  #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
 end

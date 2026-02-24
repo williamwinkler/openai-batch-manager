@@ -2,6 +2,7 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
   use Batcher.DataCase, async: false
   use Oban.Testing, repo: Batcher.Repo
 
+  alias Batcher.Batching.BatchBuilder
   alias Batcher.Batching
   alias Oban.Job
 
@@ -187,6 +188,31 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
       latest_transition = List.last(batch_after.transitions)
       assert latest_transition.from == :building
       assert latest_transition.to == :cancelled
+    end
+
+    test "terminates BatchBuilder when cancelling a building batch", %{server: _server} do
+      url = "/v1/responses"
+      model = "gpt-4o-mini"
+
+      request_data = %{
+        custom_id: "cancel_builder_req",
+        url: url,
+        body: %{input: "test", model: model},
+        method: "POST",
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+      }
+
+      {:ok, request} = BatchBuilder.add_request(url, model, request_data)
+      batch_before = Batching.get_batch_by_id!(request.batch_id)
+
+      [{pid, _}] = Registry.lookup(Batcher.Batching.Registry, {url, model})
+      assert Process.alive?(pid)
+
+      {:ok, batch_after} = Batching.cancel_batch(batch_before)
+      assert batch_after.state == :cancelled
+
+      assert Registry.lookup(Batcher.Batching.Registry, {url, model}) == []
+      refute Process.alive?(pid)
     end
 
     test "can cancel batch from different valid states", %{server: server} do
@@ -393,6 +419,40 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
 
       batch_after_drain = Batching.get_batch_by_id!(cancelled_batch.id)
       assert batch_after_drain.state == :cancelled
+    end
+
+    test "does not cancel requests when batch cancel fails", %{server: server} do
+      openai_batch_id = "batch_cancel_failure_123"
+
+      batch =
+        seeded_batch(
+          state: :openai_processing,
+          openai_batch_id: openai_batch_id
+        )
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          url: batch.url,
+          model: batch.model,
+          state: :pending
+        )
+        |> generate()
+
+      expect_json_response(
+        server,
+        :post,
+        "/v1/batches/#{openai_batch_id}/cancel",
+        %{"error" => %{"message" => "Internal server error", "type" => "server_error"}},
+        500
+      )
+
+      assert {:error, %Ash.Error.Invalid{} = error} = Batching.cancel_batch(batch)
+      assert Exception.message(error) =~ "Failed to cancel OpenAI batch"
+
+      assert Batching.get_batch_by_id!(batch.id).state == :openai_processing
+      assert Batching.get_request_by_id!(request.id).state == :pending
     end
   end
 

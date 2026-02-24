@@ -24,7 +24,7 @@ defmodule Batcher.Batching.Actions.Deliver do
   - Error details are stored on delivery_attempt only (not on request.error_msg)
 
   For RabbitMQ delivery:
-  - Publishes response_payload to RabbitMQ queue/exchange
+  - Publishes response_payload to RabbitMQ queue
   - Records delivery attempt (success or failure)
   - On success: transitions request to :delivered
   - On failure: transitions request to :delivery_failed (not :failed, which is for OpenAI errors)
@@ -38,6 +38,7 @@ defmodule Batcher.Batching.Actions.Deliver do
 
   @default_max_attempts 3
 
+  @doc false
   def run(input, _opts, _context) do
     request_id = Utils.extract_subject_id(input)
 
@@ -47,29 +48,62 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.read_one!()
       |> Ash.load!([:batch])
 
-    # On first attempt: openai_processed → delivering
-    # On Oban retry: already in delivering, skip transition
-    request_updated =
-      case request.state do
-        :openai_processed -> begin_delivery(request)
-        :delivering -> request
+    batch = request.batch
+
+    if batch.state != :delivering do
+      Logger.debug(
+        "Skipping delivery for request #{request.id}; batch #{batch.id} is in state #{batch.state}"
+      )
+
+      {:ok, request}
+    else
+      # On first attempt: openai_processed → delivering
+      # On Oban retry: already in delivering, skip transition
+      request_updated =
+        case request.state do
+          :openai_processed -> begin_delivery(request)
+          :delivering -> request
+        end
+
+      # Determine attempt number from persisted request counter.
+      current_attempt = (request_updated.delivery_attempt_count || 0) + 1
+      max = max_attempts()
+      started_at = System.monotonic_time()
+
+      Logger.info("Delivering request #{request_updated.id} (attempt #{current_attempt}/#{max})")
+
+      if current_attempt == 1 and request_updated.updated_at do
+        enqueue_to_start_ms =
+          DateTime.diff(DateTime.utc_now(), request_updated.updated_at, :millisecond)
+
+        :telemetry.execute(
+          [:batcher, :delivery, :enqueue_to_start],
+          %{
+            duration: System.convert_time_unit(max(enqueue_to_start_ms, 0), :millisecond, :native)
+          },
+          %{request_id: request_updated.id}
+        )
       end
 
-    batch = request_updated.batch
+      if current_attempt > 1 do
+        :telemetry.execute(
+          [:batcher, :delivery, :retry],
+          %{count: 1},
+          %{request_id: request_updated.id, attempt: current_attempt}
+        )
+      end
 
-    # Determine attempt number from recorded delivery attempts
-    request_updated = Ash.load!(request_updated, :delivery_attempt_count)
-    current_attempt = request_updated.delivery_attempt_count + 1
-    max = max_attempts()
+      result =
+        case request_updated.delivery_config["type"] do
+          "rabbitmq" ->
+            deliver_rabbitmq(request_updated, batch, current_attempt, max)
 
-    Logger.info("Delivering request #{request_updated.id} (attempt #{current_attempt}/#{max})")
+          "webhook" ->
+            deliver_webhook(request_updated, batch, current_attempt, max)
+        end
 
-    case request_updated.delivery_config["type"] do
-      "rabbitmq" ->
-        deliver_rabbitmq(request_updated, batch, current_attempt, max)
-
-      "webhook" ->
-        deliver_webhook(request_updated, batch, current_attempt, max)
+      emit_attempt_duration(result, request_updated.delivery_config["type"], started_at)
+      result
     end
   end
 
@@ -94,10 +128,10 @@ defmodule Batcher.Batching.Actions.Deliver do
         )
 
       true ->
-        case try_webhook_delivery(webhook_url, request.response_payload) do
+        case try_webhook_delivery(webhook_url, request, current_attempt) do
           :ok ->
             Logger.info("Delivery successful for request #{request.id}")
-            handle_delivery_success(request, batch)
+            handle_delivery_success(request, batch, current_attempt)
 
           {:error, outcome, error_msg} ->
             handle_attempt_failure(request, batch, outcome, error_msg, current_attempt, max)
@@ -105,8 +139,8 @@ defmodule Batcher.Batching.Actions.Deliver do
     end
   end
 
-  defp try_webhook_delivery(webhook_url, payload) do
-    case post_webhook(webhook_url, payload) do
+  defp try_webhook_delivery(webhook_url, request, current_attempt) do
+    case post_webhook(webhook_url, request, current_attempt) do
       {:ok, status, _headers, _body} when status >= 200 and status < 300 ->
         :ok
 
@@ -121,20 +155,10 @@ defmodule Batcher.Batching.Actions.Deliver do
   # --- RabbitMQ delivery ---
 
   defp deliver_rabbitmq(request, batch, current_attempt, max) do
-    # Support both old format (exchange/routing_key/queue) and new format (rabbitmq_exchange/rabbitmq_queue/rabbitmq_routing_key)
-    exchange =
-      request.delivery_config["rabbitmq_exchange"] ||
-        request.delivery_config["exchange"] || ""
-
-    # Priority: rabbitmq_routing_key (new) > routing_key (legacy) > rabbitmq_queue > queue (legacy)
-    routing_key =
-      request.delivery_config["rabbitmq_routing_key"] ||
-        request.delivery_config["routing_key"] ||
-        request.delivery_config["rabbitmq_queue"] ||
-        request.delivery_config["queue"]
+    queue = request.delivery_config["rabbitmq_queue"]
 
     # Check if RabbitMQ Publisher is running BEFORE delivery attempt
-    rabbitmq_configured? = GenServer.whereis(Batcher.RabbitMQ.Publisher) != nil
+    rabbitmq_configured? = Batcher.RabbitMQ.Publisher.started?()
 
     cond do
       not rabbitmq_configured? ->
@@ -145,10 +169,10 @@ defmodule Batcher.Batching.Actions.Deliver do
         Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
         handle_delivery_failure(request, batch, :rabbitmq_not_configured, error_msg)
 
-      is_nil(routing_key) ->
+      is_nil(queue) or queue == "" ->
         validation_error(
           :delivery_config,
-          "queue or routing_key is required for RabbitMQ delivery",
+          "rabbitmq_queue is required for RabbitMQ delivery",
           request.id
         )
 
@@ -160,10 +184,10 @@ defmodule Batcher.Batching.Actions.Deliver do
         )
 
       true ->
-        case try_rabbitmq_delivery(exchange, routing_key, request.response_payload) do
+        case try_rabbitmq_delivery(queue, request, current_attempt) do
           :ok ->
             Logger.info("Delivery successful for request #{request.id}")
-            handle_delivery_success(request, batch)
+            handle_delivery_success(request, batch, current_attempt)
 
           {:error, outcome, error_msg} ->
             handle_attempt_failure(request, batch, outcome, error_msg, current_attempt, max)
@@ -171,8 +195,25 @@ defmodule Batcher.Batching.Actions.Deliver do
     end
   end
 
-  defp try_rabbitmq_delivery(exchange, routing_key, payload) do
-    case Batcher.RabbitMQ.Publisher.publish(exchange, routing_key, payload) do
+  defp try_rabbitmq_delivery(queue, request, current_attempt) do
+    idempotency_key = idempotency_key(request.id, current_attempt)
+
+    publish_opts = [
+      message_id: idempotency_key,
+      headers: [
+        {"x-batcher-request-id", request.id},
+        {"x-batcher-custom-id", request.custom_id},
+        {"x-batcher-attempt", current_attempt},
+        {"idempotency-key", idempotency_key}
+      ]
+    ]
+
+    case Batcher.RabbitMQ.Publisher.publish(
+           "",
+           queue,
+           request.response_payload,
+           publish_opts
+         ) do
       :ok -> :ok
       {:error, reason} -> {:error, map_rabbitmq_error(reason), format_rabbitmq_error(reason)}
     end
@@ -196,7 +237,7 @@ defmodule Batcher.Batching.Actions.Deliver do
       "Delivery attempt #{current_attempt}/#{max} failed for request #{request.id}: #{error_msg}, will retry..."
     )
 
-    record_intermediate_attempt(request, outcome, error_msg)
+    record_intermediate_attempt(request, outcome, error_msg, current_attempt)
     {:error, "Delivery attempt #{current_attempt}/#{max} failed: #{error_msg}"}
   end
 
@@ -209,11 +250,14 @@ defmodule Batcher.Batching.Actions.Deliver do
     |> Ash.load!(:batch)
   end
 
-  defp handle_delivery_success(request, _batch) do
+  defp handle_delivery_success(request, _batch, current_attempt) do
     request_after =
       request
       |> Ash.Changeset.for_update(:complete_delivery)
-      |> Ash.Changeset.put_context(:delivery_attempt, %{outcome: :success})
+      |> Ash.Changeset.put_context(:delivery_attempt, %{
+        outcome: :success,
+        attempt_number: current_attempt
+      })
       |> Ash.update!()
 
     {:ok, request_after}
@@ -227,16 +271,18 @@ defmodule Batcher.Batching.Actions.Deliver do
       |> Ash.Changeset.for_update(:mark_delivery_failed, %{})
       |> Ash.Changeset.put_context(:delivery_attempt, %{
         outcome: outcome,
-        error_msg: error_msg
+        error_msg: error_msg,
+        attempt_number: current_attempt(request)
       })
       |> Ash.update!()
 
     {:ok, request_after}
   end
 
-  defp record_intermediate_attempt(request, outcome, error_msg) do
+  defp record_intermediate_attempt(request, outcome, error_msg, current_attempt) do
     Ash.create!(Batching.RequestDeliveryAttempt, %{
       request_id: request.id,
+      attempt_number: current_attempt,
       delivery_config: request.delivery_config,
       outcome: outcome,
       error_msg: error_msg
@@ -245,15 +291,22 @@ defmodule Batcher.Batching.Actions.Deliver do
 
   # --- HTTP helpers ---
 
-  defp post_webhook(url, payload) do
+  defp post_webhook(url, request, current_attempt) do
     # Use configurable timeout - low for tests, reasonable for production
     http_timeouts = Application.get_env(:batcher, :http_timeouts, [])
     receive_timeout = Keyword.get(http_timeouts, :receive_timeout, 30_000)
     connect_timeout = Keyword.get(http_timeouts, :connect_timeout, 10_000)
+    idempotency_key = idempotency_key(request.id, current_attempt)
 
     case Req.post(url,
-           json: payload,
-           headers: [{"content-type", "application/json"}],
+           json: request.response_payload,
+           headers: [
+             {"content-type", "application/json"},
+             {"idempotency-key", idempotency_key},
+             {"x-batcher-request-id", to_string(request.id)},
+             {"x-batcher-custom-id", to_string(request.custom_id)},
+             {"x-batcher-attempt", Integer.to_string(current_attempt)}
+           ],
            retry: false,
            receive_timeout: receive_timeout,
            connect_options: [timeout: connect_timeout]
@@ -352,5 +405,29 @@ defmodule Batcher.Batching.Actions.Deliver do
 
   defp format_error(reason) do
     inspect(reason)
+  end
+
+  defp emit_attempt_duration(result, delivery_type, started_at) do
+    outcome =
+      case result do
+        {:ok, %{state: :delivered}} -> :delivered
+        {:ok, %{state: :delivery_failed}} -> :delivery_failed
+        {:ok, _} -> :ok
+        {:error, _} -> :retryable_error
+      end
+
+    :telemetry.execute(
+      [:batcher, :delivery, :attempt],
+      %{duration: System.monotonic_time() - started_at},
+      %{delivery_type: delivery_type, outcome: outcome}
+    )
+  end
+
+  defp current_attempt(request) do
+    (request.delivery_attempt_count || 0) + 1
+  end
+
+  defp idempotency_key(request_id, attempt_number) do
+    "batcher:req:#{request_id}:attempt:#{attempt_number}"
   end
 end

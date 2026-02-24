@@ -71,6 +71,11 @@ defmodule Batcher.RabbitMQ.FakePublisher do
   end
 
   @impl true
+  def handle_call(:connected?, _from, state) do
+    {:reply, true, state}
+  end
+
+  @impl true
   def handle_call({:publish, exchange, routing_key, _payload, _opts}, _from, state) do
     destination = {exchange, routing_key}
 

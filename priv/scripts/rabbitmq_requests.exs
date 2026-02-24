@@ -69,7 +69,6 @@ case AMQP.Connection.open(rabbitmq_url) do
 
               delivery_config = %{
                 "type" => "rabbitmq",
-                "rabbitmq_exchange" => "",
                 "rabbitmq_queue" => "test-output-queue"
               }
 
@@ -95,7 +94,6 @@ case AMQP.Connection.open(rabbitmq_url) do
 
               delivery_config = %{
                 "type" => "rabbitmq",
-                "rabbitmq_exchange" => "",
                 "rabbitmq_queue" => random_queue
               }
 

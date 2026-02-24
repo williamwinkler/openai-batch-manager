@@ -1,12 +1,15 @@
 defmodule Batcher.Batching.BatchTransition do
+  @moduledoc """
+  Ash resource recording batch state machine transitions.
+  """
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Batching,
-    data_layer: AshSqlite.DataLayer
+    data_layer: AshPostgres.DataLayer
 
   alias Batcher.Batching
 
-  sqlite do
+  postgres do
     table "batch_transitions"
     repo Batcher.Repo
 
@@ -16,6 +19,8 @@ defmodule Batcher.Batching.BatchTransition do
 
     custom_indexes do
       index [:batch_id]
+      index [:batch_id, :transitioned_at]
+      index [:batch_id, :to, :transitioned_at], name: "batch_transitions_processing_since_index"
     end
   end
 

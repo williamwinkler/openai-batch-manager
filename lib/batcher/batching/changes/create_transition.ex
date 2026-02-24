@@ -8,6 +8,7 @@ defmodule Batcher.Batching.Changes.CreateTransition do
   use Ash.Resource.Change
 
   @impl true
+  @doc false
   def change(changeset, opts, _ctx) do
     transition_resource = Keyword.fetch!(opts, :transition_resource)
     parent_id_field = Keyword.fetch!(opts, :parent_id_field)

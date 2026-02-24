@@ -4,7 +4,7 @@
     :ash_state_machine,
     :ash_oban,
     :oban,
-    :ash_sqlite,
+    :ash_postgres,
     :ash_phoenix,
     :ash,
     :reactor,

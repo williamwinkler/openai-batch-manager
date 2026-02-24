@@ -31,7 +31,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
         seeded_batch(
           model: model,
           state: :openai_processing,
-          estimated_input_tokens_total: 1_200_000
+          estimated_request_input_tokens_total: 1_200_000
         )
       )
 
@@ -41,7 +41,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-old-1",
-          estimated_input_tokens_total: 1_800_000,
+          estimated_request_input_tokens_total: 1_800_000,
           waiting_for_capacity_since_at: DateTime.add(now, -180, :second)
         )
       )
@@ -52,7 +52,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-old-2",
-          estimated_input_tokens_total: 1_800_000,
+          estimated_request_input_tokens_total: 1_800_000,
           waiting_for_capacity_since_at: DateTime.add(now, -120, :second)
         )
       )
@@ -63,7 +63,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-small",
-          estimated_input_tokens_total: 160_000,
+          estimated_request_input_tokens_total: 160_000,
           waiting_for_capacity_since_at: DateTime.add(now, -60, :second)
         )
       )
@@ -103,7 +103,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
         seeded_batch(
           model: model,
           state: :openai_processing,
-          estimated_input_tokens_total: 1_200_000
+          estimated_request_input_tokens_total: 1_200_000
         )
       )
 
@@ -113,7 +113,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-fit-1",
-          estimated_input_tokens_total: 300_000,
+          estimated_request_input_tokens_total: 300_000,
           waiting_for_capacity_since_at: DateTime.add(now, -180, :second)
         )
       )
@@ -124,7 +124,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-fit-2",
-          estimated_input_tokens_total: 200_000,
+          estimated_request_input_tokens_total: 200_000,
           waiting_for_capacity_since_at: DateTime.add(now, -120, :second)
         )
       )
@@ -135,7 +135,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-no-fit",
-          estimated_input_tokens_total: 350_000,
+          estimated_request_input_tokens_total: 350_000,
           waiting_for_capacity_since_at: DateTime.add(now, -60, :second)
         )
       )
@@ -156,7 +156,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
         seeded_batch(
           model: model,
           state: :openai_processing,
-          estimated_input_tokens_total: 1_950_000
+          estimated_request_input_tokens_total: 1_950_000
         )
       )
 
@@ -166,7 +166,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-wait-1",
-          estimated_input_tokens_total: 100_000,
+          estimated_request_input_tokens_total: 100_000,
           waiting_for_capacity_since_at: DateTime.add(now, -120, :second)
         )
       )
@@ -177,7 +177,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-wait-2",
-          estimated_input_tokens_total: 200_000,
+          estimated_request_input_tokens_total: 200_000,
           waiting_for_capacity_since_at: DateTime.add(now, -60, :second)
         )
       )
@@ -210,7 +210,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
         seeded_batch(
           model: model,
           state: :openai_processing,
-          estimated_input_tokens_total: 1_700_000
+          estimated_request_input_tokens_total: 1_700_000
         )
       )
 
@@ -220,7 +220,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-oldest-no-fit",
-          estimated_input_tokens_total: 900_000,
+          estimated_request_input_tokens_total: 900_000,
           waiting_for_capacity_since_at: DateTime.add(now, -180, :second)
         )
       )
@@ -231,7 +231,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-oldest-fit",
-          estimated_input_tokens_total: 250_000,
+          estimated_request_input_tokens_total: 250_000,
           waiting_for_capacity_since_at: DateTime.add(now, -120, :second)
         )
       )
@@ -242,7 +242,7 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
           model: model,
           state: :waiting_for_capacity,
           openai_input_file_id: "file-newer-fit",
-          estimated_input_tokens_total: 200_000,
+          estimated_request_input_tokens_total: 200_000,
           waiting_for_capacity_since_at: DateTime.add(now, -60, :second)
         )
       )
@@ -252,5 +252,65 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
     assert Batching.get_batch_by_id!(oldest_fit.id).state == :openai_processing
     assert Batching.get_batch_by_id!(newer_fit.id).state == :waiting_for_capacity
     assert Batching.get_batch_by_id!(oldest_no_fit.id).state == :waiting_for_capacity
+  end
+
+  test "skips waiting batches that are still in token-limit backoff window" do
+    model = "gpt-4o-mini"
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    blocked =
+      generate(
+        seeded_batch(
+          model: model,
+          state: :waiting_for_capacity,
+          openai_input_file_id: "file-backoff-blocked",
+          estimated_request_input_tokens_total: 100_000,
+          capacity_wait_reason: "token_limit_exceeded_backoff",
+          token_limit_retry_attempts: 1,
+          token_limit_retry_next_at: DateTime.add(now, 300, :second),
+          waiting_for_capacity_since_at: DateTime.add(now, -300, :second)
+        )
+      )
+
+    assert {:ok, _} = DispatchWaitingForCapacity.run(%{subject: blocked}, [], %{})
+
+    blocked_after = Batching.get_batch_by_id!(blocked.id)
+    assert blocked_after.state == :waiting_for_capacity
+    assert blocked_after.openai_batch_id == nil
+  end
+
+  test "dispatches waiting batch when token-limit backoff window has elapsed", %{server: server} do
+    expect_json_response(
+      server,
+      :post,
+      "/v1/batches",
+      %{"id" => "batch_backoff_ready", "status" => "validating"},
+      200
+    )
+
+    model = "gpt-4o-mini"
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    ready =
+      generate(
+        seeded_batch(
+          model: model,
+          state: :waiting_for_capacity,
+          openai_input_file_id: "file-backoff-ready",
+          estimated_request_input_tokens_total: 100_000,
+          capacity_wait_reason: "token_limit_exceeded_backoff",
+          token_limit_retry_attempts: 2,
+          token_limit_retry_next_at: DateTime.add(now, -60, :second),
+          waiting_for_capacity_since_at: DateTime.add(now, -300, :second)
+        )
+      )
+
+    assert {:ok, _} = DispatchWaitingForCapacity.run(%{subject: ready}, [], %{})
+
+    ready_after = Batching.get_batch_by_id!(ready.id)
+    assert ready_after.state == :openai_processing
+    assert ready_after.openai_batch_id == "batch_backoff_ready"
+    assert ready_after.token_limit_retry_attempts == 0
+    assert ready_after.token_limit_retry_next_at == nil
   end
 end

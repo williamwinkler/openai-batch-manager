@@ -14,9 +14,9 @@ defmodule Batcher.Application do
     # Validate OpenAI API key before starting services.
     # Crashes on HTTP 401 (invalid key), warns on network errors (OpenAI unreachable).
     # Skipped when the OpenAI client is not configured (e.g. test environment).
-    if Application.get_env(:batcher, Batcher.OpenaiApiClient) &&
+    if Application.get_env(:batcher, Batcher.Clients.OpenAI.ApiClient) &&
          Application.get_env(:batcher, :env) != :test do
-      Batcher.OpenaiApiClient.validate_api_key!()
+      Batcher.Clients.OpenAI.ApiClient.validate_api_key!()
     end
 
     if skip_migrations?() do
@@ -35,14 +35,18 @@ defmodule Batcher.Application do
          repos: Application.fetch_env!(:batcher, :ecto_repos), skip: skip_migrations?()},
         {Task, fn -> Batcher.Settings.Initializer.ensure_defaults() end},
         # Registry for BatchBuilder GenServers (keyed by {endpoint, model})
-        {Registry, keys: :unique, name: Batcher.BatchRegistry},
+        {Registry, keys: :unique, name: Batcher.Batching.Registry},
         # DynamicSupervisor for BatchBuilder instances
-        {DynamicSupervisor, name: Batcher.BatchSupervisor, strategy: :one_for_one},
+        {DynamicSupervisor, name: Batcher.Batching.Supervisor, strategy: :one_for_one},
         maybe_openai_rate_limits(),
         {Oban,
          Application.fetch_env!(:batcher, :ash_domains)
          |> AshOban.config(Application.fetch_env!(:batcher, Oban))
          |> sanitize_oban_crontab()},
+        Supervisor.child_spec(
+          {Task, fn -> Batcher.Batching.Recovery.resume_stale_work() end},
+          id: :batch_recovery_task
+        ),
         # PubSub must start before RabbitMQ so status broadcasts work during init
         {Phoenix.PubSub, name: Batcher.PubSub},
         # RabbitMQ publisher (optional - only starts if configured)
@@ -70,7 +74,7 @@ defmodule Batcher.Application do
   end
 
   defp skip_migrations?() do
-    # By default, sqlite migrations are run when using a release
+    # By default, migrations are run only in releases.
     System.get_env("RELEASE_NAME") == nil
   end
 
@@ -114,7 +118,7 @@ defmodule Batcher.Application do
 
   defp maybe_openai_rate_limits do
     if Application.get_env(:batcher, :openai_rate_limits_enabled, true) do
-      Batcher.OpenaiRateLimits
+      Batcher.Clients.OpenAI.RateLimits
     end
   end
 

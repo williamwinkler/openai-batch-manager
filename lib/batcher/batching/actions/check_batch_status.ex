@@ -1,18 +1,24 @@
 defmodule Batcher.Batching.Actions.CheckBatchStatus do
+  @moduledoc """
+  Runs an Ash action callback for the batch/request workflow.
+  """
   require Logger
-  alias Batcher.OpenaiApiClient
+  alias Batcher.Clients.OpenAI.ApiClient
   alias Batcher.Batching
   alias Batcher.Batching.Utils
 
+  @max_token_limit_retries 5
+
+  @doc false
   def run(input, _opts, _context) do
     batch_id = Utils.extract_subject_id(input)
 
     batch = Batching.get_batch_by_id!(batch_id)
 
-    case OpenaiApiClient.check_batch_status(batch.openai_batch_id) do
+    case ApiClient.check_batch_status(batch.openai_batch_id) do
       {:ok, %{"status" => "completed"} = response} ->
         Logger.info("Batch #{batch.id} processing completed on OpenAI")
-        usage = OpenaiApiClient.extract_token_usage_from_batch_status(response)
+        usage = ApiClient.extract_token_usage_from_batch_status(response)
         progress_attrs = extract_request_counts(response)
 
         batch
@@ -55,12 +61,44 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
 
       {:ok, %{"status" => "failed"} = resp} ->
         error_msg = JSON.encode!(resp)
-        Logger.error("Batch #{batch.id} processing failed on OpenAI: #{error_msg}")
         progress_attrs = extract_request_counts(resp)
 
-        batch
-        |> Ash.Changeset.for_update(:failed, Map.put(progress_attrs, :error_msg, error_msg))
-        |> Ash.update()
+        if token_limit_exceeded?(resp) do
+          current_attempts = batch.token_limit_retry_attempts || 0
+
+          if current_attempts < @max_token_limit_retries do
+            Logger.warning(
+              "Batch #{batch.id} hit OpenAI token_limit_exceeded (attempt #{current_attempts + 1}/#{@max_token_limit_retries}); requeueing with backoff"
+            )
+
+            batch
+            |> Ash.Changeset.for_update(
+              :handle_token_limit_exceeded,
+              %{token_limit_retry_last_error: error_msg}
+            )
+            |> Ash.update()
+          else
+            Logger.error(
+              "Batch #{batch.id} exhausted token_limit_exceeded retries (#{current_attempts}/#{@max_token_limit_retries}); failing permanently"
+            )
+
+            terminal_error =
+              "OpenAI token limit retries exhausted after #{current_attempts} attempts. Last error: #{error_msg}"
+
+            batch
+            |> Ash.Changeset.for_update(
+              :fail_token_limit_exhausted,
+              %{error_msg: terminal_error}
+            )
+            |> Ash.update()
+          end
+        else
+          Logger.error("Batch #{batch.id} processing failed on OpenAI: #{error_msg}")
+
+          batch
+          |> Ash.Changeset.for_update(:failed, Map.put(progress_attrs, :error_msg, error_msg))
+          |> Ash.update()
+        end
 
       {:ok, pending_resp} ->
         status = Map.get(pending_resp, "status", "unknown")
@@ -113,4 +151,14 @@ defmodule Batcher.Batching.Actions.CheckBatchStatus do
       "total" -> Map.get(request_counts, "total") || Map.get(request_counts, :total)
     end
   end
+
+  defp token_limit_exceeded?(body) when is_map(body) do
+    errors = get_in(body, ["errors", "data"]) || []
+    error = body["error"] || %{}
+
+    Enum.any?(errors, fn row -> row["code"] == "token_limit_exceeded" end) or
+      error["code"] == "token_limit_exceeded"
+  end
+
+  defp token_limit_exceeded?(_), do: false
 end

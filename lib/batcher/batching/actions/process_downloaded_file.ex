@@ -1,9 +1,13 @@
 defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
+  @moduledoc """
+  Runs an Ash action callback for the batch/request workflow.
+  """
   require Logger
 
   alias Batcher.Batching
   alias Batcher.Batching.{FileProcessing, Utils}
 
+  @doc false
   def run(input, _opts, _context) do
     batch_id = Utils.extract_subject_id(input)
 

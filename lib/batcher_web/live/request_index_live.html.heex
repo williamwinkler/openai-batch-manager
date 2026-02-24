@@ -1,5 +1,10 @@
 <Layouts.app flash={@flash} current_path={@current_path} rabbitmq_connected={@rabbitmq_connected}>
-  <div class="flex flex-col h-full">
+  <div
+    id="request-index-page"
+    class="flex flex-col h-full"
+    phx-hook="RememberPaginationLimit"
+    data-default-limit="25"
+  >
     <!-- Header - fixed height -->
     <div class="flex items-center pb-4 shrink-0">
       <div class="flex-1 flex items-center">
@@ -7,10 +12,18 @@
           <h1 class="text-2xl font-bold">Requests</h1>
           <p class="text-sm text-base-content/60 mt-1">Manage your requests</p>
         </div>
-        <.batch_filter_badge :if={@batch_id} batch_id={@batch_id} />
       </div>
       <.search_box query={@query_text} />
       <div class="flex-1 flex items-center justify-end gap-3">
+        <div :if={@pending_refresh_count > 0} class="flex items-center gap-2">
+          <span class="badge badge-warning badge-outline">
+            {@pending_refresh_count} new updates
+          </span>
+          <button type="button" phx-click="refresh_requests" class="btn btn-sm btn-primary">
+            Refresh
+          </button>
+        </div>
+        <.state_filter_changer state_filter={@state_filter} />
         <.sort_changer selected={@sort_by} batch_id={@batch_id} />
       </div>
     </div>
@@ -57,7 +70,7 @@
               <:col :let={request} label="Model" width="w-44">
                 <span class="font-mono text-sm truncate block">{request.model}</span>
               </:col>
-              <:col :let={request} label="Est. tokens" width="w-28">
+              <:col :let={request} label="Est. tokens" width="w-20">
                 <span class="font-mono text-sm">
                   {Format.compact_number(request.estimated_request_input_tokens || 0)}
                 </span>
@@ -99,10 +112,18 @@
       
 <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
-        <.numbered_pagination
+        <.async_keyset_pagination
           page={@page}
+          page_count_status={@page_count_status}
+          page_total_count={@page_total_count}
           base_path="/requests"
-          extra_params={[q: @query_text, sort_by: @sort_by, batch_id: @batch_id]}
+          extra_params={[
+            q: @query_text,
+            sort_by: @sort_by,
+            batch_id: @batch_id,
+            state: @state_filter
+          ]}
+          default_limit={25}
         />
       </div>
     </div>

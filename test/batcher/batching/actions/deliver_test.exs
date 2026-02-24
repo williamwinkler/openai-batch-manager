@@ -55,6 +55,39 @@ defmodule Batcher.Batching.Actions.DeliverTest do
   end
 
   describe "deliver action" do
+    test "skips delivery when batch is not in delivering state", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :downloading)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      {:ok, request_after} =
+        Batching.Request
+        |> Ash.ActionInput.for_action(:deliver, %{})
+        |> Map.put(:subject, request)
+        |> Ash.run_action()
+
+      request_after = Ash.load!(request_after, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after.state == :openai_processed
+      assert request_after.delivery_attempt_count == 0
+      assert request_after.delivery_attempts == []
+    end
+
     test "successfully delivers webhook with 200 status", %{server: server} do
       webhook_url = TestServer.url(server) <> "/webhook"
       response_payload = %{"output" => "test response", "status" => "success"}
@@ -287,8 +320,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: response_payload
         )
@@ -326,90 +358,6 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       GenServer.stop(Batcher.RabbitMQ.Publisher)
     end
 
-    test "successfully delivers to RabbitMQ exchange with rabbitmq_routing_key" do
-      # Start fake publisher that returns :ok for all publishes
-      {:ok, _pid} = FakePublisher.start_link()
-
-      batch =
-        seeded_batch(state: :delivering)
-        |> generate()
-
-      response_payload = %{"output" => "test response", "status" => "success"}
-
-      request =
-        seeded_request(
-          batch_id: batch.id,
-          state: :openai_processed,
-          delivery_config: %{
-            "type" => "rabbitmq",
-            "rabbitmq_exchange" => "test_exchange",
-            "rabbitmq_routing_key" => "test.routing.key"
-          },
-          response_payload: response_payload
-        )
-        |> generate()
-
-      {:ok, request_after} =
-        Batching.Request
-        |> Ash.ActionInput.for_action(:deliver, %{})
-        |> Map.put(:subject, request)
-        |> Ash.run_action()
-
-      request_after = Ash.load!(request_after, [:delivery_attempts, :batch])
-
-      assert request_after.state == :delivered
-      attempt = List.first(request_after.delivery_attempts)
-      assert attempt.outcome == :success
-
-      # Trigger batch completion check (normally done by AshOban) and verify state
-      {:ok, batch_after} =
-        Batching.Batch
-        |> Ash.ActionInput.for_action(:check_delivery_completion, %{})
-        |> Map.put(:subject, batch)
-        |> Ash.run_action()
-
-      assert batch_after.state == :delivered
-
-      # Cleanup
-      GenServer.stop(Batcher.RabbitMQ.Publisher)
-    end
-
-    test "delivers to custom exchange with routing_key" do
-      # Start fake publisher that returns :ok for all publishes
-      {:ok, _pid} = FakePublisher.start_link()
-
-      batch =
-        seeded_batch(state: :delivering)
-        |> generate()
-
-      response_payload = %{"output" => "test response", "status" => "success"}
-
-      # Custom exchange mode: exchange + routing_key (no queue)
-      request =
-        seeded_request(
-          batch_id: batch.id,
-          state: :openai_processed,
-          delivery_config: %{
-            "type" => "rabbitmq",
-            "rabbitmq_exchange" => "test_exchange",
-            "rabbitmq_routing_key" => "priority.routing.key"
-          },
-          response_payload: response_payload
-        )
-        |> generate()
-
-      {:ok, request_after} =
-        Batching.Request
-        |> Ash.ActionInput.for_action(:deliver, %{})
-        |> Map.put(:subject, request)
-        |> Ash.run_action()
-
-      assert request_after.state == :delivered
-
-      # Cleanup
-      GenServer.stop(Batcher.RabbitMQ.Publisher)
-    end
-
     test "handles RabbitMQ queue_not_found error" do
       # Start fake publisher that returns queue_not_found error
       {:ok, _pid} =
@@ -427,8 +375,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "non_existent_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "non_existent_queue"
           },
           response_payload: %{"output" => "test"}
         )
@@ -455,48 +402,6 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       GenServer.stop(Batcher.RabbitMQ.Publisher)
     end
 
-    test "handles RabbitMQ exchange_not_found error" do
-      # Start fake publisher that returns exchange_not_found error
-      {:ok, _pid} =
-        FakePublisher.start_link(
-          responses: %{{"non_existent_exchange", "test.key"} => {:error, :exchange_not_found}}
-        )
-
-      batch =
-        seeded_batch(state: :delivering)
-        |> generate()
-
-      request =
-        seeded_request(
-          batch_id: batch.id,
-          state: :openai_processed,
-          delivery_config: %{
-            "type" => "rabbitmq",
-            "rabbitmq_exchange" => "non_existent_exchange",
-            "rabbitmq_routing_key" => "test.key"
-          },
-          response_payload: %{"output" => "test"}
-        )
-        |> generate()
-
-      {:ok, request_after} =
-        Batching.Request
-        |> Ash.ActionInput.for_action(:deliver, %{})
-        |> Map.put(:subject, request)
-        |> Ash.run_action()
-
-      request_after = Ash.load!(request_after, [:delivery_attempts])
-
-      assert request_after.state == :delivery_failed
-      attempt = List.first(request_after.delivery_attempts)
-      assert attempt.outcome == :exchange_not_found
-      assert attempt.error_msg != nil
-      assert attempt.error_msg =~ "Exchange not found"
-
-      # Cleanup
-      GenServer.stop(Batcher.RabbitMQ.Publisher)
-    end
-
     test "handles RabbitMQ not_connected error" do
       # Start fake publisher that returns not_connected error
       {:ok, _pid} =
@@ -512,8 +417,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: %{"output" => "test"}
         )
@@ -552,8 +456,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: %{"output" => "test"}
         )
@@ -592,8 +495,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: %{"output" => "test"}
         )
@@ -632,8 +534,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: %{"output" => "test"}
         )
@@ -674,8 +575,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: response_payload
         )
@@ -687,8 +587,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: response_payload
         )
@@ -744,8 +643,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "success_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "success_queue"
           },
           response_payload: response_payload
         )
@@ -757,8 +655,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "fail_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "fail_queue"
           },
           response_payload: response_payload
         )
@@ -786,41 +683,6 @@ defmodule Batcher.Batching.Actions.DeliverTest do
         |> Ash.run_action()
 
       assert batch_after.state == :partially_delivered
-
-      # Cleanup
-      GenServer.stop(Batcher.RabbitMQ.Publisher)
-    end
-
-    test "uses rabbitmq_routing_key when both queue and routing_key are provided (legacy support)" do
-      # Start fake publisher
-      {:ok, _pid} = FakePublisher.start_link()
-
-      batch =
-        seeded_batch(state: :delivering)
-        |> generate()
-
-      # Legacy format with routing_key (not rabbitmq_routing_key) still works
-      request =
-        seeded_request(
-          batch_id: batch.id,
-          state: :openai_processed,
-          delivery_config: %{
-            "type" => "rabbitmq",
-            "rabbitmq_queue" => "fallback_queue",
-            "rabbitmq_exchange" => "",
-            "routing_key" => "legacy_routing_key"
-          },
-          response_payload: %{"output" => "test"}
-        )
-        |> generate()
-
-      {:ok, request_after} =
-        Batching.Request
-        |> Ash.ActionInput.for_action(:deliver, %{})
-        |> Map.put(:subject, request)
-        |> Ash.run_action()
-
-      assert request_after.state == :delivered
 
       # Cleanup
       GenServer.stop(Batcher.RabbitMQ.Publisher)
@@ -1653,8 +1515,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: %{"output" => "test"}
         )
@@ -1705,8 +1566,7 @@ defmodule Batcher.Batching.Actions.DeliverTest do
           state: :openai_processed,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           },
           response_payload: %{"output" => "test"}
         )

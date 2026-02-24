@@ -84,7 +84,7 @@ defmodule Batcher.Utils.FormatTest do
       now = DateTime.utc_now()
       assert Format.time_ago(DateTime.add(now, -60, :second)) == "1m ago"
       assert Format.time_ago(DateTime.add(now, -120, :second)) == "2m ago"
-      assert Format.time_ago(DateTime.add(now, -3599, :second)) == "59m ago"
+      assert Format.time_ago(DateTime.add(now, -3540, :second)) == "59m ago"
     end
 
     test "shows hours for times between 1-23 hours ago" do
@@ -129,6 +129,31 @@ defmodule Batcher.Utils.FormatTest do
       now = DateTime.utc_now()
       future = DateTime.add(now, 100, :second)
       assert Format.time_ago(future) == "in the future"
+    end
+  end
+
+  describe "duration_since/1" do
+    test "handles nil values" do
+      assert Format.duration_since(nil) == ""
+    end
+
+    test "handles DateTime values" do
+      now = DateTime.utc_now()
+      assert Format.duration_since(DateTime.add(now, -30, :second)) == "less than 1m ago"
+      assert Format.duration_since(DateTime.add(now, -120, :second)) == "2m"
+    end
+
+    test "handles NaiveDateTime values as UTC" do
+      naive =
+        DateTime.utc_now()
+        |> DateTime.add(-75, :second)
+        |> DateTime.to_naive()
+
+      assert Format.duration_since(naive) == "1m"
+    end
+
+    test "handles unsupported input types safely" do
+      assert Format.duration_since("invalid") == ""
     end
   end
 end

@@ -1,0 +1,436 @@
+{
+  "attributes": [
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": true,
+      "precision": null,
+      "primary_key?": true,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "id",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "custom_id",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "url",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "model",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "request_payload",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "request_payload_size",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": false,
+      "default": "0",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "estimated_input_tokens",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": false,
+      "default": "0",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "estimated_request_input_tokens",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "response_payload",
+      "type": "map"
+    },
+    {
+      "allow_nil?": false,
+      "default": "\"pending\"",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "state",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "delivery_config",
+      "type": "map"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "error_msg",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "0",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "delivery_attempt_count",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": false,
+      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "created_at",
+      "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": false,
+      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "updated_at",
+      "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "requests_batch_id_fkey",
+        "on_delete": "delete",
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "batches"
+      },
+      "scale": null,
+      "size": null,
+      "source": "batch_id",
+      "type": "bigint"
+    }
+  ],
+  "base_filter": null,
+  "check_constraints": [],
+  "custom_indexes": [
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "custom_id"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "custom_id"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": true,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "state"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "state"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "batch_id"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "batch_id"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "batch_id",
+        "state"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "batch_id"
+        },
+        {
+          "type": "atom",
+          "value": "state"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "created_at",
+        "id"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "created_at"
+        },
+        {
+          "type": "atom",
+          "value": "id"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": "requests_pagination_created_at_id_index",
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "updated_at"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "updated_at"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "batch_id",
+        "created_at",
+        "id"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "batch_id"
+        },
+        {
+          "type": "atom",
+          "value": "created_at"
+        },
+        {
+          "type": "atom",
+          "value": "id"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": "requests_batch_pagination_created_at_id_index",
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    }
+  ],
+  "custom_statements": [
+    {
+      "code?": false,
+      "down": "DROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters ON requests;\nDROP FUNCTION IF EXISTS requests_after_insert_update_batch_counters_fn();\n",
+      "name": "requests_after_insert_update_batch_counters",
+      "up": "CREATE OR REPLACE FUNCTION requests_after_insert_update_batch_counters_fn()\nRETURNS trigger AS $$\nBEGIN\n  UPDATE batches\n  SET\n    request_count = request_count + 1,\n    size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),\n    estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)\n  WHERE id = NEW.batch_id;\n\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters ON requests;\nCREATE TRIGGER requests_after_insert_update_batch_counters\nAFTER INSERT ON requests\nFOR EACH ROW\nEXECUTE FUNCTION requests_after_insert_update_batch_counters_fn();\n"
+    },
+    {
+      "code?": false,
+      "down": "DROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters ON requests;\nDROP FUNCTION IF EXISTS requests_after_delete_update_batch_counters_fn();\n",
+      "name": "requests_after_delete_update_batch_counters",
+      "up": "CREATE OR REPLACE FUNCTION requests_after_delete_update_batch_counters_fn()\nRETURNS trigger AS $$\nBEGIN\n  UPDATE batches\n  SET\n    request_count = request_count - 1,\n    size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),\n    estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),\n    estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)\n  WHERE id = OLD.batch_id;\n\n  RETURN OLD;\nEND;\n$$ LANGUAGE plpgsql;\n\nDROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters ON requests;\nCREATE TRIGGER requests_after_delete_update_batch_counters\nAFTER DELETE ON requests\nFOR EACH ROW\nEXECUTE FUNCTION requests_after_delete_update_batch_counters_fn();\n"
+    },
+    {
+      "code?": false,
+      "down": "DROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters ON requests;\nDROP FUNCTION IF EXISTS requests_after_update_same_batch_update_counters_fn();\n",
+      "name": "requests_after_update_same_batch_update_counters",
+      "up": "CREATE OR REPLACE FUNCTION requests_after_update_same_batch_update_counters_fn()\nRETURNS trigger AS $$\nBEGIN\n  IF OLD.batch_id = NEW.batch_id THEN\n    UPDATE batches\n    SET\n      size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0)),\n      estimated_input_tokens_total = estimated_input_tokens_total + (COALESCE(NEW.estimated_input_tokens, 0) - COALESCE(OLD.estimated_input_tokens, 0)),\n      estimated_request_input_tokens_total = estimated_request_input_tokens_total + (COALESCE(NEW.estimated_request_input_tokens, 0) - COALESCE(OLD.estimated_request_input_tokens, 0))\n    WHERE id = NEW.batch_id;\n  END IF;\n\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters ON requests;\nCREATE TRIGGER requests_after_update_same_batch_update_counters\nAFTER UPDATE OF request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests\nFOR EACH ROW\nEXECUTE FUNCTION requests_after_update_same_batch_update_counters_fn();\n"
+    },
+    {
+      "code?": false,
+      "down": "DROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters ON requests;\nDROP FUNCTION IF EXISTS requests_after_update_move_batch_update_counters_fn();\n",
+      "name": "requests_after_update_move_batch_update_counters",
+      "up": "CREATE OR REPLACE FUNCTION requests_after_update_move_batch_update_counters_fn()\nRETURNS trigger AS $$\nBEGIN\n  IF OLD.batch_id != NEW.batch_id THEN\n    UPDATE batches\n    SET\n      request_count = request_count - 1,\n      size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),\n      estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),\n      estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)\n    WHERE id = OLD.batch_id;\n\n    UPDATE batches\n    SET\n      request_count = request_count + 1,\n      size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),\n      estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),\n      estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)\n    WHERE id = NEW.batch_id;\n  END IF;\n\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters ON requests;\nCREATE TRIGGER requests_after_update_move_batch_update_counters\nAFTER UPDATE OF batch_id, request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests\nFOR EACH ROW\nEXECUTE FUNCTION requests_after_update_move_batch_update_counters_fn();\n"
+    },
+    {
+      "code?": false,
+      "down": "DROP TRIGGER IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count ON request_delivery_attempts;\nDROP FUNCTION IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count_fn();\n",
+      "name": "request_delivery_attempts_after_insert_update_request_attempt_count",
+      "up": "CREATE OR REPLACE FUNCTION request_delivery_attempts_after_insert_update_request_attempt_count_fn()\nRETURNS trigger AS $$\nBEGIN\n  UPDATE requests\n  SET delivery_attempt_count = delivery_attempt_count + 1\n  WHERE id = NEW.request_id;\n\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDROP TRIGGER IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count ON request_delivery_attempts;\nCREATE TRIGGER request_delivery_attempts_after_insert_update_request_attempt_count\nAFTER INSERT ON request_delivery_attempts\nFOR EACH ROW\nEXECUTE FUNCTION request_delivery_attempts_after_insert_update_request_attempt_count_fn();\n"
+    }
+  ],
+  "has_create_action": true,
+  "hash": "93EA680D6C36DCC6C1ABA1D7127B5177DFBEF475B42802EB5BFD00BB63CE4F9B",
+  "identities": [],
+  "multitenancy": {
+    "attribute": null,
+    "global": null,
+    "strategy": null
+  },
+  "repo": "Elixir.Batcher.Repo",
+  "schema": null,
+  "table": "requests"
+}

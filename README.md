@@ -1,185 +1,160 @@
 # OpenAI Batch Manager
 
-OpenAI Batch Manager helps you reduce OpenAI API costs for non-urgent workloads with a simple “send request, get result later” workflow using the [Batch API](https://platform.openai.com/docs/guides/batch).
+OpenAI Batch Manager is a self-hosted service that turns the [OpenAI Batch API](https://developers.openai.com/api/docs/guides/batch/) into a simple workflow:
+send requests now, receive results later (via webhook or RabbitMQ).
 
-## How it works
-
-1. **Submit** — Your program sends requests (e.g. via API or RabbitMQ).
-2. **Batch** — The app groups them by model/endpoint and stores them locally.
-3. **Upload** — Within an hour, it uploads the batch to OpenAI’s platform.
-4. **Poll** — It periodically checks batch status on OpenAI until processing finishes.
-5. **Download** — When done, it fetches the result file and parses per-request outputs.
-6. **Deliver** — Each result is sent back to your program (webhook or RabbitMQ).
-
-![diagram](/docs/how_it_works_diagram.png)
-
-It comes with an [interactive UI](http://localhost:4000), where you can manage your batches, requests and delivery attempts.
+It includes an interactive UI at [http://localhost:4000](http://localhost:4000).
 
 ![ui](/docs/ui.png)
 
-## Why use this project?
+## Quickstart (Docker Compose)
 
-Sending large volumes of requests to OpenAI’s models can get expensive. For high-throughput workloads, OpenAI offers the [Batch API](https://platform.openai.com/docs/guides/batch), which can reduce cost and lets OpenAI process requests asynchronously in the background, often improving throughput by scheduling work when capacity is available.
-
-The Batch API is useful, but it turns “make a request” into a workflow: you have to package inputs, upload batches, poll for status, handle partial failures/expired batches, download outputs, and reconcile results back to the original requests.
-
-OpenAI Batch Manager abstracts this away for you.
-
-You just send it requests, choose how you want results delivered, and it takes care of the batch creation, tracking, retries, resubmission of expired batches, and returning the final output reliably.
-
-## How to use
-
-A build [docker image](https://hub.docker.com/r/williamwinkler/openai-batch-manager) is already available. Simple start it with Docker:
+This repo includes a `docker-compose.yml` that runs Postgres + OpenAI Batch Manager.
 
 ```bash
-docker run -d --name openai-batch-manager \
-  -p 4000:4000 \
-  -e OPENAI_API_KEY="sk-your-key-here" \
-  -v "$(pwd)/data:/data" \
-  williamwinkler/openai-batch-manager:latest
-```
-> The volume is for the SQLite database, where requests and responses are stored locally.
-
-Or with Docker Compose — save as `docker-compose.yml`:
-
-```yaml
-services:
-  openai-batch-manager:
-    image: williamwinkler/openai-batch-manager:latest
-    ports:
-      - "4000:4000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - RABBITMQ_URL=${RABBITMQ_URL}                  # Optional
-      - RABBITMQ_INPUT_QUEUE=${RABBITMQ_INPUT_QUEUE}  # Optional
-    volumes:
-      - ./data:/data
-    logging: # Optional
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "3"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  rabbitmq: # Optional - or use an existing instance
-    image: rabbitmq:4-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+cp .env.example .env
+# edit .env and set OPENAI_API_KEY
+docker compose up -d --build
 ```
 
-Then set environment variables (e.g. in a `.env` file) and run:
+`docker compose` auto-loads `.env` automatically, so `source .env` is not required.
+`docker-compose.yml` provisions Postgres and sets a default internal `DATABASE_URL`.
+If you are using an external Postgres instance, set `DATABASE_URL` in `.env`.
 
-```shell
-docker compose up -d
+Then open:
+
+- UI: [http://localhost:4000](http://localhost:4000)
+- Health check: [http://localhost:4000/health](http://localhost:4000/health)
+- OpenAPI JSON: [http://localhost:4000/api/openapi](http://localhost:4000/api/openapi)
+- Swagger UI: [http://localhost:4000/api/swaggerui](http://localhost:4000/api/swaggerui)
+
+Optional: enable RabbitMQ intake/delivery
+
+1. In `docker-compose.yml`, uncomment the `rabbitmq` service and the `RABBITMQ_*` env var lines under `openai-batch-manager`.
+2. Set:
+
+```env
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+RABBITMQ_INPUT_QUEUE=batch_requests
 ```
 
-### RabbitMQ configuration
+## Send a Request
 
-RabbitMQ is **optional**. The app can ingest requests via the REST API only, or add RabbitMQ for queue-based intake and/or result delivery.
+Submit requests to the service, and it will batch/upload/poll/download and deliver results.
+`custom_id` must be globally unique across all requests.
 
-| Variable | Purpose |
-|----------|---------|
-| `RABBITMQ_URL` | Connection string (e.g. `amqp://user:pass@host:5672`). When set, the app can **publish** completed results to RabbitMQ (per-request delivery to queues you configure). |
-| `RABBITMQ_INPUT_QUEUE` | Queue name. When set together with `RABBITMQ_URL`, the app **consumes** batch requests from this queue (alternative to sending requests via REST). |
-| `RABBITMQ_INPUT_EXCHANGE` | (Optional) Consume from an exchange instead of a queue. If set, `RABBITMQ_INPUT_ROUTING_KEY` must also be set. |
-| `RABBITMQ_INPUT_ROUTING_KEY` | (Optional) Routing key when using `RABBITMQ_INPUT_EXCHANGE`. |
+Webhook delivery:
 
-- **Output delivery:** With `RABBITMQ_URL` set, each completed request can be published to a RabbitMQ queue (you specify the queue when creating the request). Useful for feeding results into other services.
-- **Input:** With both `RABBITMQ_URL` and `RABBITMQ_INPUT_QUEUE` set, the app subscribes to that queue and creates batch requests from messages it receives, so producers can push work via RabbitMQ instead of (or in addition to) the REST API.
-
-### API Documentation
-
-The app serves an OpenAPI specification and interactive Swagger UI:
-
-- **OpenAPI spec (JSON):** http://localhost:4000/api/openapi
-- **Swagger UI:** http://localhost:4000/api/swaggerui
-
-You can use the spec to generate typed API clients. For example:
-
-**TypeScript:**
 ```bash
-npx @openapitools/openapi-generator-cli generate \
-  -i http://localhost:4000/api/openapi \
-  -g typescript-fetch \
-  -o ./generated/typescript-client
+curl -sS -X POST http://localhost:4000/api/requests \
+  -H 'content-type: application/json' \
+  -d '{
+    "custom_id": "example_webhook_001",
+    "url": "/v1/responses",
+    "method": "POST",
+    "body": {
+      "model": "gpt-4o-mini",
+      "input": "Return a JSON object with a single key: answer"
+    },
+    "delivery_config": {
+      "type": "webhook",
+      "webhook_url": "https://example.com/webhook"
+    }
+  }'
 ```
 
-**Python:**
+RabbitMQ delivery (queue-only):
+
 ```bash
-npx @openapitools/openapi-generator-cli generate \
-  -i http://localhost:4000/api/openapi \
-  -g python \
-  -o ./generated/python-client
+curl -sS -X POST http://localhost:4000/api/requests \
+  -H 'content-type: application/json' \
+  -d '{
+    "custom_id": "example_rabbitmq_001",
+    "url": "/v1/responses",
+    "method": "POST",
+    "body": {
+      "model": "gpt-4o-mini",
+      "input": "Write a one sentence summary of: OpenAI Batch Manager"
+    },
+    "delivery_config": {
+      "type": "rabbitmq",
+      "rabbitmq_queue": "batch_results"
+    }
+  }'
 ```
 
-### Data retention
+## Why Use This?
 
-Batches and their requests are automatically cleaned up:
+The OpenAI Batch API is powerful, but it turns a single request into a workflow:
+build the batch file, upload, poll status, handle partial failures/expired batches, download outputs, and deliver results.
 
-- **Completed batches** are deleted locally once their OpenAI file expires (30 days after upload).
-- **Stale building batches** that have been idle for over 1 hour are either uploaded (if they contain requests) or deleted (if empty).
-- **Expired OpenAI batches** (24h processing timeout) have their partial results downloaded and unprocessed requests resubmitted in a new batch.
+OpenAI Batch Manager abstracts that workflow away. You get:
+
+- A single intake API (`POST /api/requests`) with OpenAPI docs.
+- Automatic batch creation + upload + status polling + result download.
+- Delivery attempts with audit trail in the UI.
+- Automatic cleanup of completed/expired/stale batches.
+
+## How It Works
+
+1. **Submit** requests (via REST API, optionally via RabbitMQ intake queue).
+2. **Batch** by model/endpoint and persist locally.
+3. **Upload** to OpenAI Batch API (by default, within about an hour).
+4. **Poll** until OpenAI finishes processing.
+5. **Download** output/error files and parse per-request results.
+6. **Deliver** each result to your destination (webhook or RabbitMQ).
+
+![diagram](/docs/how_it_works_diagram.png)
+
+## Configuration
+
+| Variable | Required | Purpose |
+|----------|:--------:|---------|
+| `OPENAI_API_KEY` | Yes | OpenAI API key used to create and poll batches. |
+| `DATABASE_URL` | Yes | Postgres connection string (Ecto format). |
+| `PORT` | No | HTTP port (default: `4000`). |
+| `RABBITMQ_URL` | No | Enables RabbitMQ output delivery, and input consumption if `RABBITMQ_INPUT_QUEUE` is set. |
+| `RABBITMQ_INPUT_QUEUE` | No | Enables RabbitMQ intake from this queue name (requires `RABBITMQ_URL`). |
+| `DISABLE_DELIVERY_RETRY` | No | When true, delivery attempts are not retried. |
+
+## Operational Notes
+
+- Data artifacts live under `/data/batches` in the container. Postgres stores metadata (batches, requests, delivery attempts).
+- Batches and their requests are automatically cleaned up:
+  - **Completed batches** are deleted locally once their OpenAI file expires (30 days after upload).
+  - **Stale building batches** that have been idle for over 1 hour are either uploaded (if they contain requests) or deleted (if empty).
+  - **Expired OpenAI batches** (24h processing timeout) have their partial results downloaded and unprocessed requests resubmitted in a new batch.
 
 When a batch is deleted locally, its associated OpenAI files (input, output, error) are also cleaned up on the OpenAI platform.
 
-## How to setup
+## Limitations / Not Supported
 
-**You need:** Elixir/Erlang (e.g. [asdf](https://asdf-vm.com/) with `.tool-versions`), SQLite, and an OpenAI API key.
+- No built-in authentication/authorization. Run behind a reverse proxy, VPN, or private network.
+- Not a low-latency API and not a streaming API; this is for asynchronous batch workloads.
+- Delivery should be treated as at-least-once; make your webhook/RabbitMQ consumers idempotent.
+- RabbitMQ delivery is queue-only (`rabbitmq_queue`); custom exchanges/routing keys are not supported (yet).
+- Only OpenAI Batch API workflows are in scope (not a multi-provider LLM router).
+
+## Development (From Source)
+
+You need Elixir/Erlang (e.g. [asdf](https://asdf-vm.com/) with `.tool-versions`), Postgres, and an OpenAI API key.
+For `mix` development, this app reads `DATABASE_URL_DEV` from `config/dev.exs` (not `DATABASE_URL`).
 
 ```bash
-asdf install && mix setup
-export OPENAI_API_KEY="sk-..."
+cp .env.example .env
+# edit .env and set OPENAI_API_KEY
+
+# optional: if your local Postgres is not the default
+export DATABASE_URL_DEV="ecto://postgres:postgres@localhost:5432/openai_batch_manager_dev"
+
+asdf install
+mix setup
 iex -S mix phx.server
 ```
 
-Then you should see the frontedn at: **http://localhost:4000**
+If you keep the default local Postgres settings, you can skip `DATABASE_URL_DEV`.
 
-### Configuration
-
-| Variable | Required | Default |
-|----------|:--------:|--------|
-| `OPENAI_API_KEY` | Yes | — |
-| `PORT` | No | `4000` |
-| `RABBITMQ_URL` | No | — |
-| `RABBITMQ_INPUT_QUEUE` | No | — |
-| `RABBITMQ_INPUT_EXCHANGE` | No | — |
-| `RABBITMQ_INPUT_ROUTING_KEY` | No | — |
-| `DISABLE_DELIVERY_RETRY` | No | `false` |
-
-Data lives at `/data/batcher.db` and `/data/batches` (mount a volume at `/data` in Docker).
-
-When `DISABLE_DELIVERY_RETRY=true` (also accepts `1`/`yes`), failed delivery attempts are **not retried** and each request gets only one delivery attempt.
-
-### Capacity limits behavior
-
-- The app uses **Tier 1 default batch queue limits** for known models.
-- If a model is not covered by Tier 1 defaults, the app uses a conservative unknown-model fallback limit.
-- OpenAI's "TPD" value on the organization limits page behaves like a **max enqueued batch-token headroom** limit per model (tokens in active OpenAI states), not a strict 24-hour cumulative send cap. After earlier batches leave active queue usage, new batches can start the same day.
-
-#### Queue token cap overrides in UI
-
-- Open **`/settings`** to override queue token caps per model.
-- Overrides use **exact model matching** (case-insensitive), not prefixes.
-  - Example: overriding `gpt-4o` does **not** affect `gpt-4o-mini-2024-07-18`.
-- Limit resolution order is:
-  1. Exact model override from `/settings`
-  2. Built-in Tier 1 default for known model families
-  3. Unknown-model fallback limit
-
-## Development
+## Development Commands
 
 ```bash
 mix test
@@ -187,15 +162,18 @@ mix format
 mix precommit
 ```
 
-OpenAI Batch Manager is a standalone [Phoenix](https://phoenixframework.org/) program that turns the OpenAI Batch API into a reliable pipeline: intake via REST (or RabbitMQ), batch aggregation per model/endpoint with GenServer, and background orchestration with Oban (upload → poll → download → deliver). The core domain uses [Ash Framework](https://ash-hq.org/) with SQLite persistence, and a LiveView UI (Tailwind + daisyUI) for visibility into batches and requests.
-
-Use `mix ash.*` for migrations and codegen.
-
-To run RabbitMQ tests, spin up a RabbitMQ instance and run `mix test --include rabbitmq`.
+To run RabbitMQ tests locally, run `mix test --include rabbitmq` with a RabbitMQ instance available.
 
 ## Contributing
 
-Open an issue for bugs or ideas (repro steps and expected behavior). PRs welcome—keep changes focused, add tests where relevant, run `mix precommit` before submitting.
+Open an issue for bugs or ideas. PRs welcome—keep changes focused, add tests where relevant, run `mix precommit` before submitting.
+
+Current baseline:
+
+1. `mix precommit` is the required local/CI quality gate before merging.
+2. `mix format --check-formatted` must pass.
+3. No committed tooling/noise artifacts (for example `.DS_Store` and local logs).
+4. Keep `Ash.*` orchestration out of web modules (`lib/batcher_web`) unless explicitly justified.
 
 ## License
 

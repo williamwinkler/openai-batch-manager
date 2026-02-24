@@ -3,6 +3,9 @@ defmodule BatcherWeb.RequestShowLive do
 
   alias Batcher.Batching
   alias Batcher.Batching.Types.DeliveryType
+  alias BatcherWeb.Live.Utils.ActionActivity
+  alias BatcherWeb.Live.Utils.AsyncActions
+  alias BatcherWeb.Live.Utils.AsyncSections
 
   @per_page 5
 
@@ -13,19 +16,26 @@ defmodule BatcherWeb.RequestShowLive do
     if connected?(socket) do
       BatcherWeb.Endpoint.subscribe("requests:state_changed:#{request_id}")
       BatcherWeb.Endpoint.subscribe("request_delivery_attempts:created:#{request_id}")
+      ActionActivity.subscribe({:request, request_id})
     end
 
-    case Batching.get_request_by_id(request_id) do
+    case Batching.get_request_by_id(request_id, load: [:batch]) do
       {:ok, request} ->
-        request = Ash.load!(request, :batch)
-
         socket =
           socket
-          |> load_request_data(request, 0)
+          |> assign(:request, request)
+          |> assign(:batch, request.batch)
+          |> stream(:delivery_attempts, [], reset: true)
+          |> assign(:delivery_attempts_page, nil)
+          |> assign(:pending_actions, MapSet.new())
+          |> assign(:action_activity_version, 0)
           |> assign(:show_payload_modal, false)
           |> assign(:payload_modal_title, "")
           |> assign(:payload_modal_content, "")
           |> assign(:payload_modal_is_json, false)
+          |> assign(:payload_modal_status, :idle)
+          |> assign(:payload_modal_request_key, nil)
+          |> assign(:request_refresh_request_key, nil)
           |> assign(:editing_delivery_config, false)
           |> assign(
             :delivery_types,
@@ -33,6 +43,9 @@ defmodule BatcherWeb.RequestShowLive do
           )
           |> assign_delivery_config_form_values(request.delivery_config)
           |> assign_delivery_config_form(request)
+          |> AsyncSections.init_section(:delivery_attempts, nil,
+            data_assign: :delivery_attempts_page
+          )
 
         {:ok, socket}
 
@@ -46,121 +59,123 @@ defmodule BatcherWeb.RequestShowLive do
 
   @impl true
   def handle_params(params, _url, socket) do
-    offset = String.to_integer(params["offset"] || "0")
+    offset = parse_offset(params["offset"])
     request = socket.assigns.request
-    {:noreply, load_delivery_attempts(socket, request.id, offset)}
+    key = {:delivery_attempts, request.id, offset, @per_page}
+
+    {:noreply,
+     AsyncSections.load_section(
+       socket,
+       :delivery_attempts,
+       key,
+       fn ->
+         load_delivery_attempts_page(request.id, offset)
+       end,
+       async_name: {:request_show_section, key},
+       data_assign: :delivery_attempts_page
+     )}
   end
 
   @impl true
   def handle_event("show_request_payload", _params, socket) do
-    content = format_json(socket.assigns.request.request_payload)
-
-    socket =
-      socket
-      |> assign(:show_payload_modal, true)
-      |> assign(:payload_modal_title, "Request Payload")
-      |> assign(:payload_modal_content, content)
-      |> assign(:payload_modal_is_json, true)
-
-    {:noreply, socket}
+    open_payload_modal_async(
+      socket,
+      "Request Payload",
+      {:json, socket.assigns.request.request_payload}
+    )
   end
 
   @impl true
   def handle_event("show_response_payload", _params, socket) do
-    content = format_json(socket.assigns.request.response_payload)
-
-    socket =
-      socket
-      |> assign(:show_payload_modal, true)
-      |> assign(:payload_modal_title, "Response Payload")
-      |> assign(:payload_modal_content, content)
-      |> assign(:payload_modal_is_json, true)
-
-    {:noreply, socket}
+    open_payload_modal_async(
+      socket,
+      "Response Payload",
+      {:json, socket.assigns.request.response_payload}
+    )
   end
 
   @impl true
   def handle_event("show_error_msg", _params, socket) do
-    error_msg = socket.assigns.request.error_msg
-    {content, is_json} = format_content_with_type(error_msg)
-
-    socket =
-      socket
-      |> assign(:show_payload_modal, true)
-      |> assign(:payload_modal_title, "Error Message")
-      |> assign(:payload_modal_content, content)
-      |> assign(:payload_modal_is_json, is_json)
-
-    {:noreply, socket}
+    open_payload_modal_async(
+      socket,
+      "Error Message",
+      {:content, socket.assigns.request.error_msg}
+    )
   end
 
   @impl true
   def handle_event("show_attempt_delivery_config", %{"config" => config_json}, socket) do
-    config = Jason.decode!(config_json)
-    content = Jason.encode!(config, pretty: true)
+    config =
+      case Jason.decode(config_json) do
+        {:ok, decoded} -> decoded
+        _ -> config_json
+      end
 
-    socket =
-      socket
-      |> assign(:show_payload_modal, true)
-      |> assign(:payload_modal_title, "Delivery Configuration")
-      |> assign(:payload_modal_content, content)
-      |> assign(:payload_modal_is_json, true)
-
-    {:noreply, socket}
+    open_payload_modal_async(socket, "Delivery Configuration", {:json, config})
   end
 
   @impl true
   def handle_event("show_attempt_error", %{"error" => error_msg}, socket) do
-    {content, is_json} = format_content_with_type(error_msg)
-
-    socket =
-      socket
-      |> assign(:show_payload_modal, true)
-      |> assign(:payload_modal_title, "Delivery Error")
-      |> assign(:payload_modal_content, content)
-      |> assign(:payload_modal_is_json, is_json)
-
-    {:noreply, socket}
+    open_payload_modal_async(socket, "Delivery Error", {:content, error_msg})
   end
 
   @impl true
   def handle_event("close_payload_modal", _params, socket) do
-    {:noreply, assign(socket, :show_payload_modal, false)}
+    {:noreply,
+     socket |> assign(:show_payload_modal, false) |> assign(:payload_modal_status, :idle)}
   end
 
   @impl true
   def handle_event("retry_delivery", _params, socket) do
-    request = socket.assigns.request
+    request_id = socket.assigns.request.id
+    key = {:request_action, :retry_delivery, request_id}
 
-    case Batching.retry_request_delivery(request) do
-      {:ok, updated_request} ->
-        updated_request = Ash.load!(updated_request, :batch)
-        {:noreply, assign(socket, :request, updated_request)}
+    AsyncActions.start_shared_action(
+      socket,
+      key,
+      fn ->
+        maybe_test_async_delay()
+        request = Batching.get_request_by_id!(request_id)
 
-      {:error, _error} ->
-        {:noreply, put_flash(socket, :error, "Failed to retry delivery")}
-    end
+        case Batching.retry_request_delivery(request) do
+          {:ok, updated_request} ->
+            refreshed_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
+
+            {:ok,
+             %{type: :retry_delivery, request: refreshed_request, batch: refreshed_request.batch}}
+
+          {:error, error} ->
+            {:error, "Failed to retry delivery: #{Exception.message(error)}"}
+        end
+      end,
+      scope: {:request, request_id}
+    )
   end
 
   @impl true
   def handle_event("delete_request", _params, socket) do
-    request = socket.assigns.request
+    request_id = socket.assigns.request.id
+    key = {:request_action, :delete_request, request_id}
+    batch_state = socket.assigns.batch.state
 
-    # Only allow deletion if batch is in building state
-    if request.batch.state == :building do
-      case Batching.destroy_request(request) do
-        :ok ->
-          {:noreply,
-           socket
-           |> put_flash(:info, "Request deleted")
-           |> redirect(to: ~p"/requests")}
+    AsyncActions.start_shared_action(
+      socket,
+      key,
+      fn ->
+        maybe_test_async_delay()
+        request = Batching.get_request_by_id!(request_id)
 
-        {:error, _error} ->
-          {:noreply, put_flash(socket, :error, "Failed to delete request")}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Can only delete requests in building batches")}
-    end
+        if batch_state == :building do
+          case Batching.destroy_request(request) do
+            :ok -> {:ok, %{type: :delete_request}}
+            {:error, _error} -> {:error, "Failed to delete request"}
+          end
+        else
+          {:error, "Can only delete requests in building batches"}
+        end
+      end,
+      scope: {:request, request_id}
+    )
   end
 
   @impl true
@@ -185,22 +200,14 @@ defmodule BatcherWeb.RequestShowLive do
   def handle_event("validate_delivery_config", %{"form" => params}, socket) do
     # Update form assigns based on current params
     selected_type = params["delivery_type"] || socket.assigns.selected_delivery_type
-    rabbitmq_mode = params["rabbitmq_mode"] || socket.assigns.form_rabbitmq_mode || "queue"
     webhook_url = params["webhook_url"] || socket.assigns.form_webhook_url || ""
     rabbitmq_queue = params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || ""
-    rabbitmq_exchange = params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || ""
-
-    rabbitmq_routing_key =
-      params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
 
     # Build merged params for validation
     merged_params = %{
       "delivery_type" => selected_type,
       "webhook_url" => webhook_url,
-      "rabbitmq_mode" => rabbitmq_mode,
-      "rabbitmq_queue" => rabbitmq_queue,
-      "rabbitmq_exchange" => rabbitmq_exchange,
-      "rabbitmq_routing_key" => rabbitmq_routing_key
+      "rabbitmq_queue" => rabbitmq_queue
     }
 
     # Build delivery_config and validate
@@ -215,10 +222,7 @@ defmodule BatcherWeb.RequestShowLive do
       |> assign(:delivery_config_form, form)
       |> assign(:selected_delivery_type, selected_type)
       |> assign(:form_webhook_url, webhook_url)
-      |> assign(:form_rabbitmq_mode, rabbitmq_mode)
       |> assign(:form_rabbitmq_queue, rabbitmq_queue)
-      |> assign(:form_rabbitmq_exchange, rabbitmq_exchange)
-      |> assign(:form_rabbitmq_routing_key, rabbitmq_routing_key)
 
     {:noreply, socket}
   end
@@ -229,35 +233,150 @@ defmodule BatcherWeb.RequestShowLive do
     merged_params = %{
       "delivery_type" => params["delivery_type"] || socket.assigns.selected_delivery_type,
       "webhook_url" => params["webhook_url"] || socket.assigns.form_webhook_url || "",
-      "rabbitmq_mode" => params["rabbitmq_mode"] || socket.assigns.form_rabbitmq_mode || "queue",
-      "rabbitmq_queue" => params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || "",
-      "rabbitmq_exchange" =>
-        params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || "",
-      "rabbitmq_routing_key" =>
-        params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
+      "rabbitmq_queue" => params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || ""
     }
 
     # Build the delivery_config from merged params
     delivery_config = build_delivery_config(merged_params)
 
-    case AshPhoenix.Form.submit(socket.assigns.delivery_config_form,
-           params: %{"delivery_config" => delivery_config}
-         ) do
-      {:ok, updated_request} ->
-        updated_request = Ash.load!(updated_request, :batch)
+    request_id = socket.assigns.request.id
+    key = {:request_action, :save_delivery_config, request_id}
+    delivery_config_form = socket.assigns.delivery_config_form
 
-        socket =
-          socket
-          |> assign(:request, updated_request)
-          |> assign(:editing_delivery_config, false)
-          |> assign_delivery_config_form_values(updated_request.delivery_config)
-          |> assign_delivery_config_form(updated_request)
-          |> put_flash(:info, "Delivery configuration updated")
+    AsyncActions.start_shared_action(
+      socket,
+      key,
+      fn ->
+        maybe_test_async_delay()
 
+        case AshPhoenix.Form.submit(delivery_config_form,
+               params: %{"delivery_config" => delivery_config}
+             ) do
+          {:ok, updated_request} ->
+            updated_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
+
+            {:ok,
+             %{
+               type: :save_delivery_config,
+               request: updated_request,
+               batch: updated_request.batch
+             }}
+
+          {:error, form} ->
+            {:error, %{message: "Please fix the form errors", form: form}}
+        end
+      end,
+      scope: {:request, request_id}
+    )
+  end
+
+  @impl true
+  def handle_async({:request_action, action, request_id}, {:ok, result}, socket) do
+    key = {:request_action, action, request_id}
+    socket = AsyncActions.clear_shared_pending(socket, key, scope: {:request, request_id})
+
+    case result do
+      {:ok, %{type: :retry_delivery, request: request, batch: batch}} ->
+        {:noreply,
+         socket
+         |> assign(:request, request)
+         |> assign(:batch, batch)
+         |> put_flash(:info, "Redelivery triggered")}
+
+      {:ok, %{type: :delete_request}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Request deleted")
+         |> redirect(to: ~p"/requests")}
+
+      {:ok, %{type: :save_delivery_config, request: updated_request, batch: batch}} ->
+        {:noreply,
+         socket
+         |> assign(:request, updated_request)
+         |> assign(:batch, batch)
+         |> assign(:editing_delivery_config, false)
+         |> assign_delivery_config_form_values(updated_request.delivery_config)
+         |> assign_delivery_config_form(updated_request)
+         |> put_flash(:info, "Delivery configuration updated")}
+
+      {:error, %{message: msg, form: form}} ->
+        {:noreply, socket |> put_flash(:error, msg) |> assign(:delivery_config_form, form)}
+
+      {:error, message} when is_binary(message) ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  @impl true
+  def handle_async({:request_action, action, request_id}, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> AsyncActions.clear_shared_pending({:request_action, action, request_id},
+       scope: {:request, request_id}
+     )
+     |> put_flash(:error, "Action failed unexpectedly: #{inspect(reason)}")}
+  end
+
+  @impl true
+  def handle_async(
+        {:request_show_section, {:delivery_attempts, request_id, offset, per_page}},
+        result,
+        socket
+      ) do
+    key = {:delivery_attempts, request_id, offset, per_page}
+
+    socket =
+      AsyncSections.handle_section_async(socket, :delivery_attempts, key, result,
+        data_assign: :delivery_attempts_page
+      )
+
+    case socket.assigns.delivery_attempts_page do
+      %{results: results} ->
+        {:noreply, stream(socket, :delivery_attempts, results, reset: true)}
+
+      _ ->
         {:noreply, socket}
+    end
+  end
 
-      {:error, form} ->
-        {:noreply, assign(socket, :delivery_config_form, form)}
+  @impl true
+  def handle_async({:payload_modal, request_key}, result, socket) do
+    if socket.assigns.payload_modal_request_key == request_key do
+      case result do
+        {:ok, {content, is_json}} ->
+          {:noreply,
+           socket
+           |> assign(:payload_modal_content, content)
+           |> assign(:payload_modal_is_json, is_json)
+           |> assign(:payload_modal_status, :ready)}
+
+        {:exit, _reason} ->
+          {:noreply,
+           socket
+           |> assign(:payload_modal_content, "")
+           |> assign(:payload_modal_is_json, false)
+           |> assign(:payload_modal_status, :error)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:request_refresh, request_key}, {:ok, {:ok, request}}, socket) do
+    if socket.assigns.request_refresh_request_key == request_key do
+      {:noreply, socket |> assign(:request, request) |> assign(:batch, request.batch)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:request_refresh, request_key}, _result, socket) do
+    if socket.assigns.request_refresh_request_key == request_key do
+      {:noreply, socket}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -266,9 +385,14 @@ defmodule BatcherWeb.RequestShowLive do
         %{topic: "requests:state_changed:" <> _request_id, payload: %{data: request}},
         socket
       ) do
-    # Reload with batch relationship
-    request = Ash.load!(request, :batch)
-    {:noreply, assign(socket, :request, request)}
+    request_key = {:request_refresh, request.id, System.unique_integer([:positive])}
+
+    {:noreply,
+     socket
+     |> assign(:request_refresh_request_key, request_key)
+     |> start_async({:request_refresh, request_key}, fn ->
+       Batching.get_request_by_id(request.id, load: [:batch])
+     end)}
   end
 
   @impl true
@@ -278,11 +402,28 @@ defmodule BatcherWeb.RequestShowLive do
       ) do
     # Only reload if it belongs to this request
     if attempt.request_id == socket.assigns.request.id do
-      # Reload from offset 0 to show the newest attempt at the top with proper pagination
-      {:noreply, load_delivery_attempts(socket, socket.assigns.request.id, 0)}
+      request_id = socket.assigns.request.id
+      key = {:delivery_attempts, request_id, 0, @per_page}
+
+      {:noreply,
+       AsyncSections.load_section(
+         socket,
+         :delivery_attempts,
+         key,
+         fn ->
+           load_delivery_attempts_page(request_id, 0)
+         end,
+         async_name: {:request_show_section, key},
+         data_assign: :delivery_attempts_page
+       )}
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_info(%{topic: "ui_actions:request:" <> _request_id}, socket) do
+    {:noreply, update(socket, :action_activity_version, &(&1 + 1))}
   end
 
   @impl true
@@ -290,28 +431,21 @@ defmodule BatcherWeb.RequestShowLive do
     {:noreply, socket}
   end
 
-  defp load_request_data(socket, request, offset) do
-    socket
-    |> assign(:request, request)
-    |> load_delivery_attempts(request.id, offset)
+  defp load_delivery_attempts_page(request_id, offset) do
+    Batching.list_delivery_attempts_paginated!(
+      request_id,
+      offset,
+      @per_page,
+      page: [offset: offset, limit: @per_page, count: true]
+    )
   end
 
-  defp load_delivery_attempts(socket, request_id, offset) do
-    query =
-      Batching.RequestDeliveryAttempt
-      |> Ash.Query.for_read(:list_paginated,
-        request_id: request_id,
-        skip: offset,
-        limit: @per_page
-      )
+  @doc """
+  Returns the request input estimate shown in the UI.
 
-    page = Ash.read!(query, page: [offset: offset, limit: @per_page, count: true])
-
-    socket
-    |> stream(:delivery_attempts, page.results, reset: true)
-    |> assign(:delivery_attempts_page, page)
-  end
-
+  Prefers actual token usage from response payload when available, otherwise uses the
+  persisted estimate, and applies the default 10% safety buffer.
+  """
   def estimated_input_from_actual(request) do
     actual_input_tokens = extract_actual_input_tokens(request.response_payload)
 
@@ -438,9 +572,6 @@ defmodule BatcherWeb.RequestShowLive do
           Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) ->
             "RabbitMQ"
 
-          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) ->
-            "RabbitMQ"
-
           true ->
             "Unknown"
         end
@@ -458,10 +589,6 @@ defmodule BatcherWeb.RequestShowLive do
 
       queue = config["rabbitmq_queue"] || config[:rabbitmq_queue] ->
         queue
-
-      exchange = config["rabbitmq_exchange"] || config[:rabbitmq_exchange] ->
-        routing_key = config["rabbitmq_routing_key"] || config[:rabbitmq_routing_key] || ""
-        "#{exchange} → #{routing_key}"
 
       true ->
         "—"
@@ -484,21 +611,8 @@ defmodule BatcherWeb.RequestShowLive do
     socket
     |> assign(:selected_delivery_type, current_delivery_type(config))
     |> assign(:form_webhook_url, current_webhook_url(config))
-    |> assign(:form_rabbitmq_mode, current_rabbitmq_mode(config))
     |> assign(:form_rabbitmq_queue, current_rabbitmq_queue(config))
-    |> assign(:form_rabbitmq_exchange, current_rabbitmq_exchange(config))
-    |> assign(:form_rabbitmq_routing_key, current_rabbitmq_routing_key(config))
   end
-
-  defp current_rabbitmq_mode(nil), do: "queue"
-
-  defp current_rabbitmq_mode(config) when is_map(config) do
-    exchange = config["rabbitmq_exchange"] || config[:rabbitmq_exchange]
-
-    if non_empty?(exchange), do: "exchange", else: "queue"
-  end
-
-  defp current_rabbitmq_mode(_), do: "queue"
 
   defp build_delivery_config(params) when is_map(params) do
     type = params["delivery_type"]
@@ -508,23 +622,7 @@ defmodule BatcherWeb.RequestShowLive do
         %{"type" => "webhook", "webhook_url" => params["webhook_url"] || ""}
 
       "rabbitmq" ->
-        # Default to "queue" mode if not specified (e.g., when first switching to rabbitmq)
-        mode = params["rabbitmq_mode"] || "queue"
-
-        case mode do
-          "queue" ->
-            %{"type" => "rabbitmq", "rabbitmq_queue" => params["rabbitmq_queue"] || ""}
-
-          "exchange" ->
-            %{
-              "type" => "rabbitmq",
-              "rabbitmq_exchange" => params["rabbitmq_exchange"] || "",
-              "rabbitmq_routing_key" => params["rabbitmq_routing_key"] || ""
-            }
-
-          _ ->
-            %{"type" => "rabbitmq", "rabbitmq_queue" => ""}
-        end
+        %{"type" => "rabbitmq", "rabbitmq_queue" => params["rabbitmq_queue"] || ""}
 
       "" ->
         # No type selected yet
@@ -541,10 +639,9 @@ defmodule BatcherWeb.RequestShowLive do
 
   defp build_delivery_config(_), do: %{}
 
-  defp non_empty?(nil), do: false
-  defp non_empty?(""), do: false
-  defp non_empty?(_), do: true
-
+  @doc """
+  Returns the normalized delivery type (`\"webhook\"` or `\"rabbitmq\"`) from config.
+  """
   def current_delivery_type(nil), do: nil
 
   def current_delivery_type(config) when is_map(config) do
@@ -564,9 +661,6 @@ defmodule BatcherWeb.RequestShowLive do
             "webhook"
 
           Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) ->
-            "rabbitmq"
-
-          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) ->
             "rabbitmq"
 
           true ->
@@ -593,22 +687,6 @@ defmodule BatcherWeb.RequestShowLive do
 
   def current_rabbitmq_queue(_), do: ""
 
-  def current_rabbitmq_exchange(nil), do: ""
-
-  def current_rabbitmq_exchange(config) when is_map(config) do
-    config["rabbitmq_exchange"] || config[:rabbitmq_exchange] || ""
-  end
-
-  def current_rabbitmq_exchange(_), do: ""
-
-  def current_rabbitmq_routing_key(nil), do: ""
-
-  def current_rabbitmq_routing_key(config) when is_map(config) do
-    config["rabbitmq_routing_key"] || config[:rabbitmq_routing_key] || ""
-  end
-
-  def current_rabbitmq_routing_key(_), do: ""
-
   def get_form_errors(form) do
     try do
       case AshPhoenix.Form.errors(form) do
@@ -624,6 +702,54 @@ defmodule BatcherWeb.RequestShowLive do
       end
     rescue
       _ -> []
+    end
+  end
+
+  def pending_action?(pending_actions, action, request_id) do
+    key = {:request_action, action, request_id}
+    AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
+  end
+
+  def loading_delivery_attempts?(status), do: status in [:loading_initial, :refreshing]
+
+  def loading_payload_modal?(status), do: status == :loading
+
+  defp open_payload_modal_async(socket, title, payload) do
+    request_key = {title, System.unique_integer([:positive])}
+
+    socket =
+      socket
+      |> assign(:show_payload_modal, true)
+      |> assign(:payload_modal_title, title)
+      |> assign(:payload_modal_content, "")
+      |> assign(:payload_modal_is_json, false)
+      |> assign(:payload_modal_status, :loading)
+      |> assign(:payload_modal_request_key, request_key)
+      |> start_async({:payload_modal, request_key}, fn ->
+        case payload do
+          {:json, content} -> {format_json(content), true}
+          {:content, content} -> format_content_with_type(content)
+        end
+      end)
+
+    {:noreply, socket}
+  end
+
+  defp parse_offset(nil), do: 0
+
+  defp parse_offset(raw) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {offset, ""} when offset >= 0 -> offset
+      _ -> 0
+    end
+  end
+
+  defp parse_offset(_), do: 0
+
+  defp maybe_test_async_delay do
+    case Application.get_env(:batcher, :batch_action_test_delay_ms, 0) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
     end
   end
 end

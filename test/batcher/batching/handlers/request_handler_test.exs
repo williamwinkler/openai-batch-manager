@@ -16,7 +16,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
           {"/v1/chat/completions", "gpt-4"},
           {"/v1/embeddings", "text-embedding-ada-002"}
         ] do
-      case Registry.lookup(Batcher.BatchRegistry, {url, model}) do
+      case Registry.lookup(Batcher.Batching.Registry, {url, model}) do
         [{pid, _}] ->
           ref = Process.monitor(pid)
           Process.exit(pid, :kill)
@@ -133,7 +133,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
       assert {:error, :custom_id_already_taken} = result
     end
 
-    test "handles RabbitMQ delivery type with queue only (default exchange)" do
+    test "handles RabbitMQ delivery type with queue" do
       request_data = %{
         custom_id: "rabbitmq_handler_test",
         url: "/v1/responses",
@@ -155,7 +155,7 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
       assert request.delivery_config["rabbitmq_queue"] == "results_queue"
     end
 
-    test "handles RabbitMQ delivery type with exchange and routing_key" do
+    test "rejects RabbitMQ delivery type with exchange and routing_key" do
       request_data = %{
         custom_id: "rabbitmq_exchange_handler_test",
         url: "/v1/responses",
@@ -171,12 +171,8 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
         }
       }
 
-      {:ok, request} = RequestHandler.handle(request_data)
-
-      assert request.custom_id == "rabbitmq_exchange_handler_test"
-      assert request.delivery_config["type"] == "rabbitmq"
-      assert request.delivery_config["rabbitmq_exchange"] == "batching.results"
-      assert request.delivery_config["rabbitmq_routing_key"] == "requests.completed"
+      assert {:error, {:batch_assignment_error, message}} = RequestHandler.handle(request_data)
+      assert message =~ "rabbitmq_exchange is no longer supported"
     end
 
     test "handles concurrent requests to same BatchBuilder" do

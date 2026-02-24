@@ -67,10 +67,11 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Click the upload button
       view
-      |> element("button[phx-click='upload_batch']")
+      |> element("#upload-batch")
       |> render_click()
 
       # The batch state should change
+      :timer.sleep(150)
       html = render(view)
       assert html =~ "uploading" or html =~ "Batch upload started"
     end
@@ -88,11 +89,12 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Click the cancel button
       view
-      |> element("button[phx-click='cancel_batch']")
+      |> element("#cancel-batch")
       |> render_click()
 
+      :timer.sleep(150)
       html = render(view)
-      assert html =~ "cancelled"
+      assert html =~ "Batch cancelled successfully" or html =~ "cancelled"
     end
   end
 
@@ -110,15 +112,24 @@ defmodule BatcherWeb.BatchShowLiveTest do
       # First cancel the batch so delete is available
       {:ok, cancelled_batch} = Batching.cancel_batch(batch)
 
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 150)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
       {:ok, view, _html} = live(conn, ~p"/batches/#{cancelled_batch.id}")
 
       # Click delete button
       view
-      |> element("button[phx-click='delete_batch']")
+      |> element("#delete-batch")
       |> render_click()
 
+      assert has_element?(view, "button#delete-batch[disabled]", "Deleting...")
+
       # Should redirect to batches list
-      assert_redirect(view, ~p"/batches")
+      assert_redirect(view, ~p"/batches", 1_000)
     end
   end
 
@@ -128,6 +139,17 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Should have timeline section
       assert html =~ "Timeline"
+    end
+
+    test "shows future expected states when waiting for capacity", %{conn: conn} do
+      batch = generate(seeded_batch(state: :waiting_for_capacity))
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      :timer.sleep(120)
+      html = render(view)
+      assert html =~ "OpenAI processing"
+      assert html =~ "OpenAI completed"
     end
   end
 
@@ -224,11 +246,149 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> element("button[phx-click='open_capacity_modal']")
       |> render_click()
 
+      wait_for(fn ->
+        render(view) =~ "starting it now would exceed the rate limit and cause errors"
+      end)
+
       html = render(view)
 
       assert html =~ "Why This Batch Is Waiting"
       assert html =~ "starting it now would exceed the rate limit and cause errors"
       refute html =~ "Older waiting batch has priority (FIFO)"
+    end
+  end
+
+  describe "restart batch action" do
+    test "restart button is visible for failed batches", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed))
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{failed_batch.id}")
+
+      assert html =~ "Restart Batch"
+    end
+
+    test "clicking restart transitions failed batch back into processing flow", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed, openai_input_file_id: "file_in"))
+      generate(seeded_request(batch_id: failed_batch.id, state: :failed))
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{failed_batch.id}")
+
+      view
+      |> element("#restart-batch")
+      |> render_click()
+
+      :timer.sleep(150)
+      html = render(view)
+      assert html =~ "Batch restart initiated successfully"
+      assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
+    end
+  end
+
+  describe "async action UX" do
+    test "shows cancel spinner while pending", %{conn: conn, batch: batch} do
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 250)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("#cancel-batch")
+      |> render_click()
+
+      assert has_element?(view, "button#cancel-batch[disabled]", "Cancelling...")
+
+      :timer.sleep(400)
+      refute render(view) =~ "Cancelling..."
+    end
+  end
+
+  describe "batch error modal" do
+    test "opens and closes modal for JSON error", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :failed,
+            error_msg: ~s({"error":{"message":"boom","code":"bad_request"}})
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("div[phx-click='show_batch_error']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "Batch Error"
+      assert html =~ "boom"
+      assert html =~ "bad_request"
+      assert has_element?(view, "button[phx-click='close_batch_error_modal']")
+
+      view
+      |> element("button[phx-click='close_batch_error_modal']")
+      |> render_click()
+
+      refute has_element?(view, "button[phx-click='close_batch_error_modal']")
+    end
+
+    test "shows plain text for non-json error", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :failed,
+            error_msg: "Something went wrong without JSON"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("div[phx-click='show_batch_error']")
+      |> render_click()
+
+      html = render(view)
+      assert html =~ "Batch Error"
+      assert html =~ "Something went wrong without JSON"
+    end
+  end
+
+  describe "token-limit backoff visibility" do
+    test "shows backoff panel for token_limit_exceeded_backoff waiting batch", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "token_limit_exceeded_backoff",
+            token_limit_retry_attempts: 2,
+            token_limit_retry_next_at: DateTime.add(DateTime.utc_now(), 300, :second)
+          )
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+
+      assert html =~ "OpenAI Queue Backoff"
+      assert html =~ "Retry attempt"
+      assert html =~ "2/5"
+      assert html =~ "This batch will retry automatically"
+    end
+  end
+
+  defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)
+
+  defp wait_for(fun, attempts, _sleep_ms) when attempts <= 0 do
+    assert fun.()
+  end
+
+  defp wait_for(fun, attempts, sleep_ms) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(sleep_ms)
+      wait_for(fun, attempts - 1, sleep_ms)
     end
   end
 end

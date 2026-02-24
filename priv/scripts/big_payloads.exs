@@ -8,27 +8,27 @@ defmodule BigPayloadScript do
   @model "gpt-4o-mini"
   @url "/v1/responses"
   @count 50_000
-  @payload_bytes 16_384
-  @webhook_url "https://example.com/webhook"
+  @payload_bytes 5_460
+  @rabbitmq_queue "batch_results"
   @payload_scenarios [
     %{
       input: """
       Incident Report
       Service: batch-orchestrator
       Date: 2026-02-10
-      Summary: Elevated queue latency observed between 14:05 and 14:37 UTC.
+      Summary: Queue latency spike between 14:05 and 14:37 UTC.
       Symptoms:
-      - p95 enqueue-to-dispatch latency increased from 900ms to 12.4s
-      - Duplicate webhook deliveries observed for 0.7% of completed items
-      - Capacity controller oscillated between admit/reject every 20-30 seconds
+      - p95 enqueue-to-dispatch rose from 900ms to 12.4s
+      - 0.7% duplicate deliveries
+      - Capacity controller oscillated every 20-30 seconds
       Findings:
-      1) Upstream retries surged during a partial provider outage.
-      2) The worker pool was saturated by long-running download jobs.
-      3) Backoff policy used fixed intervals instead of jittered exponential backoff.
+      1) Upstream retries surged during provider degradation.
+      2) Download workers saturated the pool.
+      3) Retry backoff lacked jitter.
       Action items:
-      - Introduce per-model fairness queue
-      - Add jitter to retry policy
-      - Separate dispatch and retrieval worker pools
+      - Add per-model fairness queue
+      - Add jittered exponential backoff
+      - Split dispatch and retrieval workers
       """
     },
     %{
@@ -36,32 +36,32 @@ defmodule BigPayloadScript do
       Product Requirements Document
       Feature: Capacity-Aware Admission
       Goal:
-      Admit requests into batches based on model-level token budgets while maximizing throughput.
+      Admit requests using model token budgets while maximizing throughput.
       Constraints:
-      - Requests must preserve FIFO fairness within each tenant.
-      - Admission decisions must be deterministic and auditable.
-      - State transitions must remain idempotent under retries.
+      - Preserve per-tenant FIFO fairness
+      - Deterministic, auditable decisions
+      - Idempotent transitions under retry
       Non-goals:
       - Dynamic model selection at runtime
       - Automatic prompt rewriting
       Acceptance criteria:
-      - 99% of waiting requests are admitted within 5 minutes under steady load.
-      - Throughput degrades gracefully under provider rate limit reductions.
-      - Operators can inspect waiting reason and last capacity check timestamp.
+      - 99% admitted within 5 minutes under steady load
+      - Graceful degradation under lower provider limits
+      - Operators can inspect waiting reason and last capacity check
       """
     },
     %{
       input: """
       Customer Support Conversation
-      Agent: Thanks for contacting support. Could you share your request id and approximate timestamp?
-      Customer: Request id req_9fc21, around 08:13 UTC. The response came back empty.
-      Agent: I can see the batch transitioned from validating to in_progress and then completed.
-      Customer: Why did my payload fail validation if it completed?
-      Agent: It completed at the batch level, but one request item was rejected due to malformed JSON.
+      Agent: Please share request id and timestamp.
+      Customer: req_9fc21 around 08:13 UTC returned empty.
+      Agent: Batch completed, but one item failed validation.
+      Customer: Why if the batch completed?
+      Agent: Batch-level completion can include item-level failures.
       Customer: Can I retry just that one item?
-      Agent: Yes. Resubmit the failed item with a new custom_id and we'll deduplicate safely.
-      Customer: Great, can you include webhook retries if my endpoint is down?
-      Agent: Absolutely. We'll retry with exponential backoff for up to 24 hours.
+      Agent: Yes, resubmit with a new custom_id for safe dedupe.
+      Customer: Can retries handle endpoint downtime?
+      Agent: Yes, exponential backoff up to 24 hours.
       """
     },
     %{
@@ -69,11 +69,11 @@ defmodule BigPayloadScript do
       Security Triage Task
       Analyze this incident and return structured data matching the response schema.
       Evidence:
-      - API token rotation failed for one tenant after a deployment.
-      - 342 requests were rejected with invalid_signature during 18 minutes.
+      - Token rotation failed for one tenant after deploy.
+      - 342 requests were rejected with invalid_signature in 18 minutes.
       - No unauthorized reads detected in audit logs.
-      - Temporary mitigation was manual key re-issuance.
-      - Follow-up work includes key lifecycle automation and deployment safeguards.
+      - Mitigation was manual key re-issuance.
+      - Follow-up: key lifecycle automation and deploy safeguards.
       """,
       text: %{
         "format" => %{
@@ -133,7 +133,7 @@ defmodule BigPayloadScript do
       <head><title>Ultralight Hiking Pack 38L - SummitTrail</title></head>
       <body>
       <h1>Ultralight Hiking Pack 38L</h1>
-      <p class="subtitle">Built for multi-day treks and carry-on travel.</p>
+      <p class="subtitle">Built for multi-day treks.</p>
       <div class="pricing">
         <span class="price">$149.00</span>
         <span class="sale">Now $119.00</span>
@@ -141,15 +141,14 @@ defmodule BigPayloadScript do
       <ul class="specs">
         <li>Capacity: 38 liters</li>
         <li>Weight: 0.92 kg</li>
-        <li>Material: Ripstop nylon, recycled 60%</li>
-        <li>Frame: Removable aluminum stay</li>
+        <li>Material: Ripstop nylon</li>
       </ul>
       <div class="shipping">Ships in 2-3 business days from Denver, CO.</div>
-      <div class="returns">30-day returns. Final sale colors excluded.</div>
+      <div class="returns">30-day returns.</div>
       <div class="rating">4.7 out of 5 (1,284 reviews)</div>
       <div class="faq">
         <p>Q: Is it carry-on compatible?</p>
-        <p>A: Yes, fits most domestic overhead bins when not overpacked.</p>
+        <p>A: Yes.</p>
       </div>
       </body>
       </html>
@@ -229,16 +228,15 @@ defmodule BigPayloadScript do
       input: """
       Architecture Notes
       System components:
-      - API ingress receives request envelopes and validates shape.
-      - Admission controller estimates tokens and places requests into capacity queues.
-      - Batch builder groups compatible requests by model, endpoint, and payload limits.
-      - Dispatcher uploads JSONL files and transitions batch state machine.
-      - Retriever polls provider status and downloads result files when complete.
+      - API ingress validates request envelopes.
+      - Admission controller estimates tokens and queues requests.
+      - Batch builder groups by model, endpoint, and limits.
+      - Dispatcher uploads JSONL and transitions batch state.
+      - Retriever polls status and downloads results.
       Operational guidance:
-      Keep dashboards focused on admission lag, queue depth, dispatch success rate,
-      provider HTTP error classes, and delivery retry backlog.
-      When diagnosing incidents, start with the timeline of state transitions and
-      compare expected token budgets with observed usage by model.
+      Monitor admission lag, queue depth, dispatch success, provider HTTP errors,
+      and delivery retry backlog. Diagnose via state-transition timeline and
+      expected vs observed token usage by model.
       """
     }
   ]
@@ -308,7 +306,7 @@ defmodule BigPayloadScript do
       "body" => build_body(scenario),
       "delivery_config" => %{
         "type" => "webhook",
-        "webhook_url" => @webhook_url
+        "webhook_url" => "http://host.docker.internal:6000/webhook"
       }
     }
   end

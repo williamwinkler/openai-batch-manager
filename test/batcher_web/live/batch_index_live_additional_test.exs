@@ -180,12 +180,12 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
-      view
-      |> element("button[phx-click='cancel_batch'][phx-value-id='#{batch.id}']")
-      |> render_click()
+      render_click(view, "cancel_batch", %{"id" => Integer.to_string(batch.id)})
 
-      html = render(view)
-      assert html =~ "Cancelled" or html =~ "cancelled"
+      wait_for(fn ->
+        html = render(view)
+        html =~ "Batch cancelled successfully" or html =~ "Cancelled" or html =~ "cancelled"
+      end)
     end
   end
 
@@ -203,13 +203,130 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
+      render_click(view, "delete_batch", %{"id" => Integer.to_string(batch.id)})
+
+      wait_for(fn -> not has_element?(view, "#batches-row-#{batch.id}") end)
+    end
+  end
+
+  describe "restart batch action" do
+    test "restart button is visible only for failed batches", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed))
+      active_batch = generate(batch())
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(
+               view,
+               "#restart-batch-#{failed_batch.id}"
+             )
+
+      refute has_element?(
+               view,
+               "#restart-batch-#{active_batch.id}"
+             )
+    end
+
+    test "clicking restart moves failed batch back into processing flow", %{conn: conn} do
+      failed_batch = generate(seeded_batch(state: :failed, openai_input_file_id: "file_in"))
+      generate(seeded_request(batch_id: failed_batch.id, state: :failed))
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      render_click(view, "restart_batch", %{"id" => Integer.to_string(failed_batch.id)})
+
+      wait_for(fn -> render(view) =~ "Batch restart initiated successfully" end)
+      html = render(view)
+      assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
+    end
+  end
+
+  describe "token-limit backoff badge" do
+    test "shows backoff badge only for waiting token-limit batches", %{conn: conn} do
+      backoff_batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "token_limit_exceeded_backoff",
+            token_limit_retry_attempts: 2,
+            token_limit_retry_next_at: DateTime.add(DateTime.utc_now(), 300, :second)
+          )
+        )
+
+      normal_waiting =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "insufficient_headroom"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(view, "#batches-row-#{backoff_batch.id}", "Backoff 2/5")
+      refute has_element?(view, "#batches-row-#{normal_waiting.id}", "Backoff")
+    end
+  end
+
+  describe "async action UX" do
+    test "shows spinner and disables only clicked button while action is pending", %{conn: conn} do
+      batch = generate(seeded_batch(state: :building, request_count: 1))
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 250)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
       view
-      |> element("button[phx-click='delete_batch'][phx-value-id='#{batch.id}']")
+      |> element("#cancel-batch-#{batch.id}")
       |> render_click()
 
-      html = render(view)
-      # Batch should no longer be in the list
-      refute html =~ "id=\"batches-row-#{batch.id}\""
+      wait_for(fn -> has_element?(view, "button#cancel-batch-#{batch.id}[disabled]") end)
+      refute has_element?(view, "button#upload-batch-#{batch.id}[disabled]")
+
+      :timer.sleep(400)
+      refute has_element?(view, "button#cancel-batch-#{batch.id}[disabled]")
+    end
+
+    test "keeps batch action disabled after navigation while action lock is active", %{conn: conn} do
+      batch = generate(seeded_batch(state: :building, request_count: 1))
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 500)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      view
+      |> element("#cancel-batch-#{batch.id}")
+      |> render_click()
+
+      wait_for(fn -> has_element?(view, "button#cancel-batch-#{batch.id}[disabled]") end)
+
+      # Simulate leaving and coming back to /batches: lock should still keep button disabled.
+      {:ok, view2, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(view2, "button#cancel-batch-#{batch.id}[disabled]")
+    end
+  end
+
+  defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)
+
+  defp wait_for(fun, attempts, _sleep_ms) when attempts <= 0 do
+    assert fun.()
+  end
+
+  defp wait_for(fun, attempts, sleep_ms) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(sleep_ms)
+      wait_for(fun, attempts - 1, sleep_ms)
     end
   end
 end

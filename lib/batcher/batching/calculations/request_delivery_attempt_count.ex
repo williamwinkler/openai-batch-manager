@@ -1,7 +1,7 @@
 defmodule Batcher.Batching.Calculations.RequestDeliveryAttemptCount do
   @moduledoc """
   Calculation to count the number of delivery attempts for a request.
-  This is done in the application since SQLite does not support it natively.
+  This is done in the application layer for compatibility with existing callers.
   """
   use Ash.Resource.Calculation
 
@@ -9,6 +9,7 @@ defmodule Batcher.Batching.Calculations.RequestDeliveryAttemptCount do
   alias Batcher.Batching.RequestDeliveryAttempt
 
   @impl true
+  @doc false
   def calculate(records, _opts, _context) do
     # record is a request here
     Enum.map(records, fn record ->

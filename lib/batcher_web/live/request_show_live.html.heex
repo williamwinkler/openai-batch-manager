@@ -11,14 +11,21 @@
         <h1 class="text-xl font-semibold font-mono">{@request.custom_id}</h1>
         <.status_badge status={@request.state} type={:request} />
       </div>
+      <% delete_pending = pending_action?(@pending_actions, :delete_request, @request.id) %>
       <button
-        :if={@request.batch.state == :building}
+        :if={@batch.state == :building}
         type="button"
+        id="delete-request"
         class="btn btn-error btn-sm"
-        phx-click="delete_request"
+        phx-click={JS.push("delete_request", loading: "#delete-request")}
         data-confirm="Are you sure you want to delete this request?"
+        disabled={delete_pending}
       >
-        <.icon name="hero-trash" class="w-4 h-4" /> Delete
+        <%= if delete_pending do %>
+          <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Deleting...
+        <% else %>
+          <.icon name="hero-trash" class="w-4 h-4" /> Delete
+        <% end %>
       </button>
     </div>
 
@@ -107,18 +114,6 @@
                 {delivery_destination(@request.delivery_config)}
               </div>
             </div>
-            <%= if current_rabbitmq_exchange(@request.delivery_config) != "" do %>
-              <div>
-                <div class="text-base-content/50 mb-1">Exchange</div>
-                <div class="font-mono">{current_rabbitmq_exchange(@request.delivery_config)}</div>
-              </div>
-              <div>
-                <div class="text-base-content/50 mb-1">Routing Key</div>
-                <div class="font-mono">
-                  {current_rabbitmq_routing_key(@request.delivery_config)}
-                </div>
-              </div>
-            <% end %>
           </div>
         </div>
       </div>
@@ -180,7 +175,15 @@
       <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="font-medium">Delivery attempts</span>
-          <span class="text-sm text-base-content/50">{@delivery_attempts_page.count || 0}</span>
+          <span :if={@delivery_attempts_page} class="text-sm text-base-content/50">
+            {@delivery_attempts_page.count || 0}
+          </span>
+          <span
+            :if={@delivery_attempts_page && @delivery_attempts_status == :refreshing}
+            class="text-xs text-base-content/60 flex items-center gap-1"
+          >
+            <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" /> Refreshing...
+          </span>
         </div>
         <div class="flex items-center gap-2">
           <button
@@ -198,81 +201,95 @@
           >
             <button
               type="button"
+              id="retry-delivery"
               class="btn btn-sm btn-primary"
-              phx-click="retry_delivery"
-              phx-disable-with="Redelivering..."
+              phx-click={JS.push("retry_delivery", loading: "#retry-delivery")}
+              disabled={pending_action?(@pending_actions, :retry_delivery, @request.id)}
             >
-              <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
+              <%= if pending_action?(@pending_actions, :retry_delivery, @request.id) do %>
+                <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Redelivering...
+              <% else %>
+                <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
+              <% end %>
             </button>
           </div>
         </div>
       </div>
 
-      <%= if (@delivery_attempts_page.count || 0) == 0 do %>
-        <div class="p-8 text-center text-base-content/50">
-          No delivery attempts yet
-        </div>
-      <% else %>
-        <.table id="delivery_attempts" rows={@streams.delivery_attempts}>
-          <:col :let={{_id, attempt}} label="ID" width="w-1/12">
-            <span class="font-mono text-xs text-base-content/50">{attempt.id}</span>
-          </:col>
-          <:col :let={{_id, attempt}} label="Delivery" width="w-2/12">
-            <button
-              type="button"
-              class="hover:opacity-80 transition-opacity cursor-pointer"
-              phx-click="show_attempt_delivery_config"
-              phx-value-config={Jason.encode!(attempt.delivery_config)}
-              title="Click to view delivery config"
-            >
-              <.delivery_config_display config={attempt.delivery_config} />
-            </button>
-          </:col>
-          <:col :let={{_id, attempt}} label="Outcome" width="w-2/12">
-            <%= if attempt.outcome == :success do %>
-              <.status_badge status={:delivered} type={:request} />
-            <% else %>
-              <.status_badge status={:delivery_failed} type={:request} />
-            <% end %>
-          </:col>
-          <:col :let={{_id, attempt}} label="Error" width="w-5/12">
-            <%= if attempt.error_msg do %>
+      <%= cond do %>
+        <% @delivery_attempts_status == :loading_initial -> %>
+          <div class="p-8 text-center text-base-content/60 flex items-center justify-center gap-2">
+            <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
+            Loading delivery attempts...
+          </div>
+        <% @delivery_attempts_status == :error and is_nil(@delivery_attempts_page) -> %>
+          <div class="p-8 text-center text-base-content/50">Delivery attempts unavailable</div>
+        <% (@delivery_attempts_page.count || 0) == 0 -> %>
+          <div class="p-8 text-center text-base-content/50">
+            No delivery attempts yet
+          </div>
+        <% true -> %>
+          <.table id="delivery_attempts" rows={@streams.delivery_attempts}>
+            <:col :let={{_id, attempt}} label="ID" width="w-1/12">
+              <span class="font-mono text-xs text-base-content/50">{attempt.id}</span>
+            </:col>
+            <:col :let={{_id, attempt}} label="Delivery" width="w-2/12">
               <button
                 type="button"
-                class="text-xs text-error hover:text-error/80 transition-colors cursor-pointer flex items-center gap-1 w-full"
-                phx-click="show_attempt_error"
-                phx-value-error={attempt.error_msg}
-                title="Click to view full error"
+                class="hover:opacity-80 transition-opacity cursor-pointer"
+                phx-click="show_attempt_delivery_config"
+                phx-value-config={Jason.encode!(attempt.delivery_config)}
+                title="Click to view delivery config"
               >
-                <span class="truncate">{attempt.error_msg}</span>
-                <.icon name="hero-arrows-pointing-out" class="w-3 h-3 shrink-0 opacity-50" />
+                <.delivery_config_display config={attempt.delivery_config} />
               </button>
-            <% else %>
-              <span class="text-xs text-base-content/50">—</span>
-            <% end %>
-          </:col>
-          <:col :let={{_id, attempt}} label="Time" width="w-1/12">
-            <span class="text-xs text-base-content/50">
-              <%= if attempt.attempted_at do %>
-                <span
-                  id={"attempt-time-#{attempt.id}"}
-                  phx-hook="LocalTime"
-                  data-utc={DateTime.to_iso8601(attempt.attempted_at)}
-                  data-format="time"
-                >
-                  {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
-                </span>
+            </:col>
+            <:col :let={{_id, attempt}} label="Outcome" width="w-2/12">
+              <%= if attempt.outcome == :success do %>
+                <.status_badge status={:delivered} type={:request} />
               <% else %>
-                —
+                <.status_badge status={:delivery_failed} type={:request} />
               <% end %>
-            </span>
-          </:col>
-        </.table>
+            </:col>
+            <:col :let={{_id, attempt}} label="Error" width="w-5/12">
+              <%= if attempt.error_msg do %>
+                <button
+                  type="button"
+                  class="text-xs text-error hover:text-error/80 transition-colors cursor-pointer flex items-center gap-1 w-full"
+                  phx-click="show_attempt_error"
+                  phx-value-error={attempt.error_msg}
+                  title="Click to view full error"
+                >
+                  <span class="truncate">{attempt.error_msg}</span>
+                  <.icon name="hero-arrows-pointing-out" class="w-3 h-3 shrink-0 opacity-50" />
+                </button>
+              <% else %>
+                <span class="text-xs text-base-content/50">—</span>
+              <% end %>
+            </:col>
+            <:col :let={{_id, attempt}} label="Time" width="w-1/12">
+              <span class="text-xs text-base-content/50">
+                <%= if attempt.attempted_at do %>
+                  <span
+                    id={"attempt-time-#{attempt.id}"}
+                    phx-hook="LocalTime"
+                    data-utc={DateTime.to_iso8601(attempt.attempted_at)}
+                    data-format="time"
+                  >
+                    {Calendar.strftime(attempt.attempted_at, "%H:%M:%S")}
+                  </span>
+                <% else %>
+                  —
+                <% end %>
+              </span>
+            </:col>
+          </.table>
       <% end %>
     </div>
 
     <%!-- Delivery attempts pagination --%>
     <.numbered_pagination
+      :if={@delivery_attempts_page}
       page={@delivery_attempts_page}
       base_path={~p"/requests/#{@request.id}"}
       extra_params={[]}
@@ -320,17 +337,24 @@
 
       <%!-- Body --%>
       <div class="p-6 overflow-auto flex-1">
-        <%= if @payload_modal_is_json do %>
-          <pre
-            id="payload-modal-content"
-            class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
-            phx-hook="JsonSyntaxHighlight"
-          >{@payload_modal_content}</pre>
-        <% else %>
-          <pre
-            id="payload-modal-content"
-            class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all"
-          >{@payload_modal_content}</pre>
+        <%= cond do %>
+          <% loading_payload_modal?(@payload_modal_status) -> %>
+            <div class="text-sm text-base-content/60 flex items-center gap-2">
+              <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Loading content...
+            </div>
+          <% @payload_modal_status == :error -> %>
+            <div class="text-sm text-error">Unable to format content</div>
+          <% @payload_modal_is_json -> %>
+            <pre
+              id="payload-modal-content"
+              class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all json-syntax"
+              phx-hook="JsonSyntaxHighlight"
+            >{@payload_modal_content}</pre>
+          <% true -> %>
+            <pre
+              id="payload-modal-content"
+              class="text-sm font-mono leading-relaxed whitespace-pre-wrap break-all"
+            >{@payload_modal_content}</pre>
         <% end %>
       </div>
     </div>
@@ -360,6 +384,7 @@
           for={@delivery_config_form}
           phx-change="validate_delivery_config"
           phx-submit="save_delivery_config"
+          id="save-delivery-config-form"
           class="space-y-4"
         >
           <div>
@@ -401,21 +426,6 @@
           <div :if={@selected_delivery_type == "rabbitmq"} class="space-y-4">
             <div>
               <label class="label mb-1">
-                <span class="label-text">Exchange Mode</span>
-              </label>
-              <select name="form[rabbitmq_mode]" class="select select-bordered w-full">
-                <option value="queue" selected={@form_rabbitmq_mode == "queue"}>
-                  Default Exchange (publish directly to queue)
-                </option>
-                <option value="exchange" selected={@form_rabbitmq_mode == "exchange"}>
-                  Custom Exchange (publish to exchange with routing key)
-                </option>
-              </select>
-            </div>
-
-            <%!-- Default exchange mode: queue only --%>
-            <div :if={@form_rabbitmq_mode == "queue"}>
-              <label class="label mb-1">
                 <span class="label-text">
                   Queue <span class="text-error">*</span>
                 </span>
@@ -428,43 +438,7 @@
                 class="input input-bordered w-full"
               />
               <p class="text-xs text-base-content/50 mt-1">
-                Message will be published directly to this queue via the default exchange.
-              </p>
-            </div>
-
-            <%!-- Custom exchange mode: exchange + routing key --%>
-            <div :if={@form_rabbitmq_mode == "exchange"} class="space-y-4">
-              <div>
-                <label class="label mb-1">
-                  <span class="label-text">
-                    Exchange <span class="text-error">*</span>
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  name="form[rabbitmq_exchange]"
-                  value={@form_rabbitmq_exchange}
-                  placeholder="my_exchange"
-                  class="input input-bordered w-full"
-                />
-              </div>
-
-              <div>
-                <label class="label mb-1">
-                  <span class="label-text">
-                    Routing Key <span class="text-error">*</span>
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  name="form[rabbitmq_routing_key]"
-                  value={@form_rabbitmq_routing_key}
-                  placeholder="my.routing.key"
-                  class="input input-bordered w-full"
-                />
-              </div>
-              <p class="text-xs text-base-content/50">
-                Message will be published to the exchange with the specified routing key.
+                Message will be published directly to this queue.
               </p>
             </div>
           </div>
@@ -482,11 +456,21 @@
               type="button"
               class="btn btn-ghost"
               phx-click="cancel_edit_delivery_config"
+              disabled={pending_action?(@pending_actions, :save_delivery_config, @request.id)}
             >
               Cancel
             </button>
-            <button type="submit" class="btn btn-primary">
-              Save
+            <button
+              type="submit"
+              id="save-delivery-config"
+              class="btn btn-primary"
+              disabled={pending_action?(@pending_actions, :save_delivery_config, @request.id)}
+            >
+              <%= if pending_action?(@pending_actions, :save_delivery_config, @request.id) do %>
+                <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Saving...
+              <% else %>
+                Save
+              <% end %>
             </button>
           </div>
         </.form>

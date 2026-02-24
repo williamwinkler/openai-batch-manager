@@ -9,17 +9,14 @@ ExUnit.after_suite(fn _results ->
   end
 end)
 
-# Configure ExUnit to run concurrent tests with SQLite WAL mode
-# With WAL mode, SQLite allows concurrent readers and serializes writers
+# Configure ExUnit concurrency for database-heavy tests.
 # Can be overridden with EXUNIT_MAX_CASES environment variable
 # For systems under heavy load (100% CPU), use EXUNIT_MAX_CASES=1 for sequential execution
-# Conservative limit: SQLite serializes writes, so too many concurrent writers cause "Database busy"
 max_cases =
   System.get_env("EXUNIT_MAX_CASES")
   |> case do
-    # Conservative limit: 4 concurrent test processes to avoid write contention
-    # WAL mode allows concurrent reads, but writes are still serialized
-    nil -> min(4, System.schedulers_online())
+    # Postgres + SQL sandbox can run more DB tests in parallel safely.
+    nil -> min(8, System.schedulers_online())
     val -> String.to_integer(val)
   end
 

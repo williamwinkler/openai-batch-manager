@@ -14,6 +14,7 @@ defmodule Batcher.Batching.Actions.ProcessExpiredBatch do
   alias Batcher.Batching
   alias Batcher.Batching.{FileProcessing, Utils}
 
+  @doc false
   def run(input, _opts, _context) do
     batch_id = Utils.extract_subject_id(input)
     batch = Batching.get_batch_by_id!(batch_id)

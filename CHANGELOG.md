@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Refactors
+
+* reorganize backend modules for clearer domain boundaries and namespace alignment
+* move `BatchBuilder` into `Batcher.Batching` and rename runtime supervisor/registry names
+* move OpenAI rate limit service to `Batcher.Clients.OpenAI.RateLimits`
+* extract shared OpenAPI schemas into `Batcher.OpenAPI` for backend/web reuse
+
+### Chores
+
+* remove custom Mix tasks (`mix quality.gates`, `mix batcher.backfill_request_token_estimates`)
+* remove mailer/Swoosh dependency and related configuration
+* normalize test file locations to mirror backend namespaces
+
 ## [0.1.15](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.14...v0.1.15) (2026-02-17)
 
 

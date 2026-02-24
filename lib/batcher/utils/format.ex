@@ -13,16 +13,16 @@ defmodule Batcher.Utils.Format do
 
   ## Examples
 
-      iex> Format.bytes(1024)
+      iex> Batcher.Utils.Format.bytes(1024)
       "1.0 KB"
 
-      iex> Format.bytes(1_048_576)
+      iex> Batcher.Utils.Format.bytes(1_048_576)
       "1.0 MB"
 
-      iex> Format.bytes(1_073_741_824)
+      iex> Batcher.Utils.Format.bytes(1_073_741_824)
       "1.0 GB"
 
-      iex> Format.bytes(500)
+      iex> Batcher.Utils.Format.bytes(500)
       "500 bytes"
   """
   def bytes(byte_count) when is_nil(byte_count), do: "0 bytes"
@@ -48,14 +48,14 @@ defmodule Batcher.Utils.Format do
 
   ## Examples
 
-      iex> Format.time_ago(DateTime.add(DateTime.utc_now(), -30, :second))
-      "30s ago"
+      iex> Batcher.Utils.Format.time_ago(nil)
+      "—"
 
-      iex> Format.time_ago(DateTime.add(DateTime.utc_now(), -90, :minute))
-      "1h ago"
+      iex> Batcher.Utils.Format.time_ago(DateTime.add(DateTime.utc_now(), -30, :second))
+      "<1m ago"
 
-      iex> Format.time_ago(DateTime.add(DateTime.utc_now(), -2, :day))
-      "2d ago"
+      iex> Batcher.Utils.Format.time_ago(DateTime.add(DateTime.utc_now(), 30, :second))
+      "in the future"
   """
   def time_ago(datetime) when is_nil(datetime), do: "—"
 
@@ -101,20 +101,26 @@ defmodule Batcher.Utils.Format do
 
   ## Examples
 
-      iex> Format.duration_since(DateTime.add(DateTime.utc_now(), -30, :second))
-      "<1m"
+      iex> Batcher.Utils.Format.duration_since(nil)
+      ""
 
-      iex> Format.duration_since(DateTime.add(DateTime.utc_now(), -90, :minute))
-      "1h 30m"
+      iex> Batcher.Utils.Format.duration_since(DateTime.add(DateTime.utc_now(), -30, :second))
+      "less than 1m ago"
   """
   def duration_since(nil), do: ""
 
-  def duration_since(datetime) do
+  def duration_since(%NaiveDateTime{} = datetime) do
+    datetime
+    |> DateTime.from_naive!("Etc/UTC")
+    |> duration_since()
+  end
+
+  def duration_since(%DateTime{} = datetime) do
     diff = DateTime.diff(DateTime.utc_now(), datetime, :second)
 
     cond do
       diff < 60 ->
-        "<1m"
+        "less than 1m ago"
 
       diff < 3600 ->
         "#{div(diff, 60)}m"
@@ -127,22 +133,24 @@ defmodule Batcher.Utils.Format do
     end
   end
 
+  def duration_since(_), do: ""
+
   @doc """
   Formats a large integer into a compact human-readable number (K/M/B/T).
 
   ## Examples
 
-      iex> Format.compact_number(999)
+      iex> Batcher.Utils.Format.compact_number(999)
       "999"
 
-      iex> Format.compact_number(1_000)
+      iex> Batcher.Utils.Format.compact_number(1_000)
       "1K"
 
-      iex> Format.compact_number(125_000)
+      iex> Batcher.Utils.Format.compact_number(125_000)
       "125K"
 
-      iex> Format.compact_number(1_250_000)
-      "1.2M"
+      iex> Batcher.Utils.Format.compact_number(1_250_000)
+      "1.3M"
   """
   def compact_number(nil), do: "0"
   def compact_number(number) when number < 0, do: "-" <> compact_number(abs(number))
