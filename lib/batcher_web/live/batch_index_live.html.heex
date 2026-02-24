@@ -208,16 +208,6 @@
       
 <!-- Pagination - always at bottom -->
       <div class="mt-4 shrink-0">
-        <div
-          :if={
-            loading_processing_since?(@processing_since_status) and
-              @processing_since_status != :loading_initial
-          }
-          class="text-xs text-base-content/60 mb-2 flex items-center gap-1"
-        >
-          <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" />
-          Refreshing time-in-state...
-        </div>
         <.async_keyset_pagination
           page={@page}
           page_count_status={@page_count_status}
