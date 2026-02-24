@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.16...v0.1.17) (2026-02-24)
+
+
+### Bug Fixes
+
+* time in state stats ([#44](https://github.com/williamwinkler/openai-batch-manager/issues/44)) ([5911c8c](https://github.com/williamwinkler/openai-batch-manager/commit/5911c8c51eac7dc66d1ae7f8573903019ddfe6c5))
+
 ## [0.1.16](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.15...v0.1.16) (2026-02-24)
 
 
