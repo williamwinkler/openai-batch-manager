@@ -1,4 +1,7 @@
 defmodule Batcher.Settings do
+  @moduledoc """
+  Domain API for rate-limit settings and model overrides.
+  """
   use Ash.Domain,
     otp_app: :batcher
 
@@ -21,11 +24,17 @@ defmodule Batcher.Settings do
 
   @settings_name "openai_rate_limits"
 
+  @doc """
+  Returns the singleton rate-limit settings, creating defaults if needed.
+  """
   @spec get_rate_limit_settings!() :: Batcher.Settings.Setting.t()
   def get_rate_limit_settings! do
     ensure_rate_limit_settings!()
   end
 
+  @doc """
+  Ensures the singleton settings record exists and returns it.
+  """
   @spec ensure_rate_limit_settings!() :: Batcher.Settings.Setting.t()
   def ensure_rate_limit_settings! do
     case read_singleton() do
@@ -40,6 +49,9 @@ defmodule Batcher.Settings do
     end
   end
 
+  @doc """
+  Upserts a model token-limit override on the singleton settings record.
+  """
   @spec upsert_model_override!(String.t(), pos_integer()) :: Batcher.Settings.Setting.t()
   def upsert_model_override!(model_prefix, token_limit)
       when is_binary(model_prefix) and is_integer(token_limit) do
@@ -51,6 +63,9 @@ defmodule Batcher.Settings do
     |> Ash.update!()
   end
 
+  @doc """
+  Removes a model token-limit override from the singleton settings record.
+  """
   @spec delete_model_override!(String.t()) :: Batcher.Settings.Setting.t()
   def delete_model_override!(model_prefix) when is_binary(model_prefix) do
     ensure_rate_limit_settings!()
@@ -58,6 +73,9 @@ defmodule Batcher.Settings do
     |> Ash.update!()
   end
 
+  @doc """
+  Lists model token-limit overrides as sorted maps for UI/API consumers.
+  """
   @spec list_model_overrides!() :: list(%{model_prefix: String.t(), token_limit: pos_integer()})
   def list_model_overrides! do
     ensure_rate_limit_settings!()

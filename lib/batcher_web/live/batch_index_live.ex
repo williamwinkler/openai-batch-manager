@@ -2,11 +2,11 @@ defmodule BatcherWeb.BatchIndexLive do
   use BatcherWeb, :live_view
 
   alias Batcher.Batching
+  alias BatcherWeb.Live.Utils.ActionActivity
   alias BatcherWeb.Live.Utils.AsyncActions
-  alias BatcherWeb.Live.Utils.ActionLocks
   alias BatcherWeb.Live.Utils.AsyncPagination
   alias Batcher.Utils.Format
-  @reload_debounce_ms 750
+  @default_reload_coalesce_ms 1_500
 
   @impl true
   def mount(_params, _session, socket) do
@@ -21,8 +21,22 @@ defmodule BatcherWeb.BatchIndexLive do
       socket
       |> assign(:page_title, "Batches")
       |> assign(:subscribed_batch_ids, MapSet.new())
-      |> assign(:reload_timer_ref, nil)
+      |> assign(:visible_batch_ids, MapSet.new())
+      |> assign(:reload_coalesce_ms, reload_coalesce_ms())
+      |> assign(:reload_coalesce_timer_ref, nil)
+      |> assign(:reload_scheduled?, false)
+      |> assign(:reload_scheduled_refresh_count?, false)
+      |> assign(:reload_inflight?, false)
+      |> assign(:reload_pending?, false)
+      |> assign(:reload_pending_refresh_count?, false)
+      |> assign(:reload_pending_reasons, MapSet.new())
+      |> assign(:last_reload_reason, nil)
+      |> assign(:batch_index_reload_request_key, nil)
       |> assign(:pending_actions, MapSet.new())
+      |> assign(:action_activity_version, 0)
+      |> assign(:page_limit, 20)
+      |> assign(:cursor_after, nil)
+      |> assign(:cursor_before, nil)
       |> assign(:processing_since_by_batch_id, %{})
       |> assign(:processing_since_status, :idle)
       |> assign(:processing_since_request_key, nil)
@@ -33,29 +47,42 @@ defmodule BatcherWeb.BatchIndexLive do
 
   @impl true
   def handle_params(params, _url, socket) do
-    query_text = Map.get(params, "q", "")
-    sort_by = Map.get(params, "sort_by") |> validate_sort_by()
+    if Map.has_key?(params, "offset") do
+      compat_params =
+        [
+          q: Map.get(params, "q", ""),
+          sort_by: Map.get(params, "sort_by") |> validate_sort_by(),
+          limit: parse_limit(Map.get(params, "limit"), 20)
+        ]
+        |> remove_empty()
 
-    page_opts =
-      AshPhoenix.LiveView.params_to_page_opts(params, default_limit: 20)
-      |> Keyword.put(:count, false)
+      {:noreply, push_patch(socket, to: ~p"/batches?#{compat_params}")}
+    else
+      query_text = Map.get(params, "q", "")
+      sort_by = Map.get(params, "sort_by") |> validate_sort_by()
+      page_opts = keyset_page_opts(params, 20)
 
-    page =
-      Batching.search_batches!(query_text,
-        page: page_opts,
-        query: [sort_input: sort_by]
-      )
+      socket =
+        socket
+        |> reset_reload_pipeline()
+        |> assign(:query_text, query_text)
+        |> assign(:sort_by, sort_by)
+        |> assign(:page_limit, page_opts[:limit])
+        |> assign(:cursor_after, page_opts[:after])
+        |> assign(:cursor_before, page_opts[:before])
+        |> apply_reloaded_page(
+          fetch_batches_page(
+            query_text,
+            sort_by,
+            page_opts[:limit],
+            page_opts[:after],
+            page_opts[:before]
+          ),
+          refresh_count?: true
+        )
 
-    socket =
-      socket
-      |> assign(:query_text, query_text)
-      |> assign(:sort_by, sort_by)
-      |> assign(:page, page)
-      |> subscribe_to_batches(page.results)
-      |> schedule_processing_since(query_text, sort_by, page)
-      |> schedule_count(query_text, sort_by)
-
-    {:noreply, socket}
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -63,7 +90,8 @@ defmodule BatcherWeb.BatchIndexLive do
     params =
       [
         q: query,
-        sort_by: socket.assigns.sort_by
+        sort_by: socket.assigns.sort_by,
+        limit: socket.assigns.page_limit
       ]
       |> remove_empty()
 
@@ -78,7 +106,8 @@ defmodule BatcherWeb.BatchIndexLive do
     params =
       [
         q: socket.assigns.query_text,
-        sort_by: sort_by
+        sort_by: sort_by,
+        limit: socket.assigns.page_limit
       ]
       |> remove_empty()
 
@@ -107,8 +136,8 @@ defmodule BatcherWeb.BatchIndexLive do
 
   @impl true
   def handle_async({:batch_action, action, batch_id}, {:ok, result}, socket) do
-    ActionLocks.release({:batch_action, action, batch_id})
-    socket = AsyncActions.clear_pending(socket, {:batch_action, action, batch_id})
+    key = {:batch_action, action, batch_id}
+    socket = AsyncActions.clear_shared_pending(socket, key, scope: {:batch, batch_id})
 
     case result do
       {:ok, info_message, opts} ->
@@ -126,11 +155,11 @@ defmodule BatcherWeb.BatchIndexLive do
 
   @impl true
   def handle_async({:batch_action, action, batch_id}, {:exit, reason}, socket) do
-    ActionLocks.release({:batch_action, action, batch_id})
+    key = {:batch_action, action, batch_id}
 
     socket =
       socket
-      |> AsyncActions.clear_pending({:batch_action, action, batch_id})
+      |> AsyncActions.clear_shared_pending(key, scope: {:batch, batch_id})
       |> put_flash(:error, "Batch action failed unexpectedly: #{inspect(reason)}")
 
     {:noreply, socket}
@@ -160,29 +189,81 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   @impl true
+  def handle_async({:batch_index_reload, request_key}, {:ok, result}, socket) do
+    if socket.assigns.batch_index_reload_request_key == request_key do
+      socket =
+        socket
+        |> assign(:reload_inflight?, false)
+        |> assign(:batch_index_reload_request_key, nil)
+
+      socket =
+        case result do
+          {:ok, page, reload_opts} ->
+            socket
+            |> apply_reloaded_page(page, reload_opts)
+            |> assign(:last_reload_reason, reload_opts[:reason])
+
+          {:error, _reason} ->
+            socket
+        end
+
+      {:noreply, maybe_run_pending_reload(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:batch_index_reload, request_key}, {:exit, _reason}, socket) do
+    if socket.assigns.batch_index_reload_request_key == request_key do
+      socket =
+        socket
+        |> assign(:reload_inflight?, false)
+        |> assign(:batch_index_reload_request_key, nil)
+
+      {:noreply, maybe_run_pending_reload(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_info(
-        %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: _batch}},
+        %{topic: "batches:state_changed:" <> batch_id, payload: %{data: _batch}},
         socket
       ) do
-    # Reload the page to reflect state changes
-    {:noreply, reload_page(socket, refresh_count?: false)}
+    if topic_batch_id_visible?(socket, batch_id) do
+      {:noreply, request_reload(socket, :state_changed_visible_batch)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def handle_info(%{topic: "batches:created", payload: %{data: _batch}}, socket) do
-    # Reload batches to include the new one (respects current filters/sort)
-    {:noreply, reload_page(socket, refresh_count?: false)}
+    if top_of_feed_sensitive?(socket) do
+      {:noreply, request_reload(socket, :batch_created_first_page)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def handle_info(%{topic: "batches:created:" <> _batch_id, payload: %{data: _batch}}, socket) do
-    # Also handle individual batch creation events
-    {:noreply, reload_page(socket, refresh_count?: false)}
+    if top_of_feed_sensitive?(socket) do
+      {:noreply, request_reload(socket, :batch_created_first_page)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
-  def handle_info(%{topic: "batches:destroyed:" <> _batch_id, payload: %{data: _batch}}, socket) do
-    {:noreply, reload_page(socket, refresh_count?: false)}
+  def handle_info(%{topic: "batches:destroyed:" <> batch_id, payload: %{data: _batch}}, socket) do
+    if topic_batch_id_visible?(socket, batch_id) do
+      {:noreply, request_reload(socket, :destroyed_visible_batch)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -190,12 +271,8 @@ defmodule BatcherWeb.BatchIndexLive do
         %{topic: "requests:created", payload: %{data: request}},
         socket
       ) do
-    # Check if the request belongs to any batch on the current page
-    batch_ids_on_page = Enum.map(socket.assigns.page.results, & &1.id)
-
-    if request.batch_id in batch_ids_on_page do
-      # Fallback for missed delta events
-      {:noreply, schedule_reload(socket)}
+    if MapSet.member?(socket.assigns.visible_batch_ids, request.batch_id) do
+      {:noreply, request_reload(socket, :request_created_visible_batch)}
     else
       {:noreply, socket}
     end
@@ -206,11 +283,8 @@ defmodule BatcherWeb.BatchIndexLive do
         %{topic: "requests:created:" <> _request_id, payload: %{data: request}},
         socket
       ) do
-    # Also handle individual request creation events
-    batch_ids_on_page = Enum.map(socket.assigns.page.results, & &1.id)
-
-    if request.batch_id in batch_ids_on_page do
-      {:noreply, schedule_reload(socket)}
+    if MapSet.member?(socket.assigns.visible_batch_ids, request.batch_id) do
+      {:noreply, request_reload(socket, :request_created_visible_batch)}
     else
       {:noreply, socket}
     end
@@ -233,8 +307,22 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   @impl true
-  def handle_info(:reload_page_debounced, socket) do
-    {:noreply, socket |> assign(:reload_timer_ref, nil) |> reload_page(refresh_count?: false)}
+  def handle_info(%{topic: "ui_actions:batch:" <> _batch_id}, socket) do
+    {:noreply, update(socket, :action_activity_version, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_info(:run_coalesced_reload, socket) do
+    refresh_count? = socket.assigns.reload_scheduled_refresh_count?
+
+    socket =
+      socket
+      |> assign(:reload_coalesce_timer_ref, nil)
+      |> assign(:reload_scheduled?, false)
+      |> assign(:reload_scheduled_refresh_count?, false)
+      |> maybe_start_reload_async(refresh_count?: refresh_count?)
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -242,23 +330,21 @@ defmodule BatcherWeb.BatchIndexLive do
     {:noreply, socket}
   end
 
-  defp reload_page(socket, opts) do
-    maybe_cancel_timer(socket.assigns[:reload_timer_ref])
+  defp fetch_batches_page(query_text, sort_by, page_limit, cursor_after, cursor_before) do
+    Batching.search_batches!(query_text,
+      page: keyset_page_opts_from_assigns(page_limit, cursor_after, cursor_before),
+      query: [sort_input: sort_by]
+    )
+  end
 
+  defp apply_reloaded_page(socket, page, opts) do
     query_text = socket.assigns[:query_text] || ""
     sort_by = socket.assigns[:sort_by] || "-created_at"
 
-    page =
-      Batching.search_batches!(query_text,
-        page: [offset: socket.assigns.page.offset, limit: socket.assigns.page.limit, count: false],
-        query: [sort_input: sort_by]
-      )
-
     socket =
       socket
-      |> assign(:reload_timer_ref, nil)
       |> assign(:page, page)
-      |> subscribe_to_batches(page.results)
+      |> sync_batch_subscriptions(page.results)
       |> schedule_processing_since(query_text, sort_by, page)
 
     if Keyword.get(opts, :refresh_count?, true) do
@@ -278,7 +364,10 @@ defmodule BatcherWeb.BatchIndexLive do
 
   defp schedule_processing_since(socket, query_text, sort_by, page) do
     ids = Enum.map(page.results, & &1.id)
-    request_key = {:processing_since, query_text, sort_by, page.offset, page.limit, ids}
+
+    request_key =
+      {:processing_since, query_text, sort_by, socket.assigns.cursor_after,
+       socket.assigns.cursor_before, page.limit, ids}
 
     socket =
       socket
@@ -301,14 +390,15 @@ defmodule BatcherWeb.BatchIndexLive do
   end
 
   defp load_processing_since(ids) do
-    ids
-    |> Enum.map(fn id ->
-      case Batching.get_batch_by_id(id, load: [:processing_since]) do
-        {:ok, batch} -> {id, batch.processing_since}
-        _ -> {id, nil}
-      end
-    end)
-    |> Map.new()
+    case Batching.list_batches_by_ids(ids, load: [:processing_since]) do
+      {:ok, batches} ->
+        batches
+        |> Enum.map(fn batch -> {batch.id, batch.processing_since} end)
+        |> Map.new()
+
+      {:error, _} ->
+        %{}
+    end
   end
 
   defp merge_processing_since(socket, loaded_map) do
@@ -335,17 +425,12 @@ defmodule BatcherWeb.BatchIndexLive do
       {:ok, batch_id} ->
         key = {:batch_action, action, batch_id}
 
-        if pending_action?(socket.assigns.pending_actions, action, batch_id) do
-          {:noreply, socket}
-        else
-          if ActionLocks.acquire(key) do
-            AsyncActions.start_action(socket, key, fn ->
-              perform_batch_action(action, batch_id)
-            end)
-          else
-            {:noreply, socket}
-          end
-        end
+        AsyncActions.start_shared_action(
+          socket,
+          key,
+          fn -> perform_batch_action(action, batch_id) end,
+          scope: {:batch, batch_id}
+        )
 
       :error ->
         {:noreply, put_flash(socket, :error, "Invalid batch id")}
@@ -368,7 +453,7 @@ defmodule BatcherWeb.BatchIndexLive do
     case Batching.get_batch_by_id(batch_id) do
       {:ok, batch} ->
         if batch.state == :building do
-          case Batcher.BatchBuilder.upload_batch(batch.url, batch.model) do
+          case Batcher.Batching.BatchBuilder.upload_batch(batch.url, batch.model) do
             :ok ->
               {:ok, "Batch upload initiated successfully", reload?: false}
 
@@ -414,6 +499,7 @@ defmodule BatcherWeb.BatchIndexLive do
     with {:ok, batch} <- Batching.get_batch_by_id(batch_id) do
       case Batching.destroy_batch(batch) do
         :ok -> {:ok, "Batch deleted successfully", reload?: true}
+        {:ok, _} -> {:ok, "Batch deleted successfully", reload?: true}
         {:error, _} -> {:error, "Failed to delete batch", reload?: false}
       end
     else
@@ -445,12 +531,14 @@ defmodule BatcherWeb.BatchIndexLive do
     end
   end
 
-  defp maybe_reload(socket, true), do: reload_page(socket, refresh_count?: true)
+  defp maybe_reload(socket, true),
+    do: reload_now(socket, reason: :action_outcome, refresh_count?: true)
+
   defp maybe_reload(socket, false), do: socket
 
   def pending_action?(pending_actions, action, batch_id) do
     key = {:batch_action, action, batch_id}
-    AsyncActions.pending?(pending_actions, key) or ActionLocks.locked?(key)
+    AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
   end
 
   defp parse_batch_id(raw_id) when is_binary(raw_id) do
@@ -500,14 +588,172 @@ defmodule BatcherWeb.BatchIndexLive do
     end
   end
 
-  defp schedule_reload(socket) do
-    maybe_cancel_timer(socket.assigns[:reload_timer_ref])
-    timer_ref = Process.send_after(self(), :reload_page_debounced, @reload_debounce_ms)
-    assign(socket, :reload_timer_ref, timer_ref)
+  defp request_reload(socket, reason) do
+    socket =
+      socket
+      |> update(:reload_pending_reasons, &MapSet.put(&1, reason))
+      |> assign(:last_reload_reason, reason)
+
+    cond do
+      socket.assigns.reload_inflight? ->
+        socket
+        |> assign(:reload_pending?, true)
+        |> assign(:reload_pending_refresh_count?, socket.assigns.reload_pending_refresh_count?)
+
+      socket.assigns.reload_scheduled? ->
+        socket
+
+      true ->
+        schedule_reload_timer(socket, socket.assigns.reload_coalesce_ms, refresh_count?: false)
+    end
   end
 
-  defp maybe_cancel_timer(nil), do: :ok
-  defp maybe_cancel_timer(timer_ref), do: Process.cancel_timer(timer_ref)
+  defp reload_now(socket, opts) do
+    refresh_count? = Keyword.get(opts, :refresh_count?, true)
+    reason = Keyword.get(opts, :reason, :manual)
+
+    socket =
+      socket
+      |> update(:reload_pending_reasons, &MapSet.put(&1, reason))
+      |> assign(:last_reload_reason, reason)
+
+    cond do
+      socket.assigns.reload_inflight? ->
+        socket
+        |> assign(:reload_pending?, true)
+        |> assign(
+          :reload_pending_refresh_count?,
+          socket.assigns.reload_pending_refresh_count? or refresh_count?
+        )
+
+      socket.assigns.reload_scheduled? ->
+        socket
+        |> cancel_scheduled_reload()
+        |> perform_reload_now(refresh_count?: refresh_count?, reason: reason)
+
+      true ->
+        perform_reload_now(socket, refresh_count?: refresh_count?, reason: reason)
+    end
+  end
+
+  defp perform_reload_now(socket, opts) do
+    refresh_count? = Keyword.get(opts, :refresh_count?, true)
+    reason = Keyword.get(opts, :reason, :manual)
+
+    query_text = socket.assigns[:query_text] || ""
+    sort_by = socket.assigns[:sort_by] || "-created_at"
+    page_limit = socket.assigns[:page_limit] || 20
+    cursor_after = socket.assigns[:cursor_after]
+    cursor_before = socket.assigns[:cursor_before]
+
+    page = fetch_batches_page(query_text, sort_by, page_limit, cursor_after, cursor_before)
+
+    socket
+    |> apply_reloaded_page(page, refresh_count?: refresh_count?)
+    |> assign(:last_reload_reason, reason)
+  end
+
+  defp schedule_reload_timer(socket, delay_ms, opts) do
+    timer_ref = Process.send_after(self(), :run_coalesced_reload, delay_ms)
+
+    socket
+    |> assign(:reload_coalesce_timer_ref, timer_ref)
+    |> assign(:reload_scheduled?, true)
+    |> assign(:reload_scheduled_refresh_count?, Keyword.get(opts, :refresh_count?, false))
+  end
+
+  defp maybe_start_reload_async(socket, opts) do
+    if socket.assigns.reload_inflight? do
+      socket
+    else
+      reason = socket.assigns.last_reload_reason
+      refresh_count? = Keyword.get(opts, :refresh_count?, false)
+      request_key = {:batch_index_reload, System.unique_integer([:positive])}
+
+      query_text = socket.assigns[:query_text] || ""
+      sort_by = socket.assigns[:sort_by] || "-created_at"
+      page_limit = socket.assigns[:page_limit] || 20
+      cursor_after = socket.assigns[:cursor_after]
+      cursor_before = socket.assigns[:cursor_before]
+
+      socket
+      |> assign(:reload_inflight?, true)
+      |> assign(:batch_index_reload_request_key, request_key)
+      |> start_async({:batch_index_reload, request_key}, fn ->
+        maybe_test_reload_delay()
+
+        page = fetch_batches_page(query_text, sort_by, page_limit, cursor_after, cursor_before)
+        {:ok, page, [refresh_count?: refresh_count?, reason: reason]}
+      end)
+    end
+  end
+
+  defp maybe_run_pending_reload(socket) do
+    if socket.assigns.reload_pending? do
+      refresh_count? = socket.assigns.reload_pending_refresh_count?
+
+      socket
+      |> assign(:reload_pending?, false)
+      |> assign(:reload_pending_refresh_count?, false)
+      |> schedule_reload_timer(0, refresh_count?: refresh_count?)
+    else
+      socket
+    end
+  end
+
+  defp reset_reload_pipeline(socket) do
+    socket
+    |> cancel_scheduled_reload()
+    |> assign(:reload_inflight?, false)
+    |> assign(:reload_pending?, false)
+    |> assign(:reload_pending_refresh_count?, false)
+    |> assign(:reload_pending_reasons, MapSet.new())
+    |> assign(:batch_index_reload_request_key, nil)
+  end
+
+  defp cancel_scheduled_reload(socket) do
+    maybe_cancel_coalesce_timer(socket.assigns[:reload_coalesce_timer_ref])
+
+    socket
+    |> assign(:reload_coalesce_timer_ref, nil)
+    |> assign(:reload_scheduled?, false)
+    |> assign(:reload_scheduled_refresh_count?, false)
+  end
+
+  defp maybe_cancel_coalesce_timer(nil), do: :ok
+  defp maybe_cancel_coalesce_timer(timer_ref), do: Process.cancel_timer(timer_ref)
+
+  defp topic_batch_id_visible?(socket, batch_id_str) do
+    case Integer.parse(batch_id_str) do
+      {batch_id, ""} -> MapSet.member?(socket.assigns.visible_batch_ids, batch_id)
+      _ -> false
+    end
+  end
+
+  defp top_of_feed_sensitive?(socket) do
+    query_text = (socket.assigns[:query_text] || "") |> String.trim()
+
+    socket.assigns[:sort_by] == "-created_at" and
+      is_nil(socket.assigns[:cursor_after]) and
+      is_nil(socket.assigns[:cursor_before]) and
+      query_text == ""
+  end
+
+  defp reload_coalesce_ms do
+    case Application.get_env(:batcher, :ui_batch_reload_coalesce_ms, @default_reload_coalesce_ms) do
+      value when is_integer(value) and value >= 0 -> value
+      _ -> @default_reload_coalesce_ms
+    end
+  end
+
+  defp maybe_test_reload_delay do
+    if Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) and Mix.env() == :test do
+      case Application.get_env(:batcher, :batch_index_reload_delay_ms, 0) do
+        delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+        _ -> :ok
+      end
+    end
+  end
 
   defp apply_batch_metrics_delta(
          socket,
@@ -568,23 +814,42 @@ defmodule BatcherWeb.BatchIndexLive do
     assign(socket, :page, %{page | results: updated_results})
   end
 
-  defp subscribe_to_batches(socket, batches) do
+  defp sync_batch_subscriptions(socket, batches) do
     if connected?(socket) do
-      already_subscribed = socket.assigns.subscribed_batch_ids
+      new_visible_ids = batches |> Enum.map(& &1.id) |> MapSet.new()
+      subscribed_ids = socket.assigns.subscribed_batch_ids
+      old_visible_ids = socket.assigns.visible_batch_ids
 
-      new_ids =
-        batches
-        |> Enum.map(& &1.id)
-        |> Enum.reject(&MapSet.member?(already_subscribed, &1))
+      to_subscribe =
+        new_visible_ids
+        |> Enum.reject(&MapSet.member?(subscribed_ids, &1))
 
-      Enum.each(new_ids, fn id ->
+      to_unsubscribe =
+        old_visible_ids
+        |> Enum.reject(&MapSet.member?(new_visible_ids, &1))
+
+      Enum.each(to_subscribe, fn id ->
         BatcherWeb.Endpoint.subscribe("batches:state_changed:#{id}")
         BatcherWeb.Endpoint.subscribe("batches:destroyed:#{id}")
         BatcherWeb.Endpoint.subscribe("batches:progress_updated:#{id}")
+        ActionActivity.subscribe({:batch, id})
       end)
 
-      new_subscribed = Enum.reduce(new_ids, already_subscribed, &MapSet.put(&2, &1))
-      assign(socket, :subscribed_batch_ids, new_subscribed)
+      Enum.each(to_unsubscribe, fn id ->
+        BatcherWeb.Endpoint.unsubscribe("batches:state_changed:#{id}")
+        BatcherWeb.Endpoint.unsubscribe("batches:destroyed:#{id}")
+        BatcherWeb.Endpoint.unsubscribe("batches:progress_updated:#{id}")
+        ActionActivity.unsubscribe({:batch, id})
+      end)
+
+      updated_subscribed_ids =
+        subscribed_ids
+        |> MapSet.difference(MapSet.new(to_unsubscribe))
+        |> MapSet.union(MapSet.new(to_subscribe))
+
+      socket
+      |> assign(:subscribed_batch_ids, updated_subscribed_ids)
+      |> assign(:visible_batch_ids, new_visible_ids)
     else
       socket
     end
@@ -692,6 +957,7 @@ defmodule BatcherWeb.BatchIndexLive do
         type="text"
         name="query"
         id="search-query"
+        phx-debounce="300"
         value={@query}
         placeholder="Search model or endpoint..."
         class="input pl-10 w-64 text-sm bg-base-200 border-base-300"
@@ -699,4 +965,41 @@ defmodule BatcherWeb.BatchIndexLive do
     </form>
     """
   end
+
+  defp keyset_page_opts(params, default_limit) do
+    limit = parse_limit(Map.get(params, "limit"), default_limit)
+    after_cursor = blank_to_nil(Map.get(params, "after"))
+    before_cursor = blank_to_nil(Map.get(params, "before"))
+    keyset_page_opts_from_assigns(limit, after_cursor, before_cursor)
+  end
+
+  defp keyset_page_opts_from_assigns(limit, after_cursor, before_cursor) do
+    [limit: limit, count: false]
+    |> maybe_put_cursor(:after, after_cursor)
+    |> maybe_put_cursor(:before, before_cursor)
+  end
+
+  defp parse_limit(nil, default), do: default
+
+  defp parse_limit(limit, default) when is_binary(limit) do
+    case Integer.parse(limit) do
+      {value, ""} -> parse_limit(value, default)
+      _ -> default
+    end
+  end
+
+  defp parse_limit(limit, _default) when is_integer(limit) do
+    limit
+    |> max(1)
+    |> min(100)
+  end
+
+  defp parse_limit(_limit, default), do: default
+
+  defp blank_to_nil(nil), do: nil
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(value), do: value
+
+  defp maybe_put_cursor(opts, _key, nil), do: opts
+  defp maybe_put_cursor(opts, key, value), do: Keyword.put(opts, key, value)
 end

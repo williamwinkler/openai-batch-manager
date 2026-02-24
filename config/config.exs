@@ -10,7 +10,7 @@ import Config
 # Store env for runtime (e.g. Application.start); config_env() is only valid during config load.
 config :batcher, :env, config_env()
 
-config :batcher, Batcher.OpenaiApiClient, base_url: "https://api.openai.com"
+config :batcher, Batcher.Clients.OpenAI.ApiClient, base_url: "https://api.openai.com"
 
 config :mime,
   extensions: %{"json" => "application/vnd.api+json"},
@@ -23,21 +23,21 @@ config :ash_json_api,
 config :ash_oban, pro?: false
 
 config :batcher, Oban,
-  engine: Oban.Engines.Lite,
   notifier: Oban.Notifiers.PG,
-  queues: [default: 10, batch_uploads: 1, batch_processing: 1, capacity_dispatch: 1, delivery: 5],
+  queues: [default: 10, batch_uploads: 1, batch_processing: 1, capacity_dispatch: 1, delivery: 24],
   repo: Batcher.Repo,
-  # Reduce polling frequency to avoid hammering SQLite database
-  # SQLite with pool_size=1 serializes writes, so aggressive polling causes contention
+  # Keep polling moderate under heavy queue load
   poll_interval: 1_000,
   plugins: [
     {Oban.Plugins.Cron, []},
+    # Rescue jobs left in `executing` after node restarts/crashes.
+    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(2)},
     # Prune completed jobs older than 1 day every hour
     {Oban.Plugins.Pruner, max_age: 86_400, interval: 3600}
   ]
 
 # BatchBuilder configuration
-config :batcher, Batcher.BatchBuilder,
+config :batcher, Batcher.Batching.BatchBuilder,
   max_age_hours: 1,
   check_interval_minutes: 5
 
@@ -50,6 +50,8 @@ config :batcher, :token_estimation,
 config :batcher, :capacity_control,
   default_unknown_model_batch_limit_tokens: 250_000,
   capacity_recheck_cron: "*/1 * * * *"
+
+config :batcher, :ui_batch_reload_coalesce_ms, 1_500
 
 config :batcher, :openai_rate_limits_enabled, true
 
@@ -117,15 +119,6 @@ config :batcher, BatcherWeb.Endpoint,
   ],
   pubsub_server: Batcher.PubSub,
   live_view: [signing_salt: "I8IPpsNL"]
-
-# Configures the mailer
-#
-# By default it uses the "Local" adapter which stores the emails
-# locally. You can see the emails in your browser, at "/dev/mailbox".
-#
-# For production it's recommended to configure a different adapter
-# at the `config/runtime.exs`.
-config :batcher, Batcher.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,

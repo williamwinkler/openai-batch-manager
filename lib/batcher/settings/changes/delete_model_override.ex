@@ -1,4 +1,7 @@
 defmodule Batcher.Settings.Changes.DeleteModelOverride do
+  @moduledoc """
+  Applies settings mutation logic in an Ash change callback.
+  """
   use Ash.Resource.Change
 
   @impl true

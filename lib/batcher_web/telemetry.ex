@@ -1,12 +1,20 @@
 defmodule BatcherWeb.Telemetry do
+  @moduledoc """
+  Supervises telemetry polling and defines emitted metrics for the web runtime.
+  """
+
   use Supervisor
   import Telemetry.Metrics
 
+  @doc """
+  Starts the telemetry supervisor.
+  """
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg, name: __MODULE__)
   end
 
   @impl true
+  @doc false
   def init(_arg) do
     children = [
       # Telemetry poller will execute the given period measurements
@@ -19,6 +27,9 @@ defmodule BatcherWeb.Telemetry do
     Supervisor.init(children, strategy: :one_for_one)
   end
 
+  @doc """
+  Returns telemetry metrics for Phoenix, the repository, and VM runtime signals.
+  """
   def metrics do
     [
       # Phoenix Metrics
@@ -74,6 +85,16 @@ defmodule BatcherWeb.Telemetry do
         description:
           "The time the connection spent waiting before being checked out for the query"
       ),
+
+      # Delivery Metrics
+      summary("batcher.delivery.attempt.duration",
+        unit: {:native, :millisecond},
+        tags: [:delivery_type, :outcome]
+      ),
+      summary("batcher.delivery.enqueue_to_start.duration",
+        unit: {:native, :millisecond}
+      ),
+      sum("batcher.delivery.retry.count"),
 
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),

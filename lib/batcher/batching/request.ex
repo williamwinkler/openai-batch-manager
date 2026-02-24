@@ -1,8 +1,11 @@
 defmodule Batcher.Batching.Request do
+  @moduledoc """
+  Ash resource representing a single request in a batch.
+  """
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Batching,
-    data_layer: AshSqlite.DataLayer,
+    data_layer: AshPostgres.DataLayer,
     extensions: [AshStateMachine, AshOban],
     notifiers: [Ash.Notifier.PubSub]
 
@@ -10,7 +13,7 @@ defmodule Batcher.Batching.Request do
 
   alias Batcher.Batching
 
-  sqlite do
+  postgres do
     table "requests"
     repo Batcher.Repo
 
@@ -20,16 +23,16 @@ defmodule Batcher.Batching.Request do
       index [:state]
       index [:batch_id]
       index [:batch_id, :state]
-      index [:created_at]
+      index [:created_at, :id], name: "requests_pagination_created_at_id_index"
       index [:updated_at]
-      index [:batch_id, :created_at]
+      index [:batch_id, :created_at, :id], name: "requests_batch_pagination_created_at_id_index"
     end
 
     custom_statements do
       statement :requests_after_insert_update_batch_counters do
         up """
-        CREATE TRIGGER IF NOT EXISTS requests_after_insert_update_batch_counters
-        AFTER INSERT ON requests
+        CREATE OR REPLACE FUNCTION requests_after_insert_update_batch_counters_fn()
+        RETURNS trigger AS $$
         BEGIN
           UPDATE batches
           SET
@@ -38,16 +41,28 @@ defmodule Batcher.Batching.Request do
             estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),
             estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)
           WHERE id = NEW.batch_id;
+
+          RETURN NEW;
         END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters ON requests;
+        CREATE TRIGGER requests_after_insert_update_batch_counters
+        AFTER INSERT ON requests
+        FOR EACH ROW
+        EXECUTE FUNCTION requests_after_insert_update_batch_counters_fn();
         """
 
-        down "DROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters;"
+        down """
+        DROP TRIGGER IF EXISTS requests_after_insert_update_batch_counters ON requests;
+        DROP FUNCTION IF EXISTS requests_after_insert_update_batch_counters_fn();
+        """
       end
 
       statement :requests_after_delete_update_batch_counters do
         up """
-        CREATE TRIGGER IF NOT EXISTS requests_after_delete_update_batch_counters
-        AFTER DELETE ON requests
+        CREATE OR REPLACE FUNCTION requests_after_delete_update_batch_counters_fn()
+        RETURNS trigger AS $$
         BEGIN
           UPDATE batches
           SET
@@ -56,55 +71,133 @@ defmodule Batcher.Batching.Request do
             estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),
             estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)
           WHERE id = OLD.batch_id;
+
+          RETURN OLD;
         END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters ON requests;
+        CREATE TRIGGER requests_after_delete_update_batch_counters
+        AFTER DELETE ON requests
+        FOR EACH ROW
+        EXECUTE FUNCTION requests_after_delete_update_batch_counters_fn();
         """
 
-        down "DROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters;"
+        down """
+        DROP TRIGGER IF EXISTS requests_after_delete_update_batch_counters ON requests;
+        DROP FUNCTION IF EXISTS requests_after_delete_update_batch_counters_fn();
+        """
       end
 
       statement :requests_after_update_same_batch_update_counters do
         up """
-        CREATE TRIGGER IF NOT EXISTS requests_after_update_same_batch_update_counters
-        AFTER UPDATE OF request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests
-        WHEN OLD.batch_id = NEW.batch_id
+        CREATE OR REPLACE FUNCTION requests_after_update_same_batch_update_counters_fn()
+        RETURNS trigger AS $$
         BEGIN
-          UPDATE batches
-          SET
-            size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0)),
-            estimated_input_tokens_total = estimated_input_tokens_total + (COALESCE(NEW.estimated_input_tokens, 0) - COALESCE(OLD.estimated_input_tokens, 0)),
-            estimated_request_input_tokens_total = estimated_request_input_tokens_total + (COALESCE(NEW.estimated_request_input_tokens, 0) - COALESCE(OLD.estimated_request_input_tokens, 0))
-          WHERE id = NEW.batch_id;
+          IF OLD.batch_id = NEW.batch_id THEN
+            UPDATE batches
+            SET
+              size_bytes = size_bytes + (COALESCE(NEW.request_payload_size, 0) - COALESCE(OLD.request_payload_size, 0)),
+              estimated_input_tokens_total = estimated_input_tokens_total + (COALESCE(NEW.estimated_input_tokens, 0) - COALESCE(OLD.estimated_input_tokens, 0)),
+              estimated_request_input_tokens_total = estimated_request_input_tokens_total + (COALESCE(NEW.estimated_request_input_tokens, 0) - COALESCE(OLD.estimated_request_input_tokens, 0))
+            WHERE id = NEW.batch_id;
+          END IF;
+
+          RETURN NEW;
         END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters ON requests;
+        CREATE TRIGGER requests_after_update_same_batch_update_counters
+        AFTER UPDATE OF request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests
+        FOR EACH ROW
+        EXECUTE FUNCTION requests_after_update_same_batch_update_counters_fn();
         """
 
-        down "DROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters;"
+        down """
+        DROP TRIGGER IF EXISTS requests_after_update_same_batch_update_counters ON requests;
+        DROP FUNCTION IF EXISTS requests_after_update_same_batch_update_counters_fn();
+        """
       end
 
       statement :requests_after_update_move_batch_update_counters do
         up """
-        CREATE TRIGGER IF NOT EXISTS requests_after_update_move_batch_update_counters
-        AFTER UPDATE OF batch_id, request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests
-        WHEN OLD.batch_id != NEW.batch_id
+        CREATE OR REPLACE FUNCTION requests_after_update_move_batch_update_counters_fn()
+        RETURNS trigger AS $$
         BEGIN
-          UPDATE batches
-          SET
-            request_count = request_count - 1,
-            size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),
-            estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),
-            estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)
-          WHERE id = OLD.batch_id;
+          IF OLD.batch_id != NEW.batch_id THEN
+            UPDATE batches
+            SET
+              request_count = request_count - 1,
+              size_bytes = size_bytes - COALESCE(OLD.request_payload_size, 0),
+              estimated_input_tokens_total = estimated_input_tokens_total - COALESCE(OLD.estimated_input_tokens, 0),
+              estimated_request_input_tokens_total = estimated_request_input_tokens_total - COALESCE(OLD.estimated_request_input_tokens, 0)
+            WHERE id = OLD.batch_id;
 
-          UPDATE batches
-          SET
-            request_count = request_count + 1,
-            size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),
-            estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),
-            estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)
-          WHERE id = NEW.batch_id;
+            UPDATE batches
+            SET
+              request_count = request_count + 1,
+              size_bytes = size_bytes + COALESCE(NEW.request_payload_size, 0),
+              estimated_input_tokens_total = estimated_input_tokens_total + COALESCE(NEW.estimated_input_tokens, 0),
+              estimated_request_input_tokens_total = estimated_request_input_tokens_total + COALESCE(NEW.estimated_request_input_tokens, 0)
+            WHERE id = NEW.batch_id;
+          END IF;
+
+          RETURN NEW;
         END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters ON requests;
+        CREATE TRIGGER requests_after_update_move_batch_update_counters
+        AFTER UPDATE OF batch_id, request_payload_size, estimated_input_tokens, estimated_request_input_tokens ON requests
+        FOR EACH ROW
+        EXECUTE FUNCTION requests_after_update_move_batch_update_counters_fn();
         """
 
-        down "DROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters;"
+        down """
+        DROP TRIGGER IF EXISTS requests_after_update_move_batch_update_counters ON requests;
+        DROP FUNCTION IF EXISTS requests_after_update_move_batch_update_counters_fn();
+        """
+      end
+
+      statement :request_delivery_attempts_after_insert_update_request_attempt_count do
+        up """
+        CREATE OR REPLACE FUNCTION request_delivery_attempts_after_insert_update_request_attempt_count_fn()
+        RETURNS trigger AS $$
+        BEGIN
+          UPDATE requests
+          SET delivery_attempt_count = delivery_attempt_count + 1
+          WHERE id = NEW.request_id;
+
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count ON request_delivery_attempts;
+        CREATE TRIGGER request_delivery_attempts_after_insert_update_request_attempt_count
+        AFTER INSERT ON request_delivery_attempts
+        FOR EACH ROW
+        EXECUTE FUNCTION request_delivery_attempts_after_insert_update_request_attempt_count_fn();
+        """
+
+        down """
+        DROP TRIGGER IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count ON request_delivery_attempts;
+        DROP FUNCTION IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count_fn();
+        """
+      end
+
+      statement :ensure_pg_trgm_extension do
+        up "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+        down "SELECT 1;"
+      end
+
+      statement :requests_custom_id_trgm_gin_index do
+        up """
+        CREATE INDEX IF NOT EXISTS requests_custom_id_trgm_gin_index
+        ON requests USING gin (custom_id gin_trgm_ops);
+        """
+
+        down "DROP INDEX IF EXISTS requests_custom_id_trgm_gin_index;"
       end
     end
 
@@ -172,7 +265,7 @@ defmodule Batcher.Batching.Request do
       trigger :deliver do
         action :deliver
         where expr(state == :openai_processed)
-        scheduler_cron "*/5 * * * *"
+        scheduler_cron "* * * * *"
         queue :delivery
         max_attempts 3
         backoff 10
@@ -251,28 +344,29 @@ defmodule Batcher.Batching.Request do
         description "Filter requests by batch ID"
       end
 
+      argument :state_filter, Batching.Types.RequestStatus do
+        description "Filter requests by an exact state"
+      end
+
       argument :sort_input, :string do
         description "Sort field with optional - prefix for descending"
         default "-created_at"
       end
-
-      filter expr(
-               contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)) or
-                 contains(url, ^arg(:query))
-             )
 
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)
 
         query =
           query
+          |> apply_query_filter()
           |> apply_sorting(sort_input)
           |> apply_batch_filter()
+          |> apply_state_filter()
 
         query
       end
 
-      pagination offset?: true, default_limit: 15, countable: true
+      pagination keyset?: true, default_limit: 25, countable: true
     end
 
     read :count_for_search do
@@ -288,13 +382,15 @@ defmodule Batcher.Batching.Request do
         description "Filter requests by batch ID"
       end
 
-      filter expr(
-               contains(custom_id, ^arg(:query)) or contains(model, ^arg(:query)) or
-                 contains(url, ^arg(:query))
-             )
+      argument :state_filter, Batching.Types.RequestStatus do
+        description "Filter requests by an exact state"
+      end
 
       prepare fn query, _context ->
-        apply_batch_filter(query)
+        query
+        |> apply_query_filter()
+        |> apply_batch_filter()
+        |> apply_state_filter()
       end
 
       pagination offset?: true, countable: true
@@ -302,6 +398,7 @@ defmodule Batcher.Batching.Request do
 
     update :begin_processing do
       description "Mark the request as being processed by OpenAI"
+      require_atomic? false
       change transition_state(:openai_processing)
     end
 
@@ -413,6 +510,11 @@ defmodule Batcher.Batching.Request do
     publish :create, ["created", :id]
     publish_all :create, ["created"]
 
+    publish_all :update, ["state_changed"],
+      filter: fn notification ->
+        Ash.Changeset.changing_attribute?(notification.changeset, :state)
+      end
+
     publish_all :update, ["state_changed", :id],
       filter: fn notification ->
         Ash.Changeset.changing_attribute?(notification.changeset, :state)
@@ -491,6 +593,12 @@ defmodule Batcher.Batching.Request do
       description "Error message if processing or delivery failed"
     end
 
+    attribute :delivery_attempt_count, :integer do
+      description "Number of delivery attempts recorded for this request"
+      allow_nil? false
+      default 0
+    end
+
     create_timestamp :created_at, public?: true
     update_timestamp :updated_at, public?: true
   end
@@ -508,21 +616,15 @@ defmodule Batcher.Batching.Request do
     end
   end
 
-  calculations do
-    calculate :delivery_attempt_count,
-              :integer,
-              Batcher.Batching.Calculations.RequestDeliveryAttemptCount
-  end
-
-  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
+  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc, id: :desc)
 
   defp apply_sorting(query, sort_by) when is_binary(sort_by) do
     case parse_sort_by(sort_by) do
       {field, direction} ->
-        Ash.Query.sort(query, [{field, direction}])
+        Ash.Query.sort(query, [{field, direction}, {:id, direction}])
 
       _ ->
-        Ash.Query.sort(query, created_at: :desc)
+        Ash.Query.sort(query, created_at: :desc, id: :desc)
     end
   end
 
@@ -533,6 +635,30 @@ defmodule Batcher.Batching.Request do
       Ash.Query.filter(query, batch_id == ^batch_id)
     else
       query
+    end
+  end
+
+  defp apply_state_filter(query) do
+    state_filter = Ash.Query.get_argument(query, :state_filter)
+
+    if state_filter do
+      Ash.Query.filter(query, state == ^state_filter)
+    else
+      query
+    end
+  end
+
+  defp apply_query_filter(query) do
+    query_value = query |> Ash.Query.get_argument(:query) |> to_string() |> String.trim()
+
+    if query_value == "" do
+      query
+    else
+      Ash.Query.filter(
+        query,
+        contains(custom_id, ^query_value) or contains(model, ^query_value) or
+          contains(url, ^query_value)
+      )
     end
   end
 

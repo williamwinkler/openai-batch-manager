@@ -305,8 +305,8 @@ defmodule BigPayloadScript do
       "method" => "POST",
       "body" => build_body(scenario),
       "delivery_config" => %{
-        "type" => "rabbitmq",
-        "rabbitmq_queue" => @rabbitmq_queue
+        "type" => "webhook",
+        "webhook_url" => "http://host.docker.internal:6000/webhook"
       }
     }
   end

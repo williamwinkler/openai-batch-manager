@@ -110,8 +110,12 @@
                   <button
                     id={"delete-override-#{override.model_prefix}"}
                     class="btn btn-xs btn-ghost text-warning"
-                    phx-click="delete_override"
-                    phx-value-model_prefix={override.model_prefix}
+                    phx-click={
+                      JS.push("delete_override",
+                        value: %{model_prefix: override.model_prefix},
+                        loading: "#delete-override-#{override.model_prefix}"
+                      )
+                    }
                     disabled={
                       pending_action?(@pending_actions, :delete_override, override.model_prefix)
                     }
@@ -126,67 +130,6 @@
               </tr>
             </tbody>
           </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-4">
-        <h2 class="card-title text-base">Debugging tools</h2>
-        <p class="text-sm text-base-content/70">
-          Debugging tools for the batch manager.
-        </p>
-
-        <div class="rounded-lg border border-base-300">
-          <div class="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-            <div class="space-y-1">
-              <p class="text-sm font-medium">Download DB Snapshot</p>
-              <p class="text-xs text-base-content/70">
-                Creates and downloads a consistent local database snapshot.
-              </p>
-            </div>
-            <a
-              href={~p"/settings/database/download"}
-              class="btn btn-outline btn-sm cursor-pointer"
-            >
-              <.icon name="hero-arrow-down-tray" class="w-4 h-4" /> Download
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card border border-error/40 bg-base-100 shadow-sm">
-      <div class="card-body gap-4">
-        <h2 class="card-title text-base text-error">Danger Zone</h2>
-        <p class="text-sm text-base-content/70">
-          Destructive local data action. This cannot be undone.
-        </p>
-
-        <div class="rounded-lg border border-base-300">
-          <div class="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-            <div class="space-y-1">
-              <p class="text-sm font-medium text-error">Erase Database</p>
-              <p class="text-xs text-base-content/70">
-                Permanently deletes all local batches, requests, delivery attempts, settings, and files referenced on
-                OpenAIs platform.
-              </p>
-            </div>
-            <button
-              type="button"
-              id="erase-db"
-              phx-click="erase_db"
-              class="btn btn-sm btn-error cursor-pointer"
-              data-confirm="Are you sure? This will erase all local app data and cannot be undone."
-              disabled={pending_action?(@pending_actions, :erase_db)}
-            >
-              <%= if pending_action?(@pending_actions, :erase_db) do %>
-                <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Erasing...
-              <% else %>
-                <.icon name="hero-trash" class="w-4 h-4" /> Erase DB
-              <% end %>
-            </button>
-          </div>
         </div>
       </div>
     </div>

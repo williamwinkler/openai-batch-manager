@@ -3,8 +3,12 @@ defmodule BatcherWeb.BatchShowLive do
 
   alias Batcher.Batching
   alias Batcher.Batching.CapacityControl
+  alias BatcherWeb.Live.Utils.ActionActivity
   alias BatcherWeb.Live.Utils.AsyncActions
   alias Batcher.Utils.Format
+
+  @delivery_stats_refresh_throttle_ms 2_000
+  @delivery_stats_fallback_poll_ms 20_000
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -15,10 +19,26 @@ defmodule BatcherWeb.BatchShowLive do
       BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch_id}")
       BatcherWeb.Endpoint.subscribe("batches:progress_updated:#{batch_id}")
       BatcherWeb.Endpoint.subscribe("batches:metrics_delta")
+      ActionActivity.subscribe({:batch, batch_id})
     end
 
     case Batching.get_batch_by_id(batch_id) do
       {:ok, batch} ->
+        socket =
+          socket
+          |> assign(:delivery_stats_dirty, false)
+          |> assign(:delivery_stats_refresh_scheduled, false)
+          |> assign(:delivery_stats_refresh_inflight, false)
+          |> assign(:last_delivery_stats_refresh_at_ms, 0)
+
+        socket =
+          if connected?(socket) do
+            schedule_delivery_stats_fallback_tick()
+            socket
+          else
+            socket
+          end
+
         {:ok,
          socket
          |> assign(batch: batch, show_capacity_modal: false)
@@ -29,6 +49,7 @@ defmodule BatcherWeb.BatchShowLive do
          |> assign(:delivery_stats_status, :loading_initial)
          |> assign(:delivery_stats_request_key, nil)
          |> assign(:pending_actions, MapSet.new())
+         |> assign(:action_activity_version, 0)
          |> assign(:show_error_modal, false)
          |> assign(:error_modal_content, "")
          |> assign(:error_modal_is_json, false)
@@ -37,6 +58,7 @@ defmodule BatcherWeb.BatchShowLive do
          |> assign(:capacity_info, nil)
          |> assign(:capacity_info_status, :idle)
          |> assign(:capacity_info_stale, true)
+         |> assign(:batch_refresh_request_key, nil)
          |> start_section_loads(batch.id)}
 
       {:error, _} ->
@@ -116,7 +138,8 @@ defmodule BatcherWeb.BatchShowLive do
 
   @impl true
   def handle_async({:batch_action, action, batch_id}, {:ok, result}, socket) do
-    socket = AsyncActions.clear_pending(socket, {:batch_action, action, batch_id})
+    key = {:batch_action, action, batch_id}
+    socket = AsyncActions.clear_shared_pending(socket, key, scope: {:batch, batch_id})
 
     case result do
       {:ok, :delete, message} ->
@@ -144,9 +167,11 @@ defmodule BatcherWeb.BatchShowLive do
 
   @impl true
   def handle_async({:batch_action, action, batch_id}, {:exit, reason}, socket) do
+    key = {:batch_action, action, batch_id}
+
     socket =
       socket
-      |> AsyncActions.clear_pending({:batch_action, action, batch_id})
+      |> AsyncActions.clear_shared_pending(key, scope: {:batch, batch_id})
       |> put_flash(:error, "Batch action failed unexpectedly: #{inspect(reason)}")
 
     {:noreply, socket}
@@ -199,7 +224,20 @@ defmodule BatcherWeb.BatchShowLive do
       ) do
     if socket.assigns.batch.id == request_key and
          socket.assigns.delivery_stats_request_key == request_key do
-      {:noreply, assign(socket, delivery_stats: delivery_stats, delivery_stats_status: :ready)}
+      socket =
+        socket
+        |> assign(delivery_stats: delivery_stats, delivery_stats_status: :ready)
+        |> assign(:delivery_stats_refresh_inflight, false)
+        |> assign(:last_delivery_stats_refresh_at_ms, now_ms())
+
+      socket =
+        if socket.assigns.delivery_stats_dirty do
+          maybe_schedule_delivery_stats_refresh(socket)
+        else
+          socket
+        end
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -213,7 +251,20 @@ defmodule BatcherWeb.BatchShowLive do
       ) do
     if socket.assigns.batch.id == request_key and
          socket.assigns.delivery_stats_request_key == request_key do
-      {:noreply, assign(socket, :delivery_stats_status, :error)}
+      socket =
+        socket
+        |> assign(:delivery_stats_status, :error)
+        |> assign(:delivery_stats_refresh_inflight, false)
+        |> assign(:last_delivery_stats_refresh_at_ms, now_ms())
+
+      socket =
+        if socket.assigns.delivery_stats_dirty do
+          maybe_schedule_delivery_stats_refresh(socket)
+        else
+          socket
+        end
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -239,17 +290,42 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   @impl true
+  def handle_async({:batch_refresh, request_key}, {:ok, {:ok, batch}}, socket) do
+    if socket.assigns.batch_refresh_request_key == request_key do
+      {:noreply,
+       socket
+       |> assign(:batch, batch)
+       |> mark_capacity_info_stale()
+       |> start_timeline_load(batch.id)
+       |> mark_delivery_stats_dirty()
+       |> maybe_schedule_delivery_stats_refresh()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:batch_refresh, request_key}, _result, socket) do
+    if socket.assigns.batch_refresh_request_key == request_key do
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_info(
         %{topic: "batches:state_changed:" <> _batch_id, payload: %{data: batch}},
         socket
       ) do
-    batch = Batching.get_batch_by_id!(batch.id)
+    request_key = {:batch_refresh, batch.id, System.unique_integer([:positive])}
 
     {:noreply,
      socket
-     |> assign(batch: batch)
-     |> mark_capacity_info_stale()
-     |> start_section_loads(batch.id)}
+     |> assign(:batch_refresh_request_key, request_key)
+     |> start_async({:batch_refresh, request_key}, fn ->
+       Batching.get_batch_by_id(batch.id)
+     end)}
   end
 
   @impl true
@@ -272,7 +348,12 @@ defmodule BatcherWeb.BatchShowLive do
         openai_requests_total: batch_data.openai_requests_total
     }
 
-    {:noreply, socket |> assign(:batch, updated_batch) |> mark_capacity_info_stale()}
+    {:noreply,
+     socket
+     |> assign(:batch, updated_batch)
+     |> mark_capacity_info_stale()
+     |> mark_delivery_stats_dirty()
+     |> maybe_schedule_delivery_stats_refresh()}
   end
 
   @impl true
@@ -304,10 +385,72 @@ defmodule BatcherWeb.BatchShowLive do
               estimated_request_input_tokens_delta
       }
 
-      {:noreply, socket |> assign(batch: updated_batch) |> mark_capacity_info_stale()}
+      {:noreply,
+       socket
+       |> assign(batch: updated_batch)
+       |> mark_capacity_info_stale()
+       |> mark_delivery_stats_dirty()
+       |> maybe_schedule_delivery_stats_refresh()}
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_info(%{topic: "ui_actions:batch:" <> _batch_id}, socket) do
+    {:noreply, update(socket, :action_activity_version, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_info(:refresh_delivery_stats, socket) do
+    socket = assign(socket, :delivery_stats_refresh_scheduled, false)
+
+    socket =
+      cond do
+        socket.assigns.delivery_stats_refresh_inflight ->
+          socket
+
+        not socket.assigns.delivery_stats_dirty ->
+          socket
+
+        true ->
+          batch_id = socket.assigns.batch.id
+
+          socket
+          |> assign(:delivery_stats_dirty, false)
+          |> assign(:delivery_stats_refresh_inflight, true)
+          |> assign(:delivery_stats_request_key, batch_id)
+          |> assign(
+            :delivery_stats_status,
+            next_section_status(socket.assigns.delivery_stats_status)
+          )
+          |> start_async({:batch_details_section, :delivery_stats, batch_id}, fn ->
+            load_delivery_stats(batch_id)
+          end)
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info(:delivery_stats_fallback_tick, socket) do
+    schedule_delivery_stats_fallback_tick()
+
+    socket =
+      if socket.assigns.batch.state in [
+           :ready_to_deliver,
+           :delivering,
+           :partially_delivered,
+           :delivery_failed
+         ] do
+        socket
+        |> mark_delivery_stats_dirty()
+        |> maybe_schedule_delivery_stats_refresh()
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -323,9 +466,12 @@ defmodule BatcherWeb.BatchShowLive do
     else
       async_key = {:batch_action, action, batch_id}
 
-      AsyncActions.start_action(socket, async_key, fn ->
-        perform_batch_action(action, batch_id)
-      end)
+      AsyncActions.start_shared_action(
+        socket,
+        async_key,
+        fn -> perform_batch_action(action, batch_id) end,
+        scope: {:batch, batch_id}
+      )
     end
   end
 
@@ -381,18 +527,18 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   def pending_action?(pending_actions, action, batch_id) do
-    AsyncActions.pending?(pending_actions, {:batch_action, action, batch_id})
+    key = {:batch_action, action, batch_id}
+    AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
   end
 
   defp start_section_loads(socket, batch_id) do
     socket
-    |> assign(:timeline_request_key, batch_id)
+    |> start_timeline_load(batch_id)
     |> assign(:delivery_stats_request_key, batch_id)
-    |> assign(:timeline_status, next_section_status(socket.assigns.timeline_status))
+    |> assign(:delivery_stats_refresh_inflight, true)
+    |> assign(:delivery_stats_dirty, false)
+    |> assign(:delivery_stats_refresh_scheduled, false)
     |> assign(:delivery_stats_status, next_section_status(socket.assigns.delivery_stats_status))
-    |> start_async({:batch_details_section, :timeline, batch_id}, fn ->
-      load_transitions(batch_id)
-    end)
     |> start_async({:batch_details_section, :delivery_stats, batch_id}, fn ->
       load_delivery_stats(batch_id)
     end)
@@ -400,6 +546,15 @@ defmodule BatcherWeb.BatchShowLive do
 
   defp next_section_status(current) do
     if current in [:idle, :loading_initial], do: :loading_initial, else: :refreshing
+  end
+
+  defp start_timeline_load(socket, batch_id) do
+    socket
+    |> assign(:timeline_request_key, batch_id)
+    |> assign(:timeline_status, next_section_status(socket.assigns.timeline_status))
+    |> start_async({:batch_details_section, :timeline, batch_id}, fn ->
+      load_transitions(batch_id)
+    end)
   end
 
   defp load_transitions(batch_id) do
@@ -434,7 +589,7 @@ defmodule BatcherWeb.BatchShowLive do
 
   defp build_capacity_info(batch) do
     {:ok, %{limit: limit, source: limit_source}} =
-      Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model)
+      Batcher.Clients.OpenAI.RateLimits.get_batch_limit_tokens(batch.model)
 
     {:ok, reserved_other} =
       CapacityControl.reserved_tokens_for_model(batch.model, exclude_batch_id: batch.id)
@@ -542,4 +697,31 @@ defmodule BatcherWeb.BatchShowLive do
       _ -> :ok
     end
   end
+
+  defp mark_delivery_stats_dirty(socket), do: assign(socket, :delivery_stats_dirty, true)
+
+  defp maybe_schedule_delivery_stats_refresh(socket) do
+    cond do
+      socket.assigns.delivery_stats_refresh_inflight ->
+        socket
+
+      socket.assigns.delivery_stats_refresh_scheduled ->
+        socket
+
+      not socket.assigns.delivery_stats_dirty ->
+        socket
+
+      true ->
+        elapsed = now_ms() - socket.assigns.last_delivery_stats_refresh_at_ms
+        delay_ms = max(@delivery_stats_refresh_throttle_ms - elapsed, 0)
+        Process.send_after(self(), :refresh_delivery_stats, delay_ms)
+        assign(socket, :delivery_stats_refresh_scheduled, true)
+    end
+  end
+
+  defp schedule_delivery_stats_fallback_tick do
+    Process.send_after(self(), :delivery_stats_fallback_tick, @delivery_stats_fallback_poll_ms)
+  end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 end

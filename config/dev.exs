@@ -5,25 +5,13 @@ config :ash, :pub_sub, debug?: true
 
 # Configure your database
 config :batcher, Batcher.Repo,
-  database: Path.expand("../batcher_dev.db", __DIR__),
-  # CRITICAL: SQLite only supports one writer at a time. Pool size of 1 serializes writes
-  # and prevents "Database busy" errors when Oban, Ash queries, and web requests compete.
-  pool_size: 1,
+  url: System.get_env("DATABASE_URL_DEV", "ecto://postgres:postgres@localhost:5432/openai_batch_manager_dev"),
+  pool_size: 20,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
-  # SQLite optimizations for concurrent access (web requests + Oban jobs + LiveView)
   timeout: 60_000,
-  after_connect:
-    {Exqlite.Sqlite3, :execute,
-     [
-       """
-       PRAGMA journal_mode=WAL;
-       PRAGMA busy_timeout=10000;
-       PRAGMA synchronous=NORMAL;
-       PRAGMA cache_size=-64000;
-       PRAGMA temp_store=MEMORY;
-       """
-     ]}
+  queue_target: 5_000,
+  queue_interval: 1_000
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
@@ -78,7 +66,7 @@ config :batcher, BatcherWeb.Endpoint,
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
+# Enable dev routes for dashboard
 config :batcher, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
@@ -98,6 +86,3 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
-
-# Disable swoosh api client as it is only required for production adapters.
-config :swoosh, :api_client, false

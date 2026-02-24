@@ -11,6 +11,7 @@ defmodule Batcher.Batching.Changes.CreateDeliveryAttempt do
   alias Batcher.Batching
 
   @impl true
+  @doc false
   def change(changeset, _opts, _ctx) do
     Ash.Changeset.after_action(changeset, fn cs, result ->
       create_attempt_from_changeset(cs, result)
@@ -21,9 +22,14 @@ defmodule Batcher.Batching.Changes.CreateDeliveryAttempt do
     outcome = get_in(cs.context, [:delivery_attempt, :outcome])
     error_msg = get_in(cs.context, [:delivery_attempt, :error_msg])
 
+    attempt_number =
+      get_in(cs.context, [:delivery_attempt, :attempt_number]) ||
+        (result.delivery_attempt_count || 0) + 1
+
     if outcome != nil do
       params = %{
         request_id: result.id,
+        attempt_number: attempt_number,
         delivery_config: result.delivery_config,
         outcome: outcome,
         error_msg: error_msg

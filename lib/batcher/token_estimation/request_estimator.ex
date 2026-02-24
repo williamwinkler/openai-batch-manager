@@ -14,6 +14,22 @@ defmodule Batcher.TokenEstimation.RequestEstimator do
           source: :tiktoken | :fallback
         }
 
+  @doc """
+  Estimates request-level and capacity-level tokens for a payload.
+
+  ## Examples
+
+      iex> {:ok, result} =
+      ...>   Batcher.TokenEstimation.RequestEstimator.estimate(
+      ...>     "/v1/responses",
+      ...>     "doctest-unsupported-model",
+      ...>     %{"body" => %{"model" => "gpt-4o-mini", "input" => "hello world"}}
+      ...>   )
+      iex> result.source == :fallback
+      true
+      iex> result.request_tokens > 0 and result.capacity_tokens > 0
+      true
+  """
   @spec estimate(String.t(), String.t(), map() | String.t()) :: {:ok, estimate_result()}
   def estimate(url, model, payload) when is_binary(url) and is_binary(model) do
     payload_map = normalize_payload(payload)

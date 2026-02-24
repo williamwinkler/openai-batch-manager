@@ -8,7 +8,7 @@ defmodule Batcher.Batching.FileProcessing do
   require Logger
   require Ash.Query
 
-  alias Batcher.OpenaiApiClient
+  alias Batcher.Clients.OpenAI.ApiClient
   alias Batcher.Batching
 
   @doc """
@@ -19,7 +19,7 @@ defmodule Batcher.Batching.FileProcessing do
   def process_file(batch_id, file_id, file_type) do
     Logger.info("Batch #{batch_id} downloading #{file_type} file: #{file_id}")
 
-    with {:ok, file_path} <- OpenaiApiClient.download_file(file_id) do
+    with {:ok, file_path} <- ApiClient.download_file(file_id) do
       Logger.info("Batch #{batch_id} #{file_type} file downloaded successfully to #{file_path}")
 
       case process_results_in_chunks(batch_id, file_path, file_type) do
@@ -92,16 +92,18 @@ defmodule Batcher.Batching.FileProcessing do
 
         success_count > 0 ->
           %{delivered: delivered_count, failed: failed_count} = updated_batch.delivery_stats
+          openai_failed_count = count_openai_failed_requests(updated_batch.id)
+          total_failed_count = failed_count + openai_failed_count
 
           {action, state_name} =
             cond do
-              delivered_count > 0 and failed_count == 0 ->
+              delivered_count > 0 and total_failed_count == 0 ->
                 {:mark_delivered, "delivered"}
 
-              delivered_count == 0 and failed_count > 0 ->
+              delivered_count == 0 and total_failed_count > 0 ->
                 {:mark_delivery_failed, "delivery_failed"}
 
-              delivered_count > 0 and failed_count > 0 ->
+              delivered_count > 0 and total_failed_count > 0 ->
                 {:mark_partially_delivered, "partially_delivered"}
 
               true ->
@@ -136,6 +138,12 @@ defmodule Batcher.Batching.FileProcessing do
       |> Ash.Changeset.for_update(:start_delivering)
       |> Ash.update()
     end
+  end
+
+  defp count_openai_failed_requests(batch_id) do
+    Batching.Request
+    |> Ash.Query.filter(batch_id == ^batch_id and state == :failed)
+    |> Ash.count!()
   end
 
   # Private functions
@@ -223,13 +231,16 @@ defmodule Batcher.Batching.FileProcessing do
 
     result =
       Batcher.Repo.transaction(fn ->
-        Enum.each(chunk, fn row ->
-          update_request(row, requests_map, file_type)
+        Enum.reduce(chunk, [], fn row, notifications ->
+          row
+          |> update_request(requests_map, file_type)
+          |> Enum.concat(notifications)
         end)
       end)
 
     case result do
-      {:ok, _} ->
+      {:ok, notifications} ->
+        Ash.Notifier.notify(notifications)
         :ok
 
       {:error, reason} ->
@@ -246,71 +257,78 @@ defmodule Batcher.Batching.FileProcessing do
     case Map.get(requests_map, custom_id) do
       nil ->
         Logger.warning("Openai returned custom_id #{custom_id} which is not found in DB")
-        :ok
+        []
 
       request ->
         terminal_states = [:delivered, :failed, :delivery_failed, :expired, :cancelled]
+        processable_states = [:pending, :openai_processing, :openai_processed]
 
-        if request.state in terminal_states do
-          Logger.debug(
-            "Skipping request #{request.id} (custom_id: #{custom_id}) - already in terminal state: #{request.state}"
-          )
+        cond do
+          request.state in terminal_states ->
+            Logger.debug(
+              "Skipping request #{request.id} (custom_id: #{custom_id}) - already in terminal state: #{request.state}"
+            )
 
-          :ok
-        else
-          cond do
-            file_type == "error" ->
-              error_msg = JSON.encode!(row_data)
+            []
 
-              request
-              |> Ash.Changeset.for_update(:mark_failed, %{error_msg: error_msg})
-              |> Ash.update!()
+          request.state not in processable_states ->
+            Logger.debug(
+              "Skipping request #{request.id} (custom_id: #{custom_id}) - state is no longer processable: #{request.state}"
+            )
 
-            file_type == "output" and not is_nil(err) ->
-              error_msg = JSON.encode!(row_data)
+            []
 
-              request
-              |> Ash.Changeset.for_update(:mark_failed, %{error_msg: error_msg})
-              |> Ash.update!()
+          file_type == "error" ->
+            error_msg = JSON.encode!(row_data)
 
-            file_type == "output" and
-                (is_map(response) and
-                   (Map.get(response, "status_code") != 200 or
-                      get_in(response, ["body", "error"]) != nil)) ->
-              error_msg = JSON.encode!(row_data)
+            run_update_with_notifications(request, :mark_failed, %{error_msg: error_msg})
 
-              request
-              |> Ash.Changeset.for_update(:mark_failed, %{error_msg: error_msg})
-              |> Ash.update!()
+          file_type == "output" and not is_nil(err) ->
+            error_msg = JSON.encode!(row_data)
 
-            file_type == "output" ->
-              if request.state == :openai_processed do
-                Logger.debug(
-                  "Skipping request #{request.id} (custom_id: #{custom_id}) - already processed"
-                )
+            run_update_with_notifications(request, :mark_failed, %{error_msg: error_msg})
 
-                :ok
-              else
-                request
-                |> Ash.Changeset.for_update(:complete_processing, %{response_payload: row_data})
-                |> Ash.update!()
-              end
+          file_type == "output" and
+              (is_map(response) and
+                 (Map.get(response, "status_code") != 200 or
+                    get_in(response, ["body", "error"]) != nil)) ->
+            error_msg = JSON.encode!(row_data)
 
-            true ->
-              Logger.warning(
-                "Unexpected file_type #{file_type} for request #{request.id}, treating as error"
-              )
+            run_update_with_notifications(request, :mark_failed, %{error_msg: error_msg})
 
-              error_msg = JSON.encode!(row_data)
+          file_type == "output" and request.state == :openai_processed ->
+            Logger.debug(
+              "Skipping request #{request.id} (custom_id: #{custom_id}) - already processed"
+            )
 
-              request
-              |> Ash.Changeset.for_update(:mark_failed, %{error_msg: error_msg})
-              |> Ash.update!()
-          end
+            []
+
+          file_type == "output" ->
+            run_update_with_notifications(request, :complete_processing, %{
+              response_payload: row_data
+            })
+
+          true ->
+            Logger.warning(
+              "Unexpected file_type #{file_type} for request #{request.id}, treating as error"
+            )
+
+            error_msg = JSON.encode!(row_data)
+
+            run_update_with_notifications(request, :mark_failed, %{error_msg: error_msg})
         end
     end
   end
 
   # Catch-all for malformed lines
-  defp update_request(_row_data, _requests_map, _file_type), do: :ok
+  defp update_request(_row_data, _requests_map, _file_type), do: []
+
+  defp run_update_with_notifications(request, action, params) do
+    {_, notifications} =
+      request
+      |> Ash.Changeset.for_update(action, params)
+      |> Ash.update!(return_notifications?: true)
+
+    notifications
+  end
 end

@@ -3,24 +3,6 @@ defmodule BatcherWeb.SettingsLiveTest do
 
   alias Batcher.Settings
 
-  defmodule DataResetOkMock do
-    def erase_all, do: :ok
-  end
-
-  setup do
-    original_data_reset_module = Application.get_env(:batcher, :data_reset_module)
-
-    on_exit(fn ->
-      if is_nil(original_data_reset_module) do
-        Application.delete_env(:batcher, :data_reset_module)
-      else
-        Application.put_env(:batcher, :data_reset_module, original_data_reset_module)
-      end
-    end)
-
-    :ok
-  end
-
   describe "settings page" do
     test "renders page and navigation link", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/settings")
@@ -36,11 +18,6 @@ defmodule BatcherWeb.SettingsLiveTest do
       assert html =~ ~s|value="gpt-4o-mini"|
       assert html =~ ~s|href="/settings"|
       assert html =~ "https://platform.openai.com/settings/organization/limits"
-      assert html =~ ~s|href="/settings/database/download"|
-      assert html =~ "Danger Zone"
-      assert html =~ "Download DB Snapshot"
-      assert html =~ "Erase DB"
-      assert html =~ ~s|phx-click="erase_db"|
     end
 
     test "creates override from form submission", %{conn: conn} do
@@ -136,27 +113,6 @@ defmodule BatcherWeb.SettingsLiveTest do
 
       html = render(view)
       assert html =~ "Please fix the form errors"
-    end
-
-    test "erases database via phx-click event", %{conn: conn} do
-      Application.put_env(:batcher, :data_reset_module, DataResetOkMock)
-      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
-      Application.put_env(:batcher, :batch_action_test_delay_ms, 200)
-
-      on_exit(fn ->
-        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
-      end)
-
-      {:ok, view, _html} = live(conn, ~p"/settings")
-
-      view
-      |> element("button[phx-click='erase_db']")
-      |> render_click()
-
-      assert has_element?(view, "button#erase-db[disabled]", "Erasing...")
-      :timer.sleep(300)
-      html = render(view)
-      assert html =~ "Database erased successfully"
     end
   end
 

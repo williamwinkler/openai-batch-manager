@@ -1,4 +1,7 @@
 defmodule Batcher.Batching.Actions.ExpireStaleBuildingBatch do
+  @moduledoc """
+  Runs an Ash action callback for the batch/request workflow.
+  """
   use Ash.Resource.Actions.Implementation
   require Logger
 

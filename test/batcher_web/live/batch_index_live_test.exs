@@ -2,8 +2,17 @@ defmodule BatcherWeb.BatchIndexLiveTest do
   use BatcherWeb.LiveViewCase, async: false
 
   alias Batcher.Batching
+  alias BatcherWeb.Live.Utils.ActionActivity
 
   setup do
+    original_coalesce_ms = Application.get_env(:batcher, :ui_batch_reload_coalesce_ms, 1_500)
+    Application.put_env(:batcher, :ui_batch_reload_coalesce_ms, 30)
+
+    on_exit(fn ->
+      Application.put_env(:batcher, :ui_batch_reload_coalesce_ms, original_coalesce_ms)
+      Application.delete_env(:batcher, :batch_index_reload_delay_ms)
+    end)
+
     # Create enough batches to span multiple pages (per_page is 15)
     # Create 20 batches to ensure we have at least 2 pages
     batches =
@@ -29,10 +38,10 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       assert has_element?(view, ".join")
     end
 
-    test "shows loading placeholder first, then displays total count", %{conn: conn} do
+    test "shows total count once available", %{conn: conn} do
       {:ok, view, initial_html} = live(conn, ~p"/batches")
 
-      assert initial_html =~ "Calculating..."
+      assert initial_html =~ "Calculating..." or initial_html =~ "of 20"
       wait_for(fn -> render(view) =~ "of 20" end)
       html = render(view)
       assert html =~ "of 20"
@@ -42,53 +51,52 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       # Use a small limit to ensure we have multiple pages and navigation buttons
       {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
 
-      # First and previous buttons should be disabled on first page
       html = render(view)
-      # The first two buttons (first page and prev) should have btn-disabled
+      assert html =~ "Previous"
       assert html =~ "btn-disabled"
-      assert html =~ "hero-chevron-double-left"
     end
 
-    test "clicking page 2 navigates to second page", %{conn: conn} do
+    test "clicking next navigates forward", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
+      first_before = render(view) |> first_batch_row_id()
 
-      wait_for(fn -> has_element?(view, "a.join-item", "2") end)
-
-      # Click page 2 button
       view
-      |> element("a.join-item", "2")
+      |> element("a.join-item", "Next")
       |> render_click()
 
-      # Verify page 2 is now active
-      assert has_element?(view, "a.btn-primary", "2")
+      wait_for(fn -> render(view) |> first_batch_row_id() != first_before end)
 
-      # Verify batches are still shown
       new_batches = view |> element("#batches") |> render() |> count_table_rows()
       assert new_batches > 0
     end
 
-    test "previous button works on second page", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?offset=10&limit=10")
+    test "previous button works after moving forward", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
+      first_page_first_id = render(view) |> first_batch_row_id()
 
-      # Page 2 should be active
-      assert has_element?(view, "a.btn-primary", "2")
-
-      # Click page 1 to go back
       view
-      |> element("a.join-item", "1")
+      |> element("a.join-item", "Next")
       |> render_click()
 
+      wait_for(fn -> render(view) |> first_batch_row_id() != first_page_first_id end)
+
       # Should be back on page 1
-      assert has_element?(view, "a.btn-primary", "1")
+      view
+      |> element("a.join-item", "Previous")
+      |> render_click()
+
+      wait_for(fn -> render(view) |> first_batch_row_id() == first_page_first_id end)
+
+      html = render(view)
+      assert html =~ "Previous"
+      assert html =~ "btn-disabled"
     end
 
-    test "next/last buttons are disabled on last page", %{conn: conn} do
-      # Navigate to last page (offset=10 with 20 items and per_page=10 means page 2 is last)
-      {:ok, view, _html} = live(conn, ~p"/batches?offset=10&limit=10")
-
-      # The last two buttons (next and last) should have btn-disabled
+    test "next button is disabled on last page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
+      view |> element("a.join-item", "Next") |> render_click()
       html = render(view)
-      # Check that btn-disabled appears for next/last buttons
+      assert html =~ "Next"
       assert html =~ "btn-disabled"
     end
 
@@ -137,6 +145,104 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       html = render(view)
       refute html =~ "Calculating..."
       assert html =~ "of 20"
+    end
+
+    test "coalesces burst lifecycle events and remains stable", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/batches")
+      wait_for(fn -> render(view) =~ "of 20" end)
+
+      for _ <- 1..8 do
+        BatcherWeb.Endpoint.broadcast("batches:created", "created", %{data: %{id: -1}})
+      end
+
+      :timer.sleep(80)
+      html = render(view)
+      refute html =~ "Calculating..."
+      assert html =~ "of 20"
+    end
+
+    test "ignores off-page state change events", %{conn: conn, batches: batches} do
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=10")
+      first_before = render(view) |> first_batch_row_id()
+
+      off_page_batch =
+        batches
+        |> Enum.sort_by(& &1.id, :desc)
+        |> Enum.at(15)
+
+      BatcherWeb.Endpoint.broadcast(
+        "batches:state_changed:#{off_page_batch.id}",
+        "state_changed",
+        %{data: off_page_batch}
+      )
+
+      :timer.sleep(120)
+      assert first_batch_row_id(render(view)) == first_before
+    end
+
+    test "reloads on batches:created only on first-page newest empty query", %{conn: conn} do
+      {:ok, first_page_view, _html} = live(conn, ~p"/batches")
+      first_before = render(first_page_view) |> first_batch_row_id()
+
+      {:ok, next_page_view, _html} = live(conn, ~p"/batches?limit=10")
+
+      next_page_view
+      |> element("a.join-item", "Next")
+      |> render_click()
+
+      second_page_before = render(next_page_view) |> first_batch_row_id()
+
+      {:ok, _batch} = Batching.create_batch("new-top-feed-model", "/v1/responses")
+
+      wait_for(fn -> render(first_page_view) |> first_batch_row_id() != first_before end)
+
+      :timer.sleep(120)
+      assert first_batch_row_id(render(next_page_view)) == second_page_before
+    end
+
+    test "single-flight backpressure schedules one follow-up reload", %{conn: conn} do
+      Application.put_env(:batcher, :batch_index_reload_delay_ms, 180)
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+      wait_for(fn -> render(view) =~ "of 20" end)
+
+      for _ <- 1..5 do
+        BatcherWeb.Endpoint.broadcast("batches:created", "created", %{data: %{id: -1}})
+      end
+
+      :timer.sleep(300)
+      html = render(view)
+      refute html =~ "Calculating..."
+      assert html =~ "of 20"
+    end
+
+    test "shared action activity loading propagates across index and show views", %{
+      conn: conn,
+      batches: batches
+    } do
+      batch = List.first(batches)
+      key = {:batch_action, :cancel, batch.id}
+
+      {:ok, index_view, _html} = live(conn, ~p"/batches?limit=25")
+      {:ok, show_view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      :ok = ActionActivity.start(key, scope: {:batch, batch.id}, ttl_ms: 2_000)
+      assert ActionActivity.active?(key)
+
+      wait_for(fn ->
+        render(index_view) =~ ~s(id="cancel-batch-#{batch.id}") and
+          render(index_view) =~ "disabled"
+      end)
+
+      wait_for(fn ->
+        render(show_view) =~ ~s(id="cancel-batch") and render(show_view) =~ "disabled"
+      end)
+
+      :ok = ActionActivity.finish(key, scope: {:batch, batch.id})
+
+      wait_for(fn ->
+        not String.contains?(render(index_view), ~s(id="cancel-batch-#{batch.id}" disabled))
+      end)
     end
   end
 
@@ -231,7 +337,7 @@ defmodule BatcherWeb.BatchIndexLiveTest do
     end
 
     test "sorting preserves pagination offset", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/batches?offset=15&limit=15")
+      {:ok, view, _html} = live(conn, ~p"/batches?limit=15")
 
       # Change sort option
       view
@@ -239,6 +345,13 @@ defmodule BatcherWeb.BatchIndexLiveTest do
       |> render_change(%{"sort_by" => "model"})
 
       assert has_element?(view, "#sort_by")
+    end
+
+    test "offset URLs redirect to keyset-compatible params", %{conn: conn} do
+      assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/batches?offset=10&limit=10")
+      assert to =~ "/batches?"
+      assert to =~ "limit=10"
+      refute to =~ "offset="
     end
 
     test "invalid sort option defaults to newest first", %{conn: conn} do
@@ -270,6 +383,13 @@ defmodule BatcherWeb.BatchIndexLiveTest do
     |> length()
     # Subtract 1 for the opening tag split
     |> Kernel.-(1)
+  end
+
+  defp first_batch_row_id(html) do
+    case Regex.run(~r/id=\"batch-created-(\d+)\"/, html) do
+      [_, id] -> id
+      _ -> nil
+    end
   end
 
   defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)

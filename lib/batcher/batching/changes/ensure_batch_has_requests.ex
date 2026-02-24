@@ -1,4 +1,7 @@
 defmodule Batcher.Batching.Changes.EnsureBatchHasRequests do
+  @moduledoc """
+  Runs an Ash change callback for batch lifecycle updates.
+  """
   use Ash.Resource.Change
 
   @doc """

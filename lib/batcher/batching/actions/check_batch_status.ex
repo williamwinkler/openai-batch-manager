@@ -1,20 +1,24 @@
 defmodule Batcher.Batching.Actions.CheckBatchStatus do
+  @moduledoc """
+  Runs an Ash action callback for the batch/request workflow.
+  """
   require Logger
-  alias Batcher.OpenaiApiClient
+  alias Batcher.Clients.OpenAI.ApiClient
   alias Batcher.Batching
   alias Batcher.Batching.Utils
 
   @max_token_limit_retries 5
 
+  @doc false
   def run(input, _opts, _context) do
     batch_id = Utils.extract_subject_id(input)
 
     batch = Batching.get_batch_by_id!(batch_id)
 
-    case OpenaiApiClient.check_batch_status(batch.openai_batch_id) do
+    case ApiClient.check_batch_status(batch.openai_batch_id) do
       {:ok, %{"status" => "completed"} = response} ->
         Logger.info("Batch #{batch.id} processing completed on OpenAI")
-        usage = OpenaiApiClient.extract_token_usage_from_batch_status(response)
+        usage = ApiClient.extract_token_usage_from_batch_status(response)
         progress_attrs = extract_request_counts(response)
 
         batch

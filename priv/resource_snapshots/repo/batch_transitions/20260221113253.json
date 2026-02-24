@@ -1,0 +1,148 @@
+{
+  "attributes": [
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": true,
+      "precision": null,
+      "primary_key?": true,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "id",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "from",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "to",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "transitioned_at",
+      "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "batch_transitions_batch_id_fkey",
+        "on_delete": "delete",
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "batches"
+      },
+      "scale": null,
+      "size": null,
+      "source": "batch_id",
+      "type": "bigint"
+    }
+  ],
+  "base_filter": null,
+  "check_constraints": [],
+  "custom_indexes": [
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "batch_id"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "batch_id"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    },
+    {
+      "all_tenants?": false,
+      "concurrently": false,
+      "error_fields": [
+        "batch_id",
+        "transitioned_at"
+      ],
+      "fields": [
+        {
+          "type": "atom",
+          "value": "batch_id"
+        },
+        {
+          "type": "atom",
+          "value": "transitioned_at"
+        }
+      ],
+      "include": null,
+      "message": null,
+      "name": null,
+      "nulls_distinct": true,
+      "prefix": null,
+      "table": null,
+      "unique": false,
+      "using": null,
+      "where": null
+    }
+  ],
+  "custom_statements": [],
+  "has_create_action": true,
+  "hash": "06F28F159EA6558F06D6884F65E3B7709CA260CF4C5814A3C671B6C56A3851C1",
+  "identities": [],
+  "multitenancy": {
+    "attribute": null,
+    "global": null,
+    "strategy": null
+  },
+  "repo": "Elixir.Batcher.Repo",
+  "schema": null,
+  "table": "batch_transitions"
+}

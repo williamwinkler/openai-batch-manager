@@ -11,9 +11,10 @@ defmodule Batcher.Batching.Changes.CleanupOnDestroy do
   use Ash.Resource.Change
   require Logger
 
-  alias Batcher.OpenaiApiClient
+  alias Batcher.Clients.OpenAI.ApiClient
 
   @impl true
+  @doc false
   def change(changeset, _opts, _ctx) do
     # Run cleanup before the destroy action
     Ash.Changeset.before_action(changeset, fn cs ->
@@ -40,7 +41,7 @@ defmodule Batcher.Batching.Changes.CleanupOnDestroy do
     if batch.state == :openai_processing and batch.openai_batch_id do
       Logger.info("Cancelling OpenAI batch #{batch.openai_batch_id} for batch #{batch.id}")
 
-      case OpenaiApiClient.cancel_batch(batch.openai_batch_id) do
+      case ApiClient.cancel_batch(batch.openai_batch_id) do
         {:ok, _} ->
           Logger.info("Successfully cancelled OpenAI batch #{batch.openai_batch_id}")
 
@@ -73,7 +74,7 @@ defmodule Batcher.Batching.Changes.CleanupOnDestroy do
       {file_id, type} ->
         # Fire-and-forget: spawn a process to delete the file
         spawn(fn ->
-          case OpenaiApiClient.delete_file(file_id) do
+          case ApiClient.delete_file(file_id) do
             {:ok, _} ->
               Logger.info("Deleted OpenAI #{type} file #{file_id} for batch #{batch.id}")
 

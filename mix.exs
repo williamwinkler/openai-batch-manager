@@ -121,14 +121,13 @@ defmodule Batcher.MixProject do
       {:oban_web, "~> 2.0"},
       {:ash_oban, "~> 0.7"},
       {:ash_json_api, "~> 1.0"},
-      {:ash_sqlite, "~> 0.2"},
+      {:ash_postgres, "~> 2.6"},
       {:ash_phoenix, "~> 2.0"},
       {:ash, "~> 3.0"},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:phoenix, "~> 1.8.1"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
-      {:ecto_sqlite3, ">= 0.0.0"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
@@ -143,7 +142,6 @@ defmodule Batcher.MixProject do
        app: false,
        compile: false,
        depth: 1},
-      {:swoosh, "~> 1.16"},
       {:req, "~> 0.5"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
@@ -179,7 +177,13 @@ defmodule Batcher.MixProject do
         "esbuild batcher --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"],
+      precommit: [
+        "compile --warning-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "docs.coverage --strict",
+        "test"
+      ],
       "ash.setup": ["ash.setup", "run priv/repo/seeds.exs"],
       "ash.reset": ["ash.reset", "cmd rm -rf tmp/batches"]
     ]

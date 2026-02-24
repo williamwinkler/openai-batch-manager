@@ -968,6 +968,83 @@ defmodule BatcherWeb.CoreComponents do
     """
   end
 
+  @doc """
+  Renders keyset pagination with async count states.
+  """
+  attr :page, :map, required: true
+  attr :page_count_status, :atom, required: true
+  attr :page_total_count, :any, default: nil
+  attr :base_path, :string, required: true
+  attr :extra_params, :list, default: []
+  attr :default_limit, :integer, default: 20
+  attr :limit_options, :list, default: [10, 20, 25, 50, 100]
+
+  def async_keyset_pagination(assigns) do
+    limit = assigns.page.limit || assigns.default_limit
+    results = assigns.page.results || []
+    current_before = Map.get(assigns.page, :before)
+    current_after = Map.get(assigns.page, :after)
+    page_more? = Map.get(assigns.page, :more?, false)
+    first_keyset = extract_keyset(List.first(results))
+    last_keyset = extract_keyset(List.last(results))
+
+    # In keyset pagination:
+    # - `after` means we're moving forward, so we definitely have a previous page.
+    # - `before` means we're moving backward, and `more?` tells us if another previous page exists.
+    has_prev = not is_nil(current_after) or (not is_nil(current_before) and page_more?)
+    prev_cursor = if has_prev, do: first_keyset, else: nil
+    next_cursor = if page_more?, do: last_keyset, else: nil
+    row_count = length(results)
+
+    assigns =
+      assigns
+      |> assign(:limit, limit)
+      |> assign(:prev_cursor, prev_cursor)
+      |> assign(:next_cursor, next_cursor)
+      |> assign(:row_count, row_count)
+
+    ~H"""
+    <div class="flex flex-wrap items-center justify-between gap-3 py-3 px-4 bg-base-200/50 border border-base-300/50 rounded-box shrink-0">
+      <div class="text-sm text-base-content/50 flex items-center gap-2">
+        <span>Showing {@row_count} rows</span>
+        <span :if={@page_count_status == :ready and is_integer(@page_total_count)}>
+          of {@page_total_count}
+        </span>
+        <span :if={@page_count_status == :loading}>Calculating...</span>
+        <span :if={@page_count_status == :error}>Count unavailable</span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="join">
+          <.link
+            patch={build_keyset_pagination_url(@base_path, @extra_params, @limit, @prev_cursor, nil)}
+            class={["join-item btn btn-sm", is_nil(@prev_cursor) && "btn-disabled"]}
+          >
+            <.icon name="hero-chevron-left" class="w-4 h-4" /> Previous
+          </.link>
+          <.link
+            patch={build_keyset_pagination_url(@base_path, @extra_params, @limit, nil, @next_cursor)}
+            class={["join-item btn btn-sm", is_nil(@next_cursor) && "btn-disabled"]}
+          >
+            Next <.icon name="hero-chevron-right" class="w-4 h-4" />
+          </.link>
+        </div>
+
+        <div class="join">
+          <%= for option <- @limit_options do %>
+            <.link
+              patch={build_keyset_pagination_url(@base_path, @extra_params, option, nil, nil)}
+              class={["join-item btn btn-sm", option == @limit && "btn-primary"]}
+            >
+              {option}
+            </.link>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
   # Generate page numbers with ellipsis for large page counts
   # Shows: 1 2 3 ... 8 or 1 ... 5 6 7 8 or 1 2 3 4 5 6 7 8
   defp generate_page_numbers(_current_page, total_pages) when total_pages <= 7 do
@@ -1000,6 +1077,26 @@ defmodule BatcherWeb.CoreComponents do
       |> Enum.filter(fn {_k, v} -> v != nil and v != "" end)
 
     "#{base_path}?#{URI.encode_query(params)}"
+  end
+
+  defp build_keyset_pagination_url(base_path, extra_params, limit, before_cursor, after_cursor) do
+    params =
+      extra_params
+      |> Keyword.put(:limit, limit)
+      |> Keyword.put(:before, before_cursor)
+      |> Keyword.put(:after, after_cursor)
+      |> Keyword.delete(:offset)
+      |> Enum.filter(fn {_k, v} -> v != nil and v != "" end)
+
+    "#{base_path}?#{URI.encode_query(params)}"
+  end
+
+  defp extract_keyset(nil), do: nil
+
+  defp extract_keyset(record) do
+    record
+    |> Map.get(:__metadata__, %{})
+    |> Map.get(:keyset)
   end
 
   @doc """
@@ -1055,6 +1152,7 @@ defmodule BatcherWeb.CoreComponents do
   attr :label, :string, default: "Delete Batch", doc: "the button label text"
   attr :loading, :boolean, default: false, doc: "whether the button is in loading state"
   attr :loading_label, :string, default: "Deleting...", doc: "label shown while loading"
+  attr :phx_click, :any, default: nil, doc: "custom click event/JS command"
   attr :rest, :global
 
   def delete_batch_button(assigns) do
@@ -1074,7 +1172,7 @@ defmodule BatcherWeb.CoreComponents do
     ~H"""
     <button
       :if={@should_show}
-      phx-click="delete_batch"
+      phx-click={@phx_click || "delete_batch"}
       phx-value-id={@batch_id}
       class={@class}
       data-confirm={@confirm_message}

@@ -1,8 +1,11 @@
 defmodule Batcher.Batching.Batch do
+  @moduledoc """
+  Ash resource representing a batch lifecycle and metadata.
+  """
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Batching,
-    data_layer: AshSqlite.DataLayer,
+    data_layer: AshPostgres.DataLayer,
     extensions: [AshStateMachine, AshOban],
     notifiers: [Ash.Notifier.PubSub]
 
@@ -17,7 +20,7 @@ defmodule Batcher.Batching.Batch do
                             50_000
                           )
 
-  sqlite do
+  postgres do
     table "batches"
     repo Batcher.Repo
 
@@ -31,6 +34,7 @@ defmodule Batcher.Batching.Batch do
       index [:state, :model, :url], name: "batches_state_model_url_index"
       index [:state, :model, :token_limit_retry_next_at, :waiting_for_capacity_since_at, :id]
       index [:expires_at]
+      index [:created_at, :id], name: "batches_pagination_created_at_id_index"
     end
 
     custom_statements do
@@ -108,6 +112,8 @@ defmodule Batcher.Batching.Batch do
           :expired
         ],
         to: :failed
+
+      transition :handle_download_error, from: :downloading, to: :failed
 
       transition :cancel,
         from: [
@@ -200,6 +206,8 @@ defmodule Batcher.Batching.Batch do
         where expr(state == :downloading)
         # Use dedicated queue with concurrency 1 to prevent parallel processing
         queue :batch_processing
+        max_attempts 3
+        on_error :handle_download_error
         worker_module_name Batching.Batch.AshOban.Worker.ProcessDownloadedFile
         scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessDownloadedFile
       end
@@ -216,7 +224,7 @@ defmodule Batcher.Batching.Batch do
 
       trigger :check_delivery_completion do
         action :check_delivery_completion
-        scheduler_cron "*/5 * * * *"
+        scheduler_cron "* * * * *"
         where expr(state == :delivering)
         # Use batch_processing queue (concurrency 1) to prevent race conditions
         # when multiple jobs try to transition the batch simultaneously
@@ -259,14 +267,15 @@ defmodule Batcher.Batching.Batch do
         default "-created_at"
       end
 
-      filter expr(contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
-
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)
-        apply_sorting(query, sort_input)
+
+        query
+        |> apply_query_filter()
+        |> apply_sorting(sort_input)
       end
 
-      pagination offset?: true, default_limit: 12, countable: true
+      pagination keyset?: true, default_limit: 20, countable: true
     end
 
     read :count_for_search do
@@ -278,9 +287,21 @@ defmodule Batcher.Batching.Batch do
         default ""
       end
 
-      filter expr(contains(model, ^arg(:query)) or contains(url, ^arg(:query)))
+      prepare fn query, _context ->
+        apply_query_filter(query)
+      end
 
       pagination offset?: true, countable: true
+    end
+
+    read :list_by_ids do
+      description "List batches by id"
+
+      argument :ids, {:array, :integer} do
+        allow_nil? false
+      end
+
+      filter expr(id in ^arg(:ids))
     end
 
     update :start_upload do
@@ -428,6 +449,14 @@ defmodule Batcher.Batching.Batch do
       run Batching.Actions.ProcessDownloadedFile
     end
 
+    update :handle_download_error do
+      description "Safety net for process_downloaded_file on_error — transitions to failed"
+      require_atomic? false
+      argument :error, :string, allow_nil?: true
+      change set_attribute(:error_msg, "Failed while processing downloaded batch files")
+      change transition_state(:failed)
+    end
+
     update :finalize_processing do
       description "Mark batch as ready to deliver after processing downloaded results"
       require_atomic? false
@@ -438,6 +467,7 @@ defmodule Batcher.Batching.Batch do
       description "Start delivering the results back"
       require_atomic? false
       change transition_state(:delivering)
+      change Batching.Changes.EnqueuePendingDeliveries
     end
 
     update :mark_delivered do
@@ -740,6 +770,7 @@ defmodule Batcher.Batching.Batch do
 
     has_many :transitions, Batching.BatchTransition do
       description "Audit trail of status transitions"
+      sort transitioned_at: :asc, id: :asc
     end
   end
 
@@ -753,11 +784,21 @@ defmodule Batcher.Batching.Batch do
     calculate :delivery_stats, :map, Batcher.Batching.Calculations.BatchDeliveryStats
   end
 
-  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc)
+  defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc, id: :desc)
 
   defp apply_sorting(query, sort_by) when is_binary(sort_by) do
     {field, direction} = parse_sort_by(sort_by)
-    Ash.Query.sort(query, [{field, direction}])
+    Ash.Query.sort(query, [{field, direction}, {:id, direction}])
+  end
+
+  defp apply_query_filter(query) do
+    query_value = query |> Ash.Query.get_argument(:query) |> to_string() |> String.trim()
+
+    if query_value == "" do
+      query
+    else
+      Ash.Query.filter(query, contains(model, ^query_value) or contains(url, ^query_value))
+    end
   end
 
   defp parse_sort_by("-created_at"), do: {:created_at, :desc}

@@ -223,31 +223,16 @@ defmodule BatcherWeb.Layouts do
         details =
           if consumer_config do
             queue = Keyword.get(consumer_config, :queue, "N/A")
-            exchange = Keyword.get(consumer_config, :exchange)
-            routing_key = Keyword.get(consumer_config, :routing_key)
 
             details = details ++ [%{label: "Input queue", value: queue}]
 
-            details =
-              if exchange do
-                details ++ [%{label: "Input exchange", value: exchange}]
-              else
-                details ++
-                  [
-                    %{
-                      label: "Input exchange",
-                      value: "Not configured",
-                      hint:
-                        "Set RABBITMQ_INPUT_EXCHANGE and RABBITMQ_INPUT_ROUTING_KEY to bind to an exchange"
-                    }
-                  ]
-              end
-
-            if routing_key do
-              details ++ [%{label: "Input routing key", value: routing_key}]
-            else
-              details
-            end
+            details ++
+              [
+                %{
+                  label: "Input mode",
+                  value: "Queue"
+                }
+              ]
           else
             details ++
               [

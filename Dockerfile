@@ -78,7 +78,7 @@ FROM ${RUNNER_IMAGE} AS final
 
 # util-linux for runuser (drop privileges after entrypoint chown)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses5 locales ca-certificates util-linux \
+  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses5 locales ca-certificates util-linux curl \
   && rm -rf /var/lib/apt/lists/*
 
 # Set the locale
@@ -94,7 +94,7 @@ RUN chown nobody /app
 
 # set runner ENV
 ENV MIX_ENV="prod"
-ENV DATABASE_PATH="/data/openai-batch-manager.db"
+ENV DATABASE_URL=""
 
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/batcher ./

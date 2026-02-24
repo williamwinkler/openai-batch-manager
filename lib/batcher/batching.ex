@@ -1,4 +1,7 @@
 defmodule Batcher.Batching do
+  @moduledoc """
+  Ash domain entrypoint for batch and request resources.
+  """
   use Ash.Domain,
     otp_app: :batcher
 
@@ -12,6 +15,7 @@ defmodule Batcher.Batching do
       define :touch_waiting_for_capacity, action: :touch_waiting_for_capacity
       define :read_batch_by_id, action: :read, get_by: :id
       define :list_batches, action: :read
+      define :list_batches_by_ids, action: :list_by_ids, args: [:ids]
 
       define :search_batches,
         action: :search,

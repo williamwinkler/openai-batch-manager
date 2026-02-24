@@ -12,6 +12,7 @@ defmodule Batcher.Batching.Actions.Redeliver do
 
   alias Batcher.Batching
 
+  @doc false
   def run(input, _opts, _context) do
     batch_id = input.arguments.id
 

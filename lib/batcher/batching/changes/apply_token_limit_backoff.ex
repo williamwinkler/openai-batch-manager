@@ -1,9 +1,13 @@
 defmodule Batcher.Batching.Changes.ApplyTokenLimitBackoff do
+  @moduledoc """
+  Runs an Ash change callback for batch lifecycle updates.
+  """
   use Ash.Resource.Change
 
   alias Batcher.Batching.TokenLimitBackoff
 
   @impl true
+  @doc false
   def change(changeset, _opts, _context) do
     current_attempts = Ash.Changeset.get_data(changeset, :token_limit_retry_attempts) || 0
     next_attempt = current_attempts + 1

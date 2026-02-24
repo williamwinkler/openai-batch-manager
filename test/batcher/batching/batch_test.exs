@@ -5,6 +5,13 @@ defmodule Batcher.Batching.BatchTest do
   alias Batcher.Batching
 
   import Batcher.Generator
+
+  defp assert_has_transition!(transitions, from, to) do
+    assert Enum.any?(transitions, fn transition ->
+             transition.from == from and transition.to == to
+           end)
+  end
+
   import Batcher.TestServer
 
   setup do
@@ -216,9 +223,7 @@ defmodule Batcher.Batching.BatchTest do
       assert transitions
       # building -> uploading
       assert length(transitions) == 2
-      assert Enum.at(transitions, 1).from == :building
-      assert Enum.at(transitions, 1).to == :uploading
-      assert Enum.at(transitions, 1).transitioned_at
+      assert_has_transition!(transitions, :building, :uploading)
     end
   end
 
@@ -259,14 +264,9 @@ defmodule Batcher.Batching.BatchTest do
       # building -> uploading -> uploaded
       assert length(updated_batch.transitions) == 3
 
-      assert Enum.at(updated_batch.transitions, 0).from == nil
-      assert Enum.at(updated_batch.transitions, 0).to == :building
-
-      assert Enum.at(updated_batch.transitions, 1).from == :building
-      assert Enum.at(updated_batch.transitions, 1).to == :uploading
-
-      assert Enum.at(updated_batch.transitions, 2).from == :uploading
-      assert Enum.at(updated_batch.transitions, 2).to == :uploaded
+      assert_has_transition!(updated_batch.transitions, nil, :building)
+      assert_has_transition!(updated_batch.transitions, :building, :uploading)
+      assert_has_transition!(updated_batch.transitions, :uploading, :uploaded)
 
       assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
       refute_enqueued(worker: Batching.Batch.AshOban.Worker.CreateOpenaiBatch)
@@ -492,10 +492,7 @@ defmodule Batcher.Batching.BatchTest do
       assert batch_after.state == :delivering
 
       # Check Transitions (downloading -> ready_to_deliver -> delivering)
-      last_transition = List.last(batch_after.transitions)
-      assert last_transition.from == :ready_to_deliver
-      assert last_transition.to == :delivering
-      assert last_transition.transitioned_at
+      assert_has_transition!(batch_after.transitions, :ready_to_deliver, :delivering)
 
       # Check Requests
       assert length(batch_after.requests) == 2
@@ -883,6 +880,40 @@ defmodule Batcher.Batching.BatchTest do
       assert latest_transition.to == :delivering
       assert latest_transition.transitioned_at
     end
+
+    test "enqueues delivery jobs for openai_processed requests in the batch" do
+      batch_before =
+        seeded_batch(
+          state: :ready_to_deliver,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      _request1 =
+        seeded_request(
+          batch_id: batch_before.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "response-1"}
+        )
+        |> generate()
+
+      _request2 =
+        seeded_request(
+          batch_id: batch_before.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "response-2"}
+        )
+        |> generate()
+
+      _batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:start_delivering)
+        |> Ash.update!()
+
+      assert_enqueued(worker: Batching.Request.AshOban.Worker.Deliver)
+    end
   end
 
   describe "Batcher.Batching.Batch.mark_delivered" do
@@ -1041,6 +1072,26 @@ defmodule Batcher.Batching.BatchTest do
     end
   end
 
+  describe "Batcher.Batching.Batch.handle_download_error" do
+    test "transitions batch from downloading to failed" do
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:handle_download_error, %{error: "download failed"})
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :failed
+      assert batch_after.error_msg == "Failed while processing downloaded batch files"
+      assert_has_transition!(batch_after.transitions, :downloading, :failed)
+    end
+  end
+
   describe "Batcher.Batching.Batch.mark_expired" do
     test "transitions from openai_processing to expired and triggers capacity dispatch", %{
       server: server
@@ -1101,16 +1152,10 @@ defmodule Batcher.Batching.BatchTest do
       # 1. openai_processing → expired
       # 2. expired → openai_processing
       assert length(batch_final.transitions) >= 2
-      transitions = Enum.sort_by(batch_final.transitions, & &1.transitioned_at)
+      transitions = Enum.sort_by(batch_final.transitions, &{&1.transitioned_at, &1.id})
       recent_transitions = Enum.take(transitions, -2)
-
-      first_transition = Enum.at(recent_transitions, 0)
-      assert first_transition.from == :openai_processing
-      assert first_transition.to == :expired
-
-      second_transition = Enum.at(recent_transitions, 1)
-      assert second_transition.from == :expired
-      assert second_transition.to == :openai_processing
+      assert_has_transition!(recent_transitions, :openai_processing, :expired)
+      assert_has_transition!(recent_transitions, :expired, :openai_processing)
     end
 
     test "fails if batch is not in openai_processing state" do

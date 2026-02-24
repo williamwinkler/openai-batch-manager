@@ -17,7 +17,7 @@
         type="button"
         id="delete-request"
         class="btn btn-error btn-sm"
-        phx-click="delete_request"
+        phx-click={JS.push("delete_request", loading: "#delete-request")}
         data-confirm="Are you sure you want to delete this request?"
         disabled={delete_pending}
       >
@@ -114,18 +114,6 @@
                 {delivery_destination(@request.delivery_config)}
               </div>
             </div>
-            <%= if current_rabbitmq_exchange(@request.delivery_config) != "" do %>
-              <div>
-                <div class="text-base-content/50 mb-1">Exchange</div>
-                <div class="font-mono">{current_rabbitmq_exchange(@request.delivery_config)}</div>
-              </div>
-              <div>
-                <div class="text-base-content/50 mb-1">Routing Key</div>
-                <div class="font-mono">
-                  {current_rabbitmq_routing_key(@request.delivery_config)}
-                </div>
-              </div>
-            <% end %>
           </div>
         </div>
       </div>
@@ -215,7 +203,7 @@
               type="button"
               id="retry-delivery"
               class="btn btn-sm btn-primary"
-              phx-click="retry_delivery"
+              phx-click={JS.push("retry_delivery", loading: "#retry-delivery")}
               disabled={pending_action?(@pending_actions, :retry_delivery, @request.id)}
             >
               <%= if pending_action?(@pending_actions, :retry_delivery, @request.id) do %>
@@ -438,21 +426,6 @@
           <div :if={@selected_delivery_type == "rabbitmq"} class="space-y-4">
             <div>
               <label class="label mb-1">
-                <span class="label-text">Exchange Mode</span>
-              </label>
-              <select name="form[rabbitmq_mode]" class="select select-bordered w-full">
-                <option value="queue" selected={@form_rabbitmq_mode == "queue"}>
-                  Default Exchange (publish directly to queue)
-                </option>
-                <option value="exchange" selected={@form_rabbitmq_mode == "exchange"}>
-                  Custom Exchange (publish to exchange with routing key)
-                </option>
-              </select>
-            </div>
-
-            <%!-- Default exchange mode: queue only --%>
-            <div :if={@form_rabbitmq_mode == "queue"}>
-              <label class="label mb-1">
                 <span class="label-text">
                   Queue <span class="text-error">*</span>
                 </span>
@@ -465,43 +438,7 @@
                 class="input input-bordered w-full"
               />
               <p class="text-xs text-base-content/50 mt-1">
-                Message will be published directly to this queue via the default exchange.
-              </p>
-            </div>
-
-            <%!-- Custom exchange mode: exchange + routing key --%>
-            <div :if={@form_rabbitmq_mode == "exchange"} class="space-y-4">
-              <div>
-                <label class="label mb-1">
-                  <span class="label-text">
-                    Exchange <span class="text-error">*</span>
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  name="form[rabbitmq_exchange]"
-                  value={@form_rabbitmq_exchange}
-                  placeholder="my_exchange"
-                  class="input input-bordered w-full"
-                />
-              </div>
-
-              <div>
-                <label class="label mb-1">
-                  <span class="label-text">
-                    Routing Key <span class="text-error">*</span>
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  name="form[rabbitmq_routing_key]"
-                  value={@form_rabbitmq_routing_key}
-                  placeholder="my.routing.key"
-                  class="input input-bordered w-full"
-                />
-              </div>
-              <p class="text-xs text-base-content/50">
-                Message will be published to the exchange with the specified routing key.
+                Message will be published directly to this queue.
               </p>
             </div>
           </div>

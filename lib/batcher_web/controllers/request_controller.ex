@@ -1,4 +1,7 @@
 defmodule BatcherWeb.RequestController do
+  @moduledoc """
+  HTTP API controller for creating and querying requests.
+  """
   use BatcherWeb, :controller
   use OpenApiSpex.ControllerSpecs
 

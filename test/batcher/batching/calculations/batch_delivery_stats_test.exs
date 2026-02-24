@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
-  use Batcher.DataCase, async: false
+  use Batcher.DataCase, async: true
 
   import Batcher.Generator
 
@@ -17,7 +17,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 2, delivering: 0, failed: 0}
+      assert batch.delivery_stats == %{delivered: 2, delivering: 0, failed: 0, queued: 0}
     end
 
     test "returns correct counts when batch has only failed requests" do
@@ -38,7 +38,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 1}
+      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 1, queued: 0}
     end
 
     test "returns correct counts when batch has mixed delivered and failed requests" do
@@ -77,7 +77,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 2, delivering: 0, failed: 1}
+      assert batch.delivery_stats == %{delivered: 2, delivering: 0, failed: 1, queued: 0}
     end
 
     test "returns zeros when batch has no requests" do
@@ -85,7 +85,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 0}
+      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 0, queued: 0}
     end
 
     test "does not count non-terminal requests" do
@@ -127,10 +127,10 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       # Only counts :delivered (1), :delivering (1) and failed states (0)
       # Non-terminal states (pending, openai_processing, openai_processed) are not counted
-      assert batch.delivery_stats == %{delivered: 1, delivering: 1, failed: 0}
+      assert batch.delivery_stats == %{delivered: 1, delivering: 1, failed: 0, queued: 1}
     end
 
-    test "counts only delivery_failed as delivery failure" do
+    test "counts only delivery_failed as failed outcomes" do
       batch = generate(seeded_batch())
 
       # Each type of failure state
@@ -157,7 +157,7 @@ defmodule Batcher.Batching.Calculations.BatchDeliveryStatsTest do
 
       batch = Ash.load!(batch, :delivery_stats)
 
-      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 1}
+      assert batch.delivery_stats == %{delivered: 0, delivering: 0, failed: 1, queued: 0}
     end
   end
 end

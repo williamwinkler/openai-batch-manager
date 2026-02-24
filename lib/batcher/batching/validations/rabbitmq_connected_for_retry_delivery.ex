@@ -5,9 +5,11 @@ defmodule Batcher.Batching.Validations.RabbitmqConnectedForRetryDelivery do
   use Ash.Resource.Validation
 
   @impl true
+  @doc false
   def init(opts), do: {:ok, opts}
 
   @impl true
+  @doc false
   def validate(changeset, _opts, _context) do
     delivery_config =
       Ash.Changeset.get_attribute(changeset, :delivery_config) || changeset.data.delivery_config ||

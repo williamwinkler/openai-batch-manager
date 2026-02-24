@@ -412,6 +412,73 @@ const FlashAutoDismiss = {
   }
 }
 
+// Remembers non-default pagination limit per LiveView index page and restores it.
+const RememberPaginationLimit = {
+  mounted() {
+    this.defaultLimit = this.parseLimit(this.el.dataset.defaultLimit)
+    this.storageKey = `batcher:pagination-limit:${window.location.pathname}`
+    this.maybeRestoreOrPersist()
+  },
+  updated() {
+    this.maybeRestoreOrPersist()
+  },
+  parseLimit(value) {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isInteger(parsed) ? parsed : null
+  },
+  readStoredLimit() {
+    const raw = localStorage.getItem(this.storageKey)
+    return this.parseLimit(raw)
+  },
+  persistLimit(limit) {
+    if (!Number.isInteger(limit) || !Number.isInteger(this.defaultLimit)) return
+
+    if (limit === this.defaultLimit) {
+      localStorage.removeItem(this.storageKey)
+    } else {
+      localStorage.setItem(this.storageKey, String(limit))
+    }
+  },
+  livePatchTo(url) {
+    const link = document.createElement("a")
+    link.href = url
+    link.setAttribute("data-phx-link", "patch")
+    link.setAttribute("data-phx-link-state", "push")
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  },
+  maybeRestoreOrPersist() {
+    if (!Number.isInteger(this.defaultLimit)) return
+
+    const url = new URL(window.location.href)
+    const limitInUrl = this.parseLimit(url.searchParams.get("limit"))
+
+    if (Number.isInteger(limitInUrl)) {
+      this.persistLimit(limitInUrl)
+      return
+    }
+
+    const storedLimit = this.readStoredLimit()
+
+    if (!Number.isInteger(storedLimit) || storedLimit === this.defaultLimit) {
+      return
+    }
+
+    url.searchParams.set("limit", String(storedLimit))
+    url.searchParams.delete("after")
+    url.searchParams.delete("before")
+    url.searchParams.delete("offset")
+
+    const target = `${url.pathname}?${url.searchParams.toString()}`
+    const current = `${window.location.pathname}${window.location.search}`
+
+    if (target !== current) {
+      this.livePatchTo(target)
+    }
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
@@ -426,7 +493,8 @@ const liveSocket = new LiveSocket("/live", Socket, {
     Tooltip,
     TokenLimitInput,
     ModelTokenLimitPlaceholder,
-    FlashAutoDismiss
+    FlashAutoDismiss,
+    RememberPaginationLimit
   },
 })
 

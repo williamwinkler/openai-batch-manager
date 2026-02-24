@@ -3,6 +3,7 @@ defmodule BatcherWeb.RequestShowLive do
 
   alias Batcher.Batching
   alias Batcher.Batching.Types.DeliveryType
+  alias BatcherWeb.Live.Utils.ActionActivity
   alias BatcherWeb.Live.Utils.AsyncActions
   alias BatcherWeb.Live.Utils.AsyncSections
 
@@ -15,6 +16,7 @@ defmodule BatcherWeb.RequestShowLive do
     if connected?(socket) do
       BatcherWeb.Endpoint.subscribe("requests:state_changed:#{request_id}")
       BatcherWeb.Endpoint.subscribe("request_delivery_attempts:created:#{request_id}")
+      ActionActivity.subscribe({:request, request_id})
     end
 
     case Batching.get_request_by_id(request_id, load: [:batch]) do
@@ -26,12 +28,14 @@ defmodule BatcherWeb.RequestShowLive do
           |> stream(:delivery_attempts, [], reset: true)
           |> assign(:delivery_attempts_page, nil)
           |> assign(:pending_actions, MapSet.new())
+          |> assign(:action_activity_version, 0)
           |> assign(:show_payload_modal, false)
           |> assign(:payload_modal_title, "")
           |> assign(:payload_modal_content, "")
           |> assign(:payload_modal_is_json, false)
           |> assign(:payload_modal_status, :idle)
           |> assign(:payload_modal_request_key, nil)
+          |> assign(:request_refresh_request_key, nil)
           |> assign(:editing_delivery_config, false)
           |> assign(
             :delivery_types,
@@ -126,19 +130,26 @@ defmodule BatcherWeb.RequestShowLive do
     request_id = socket.assigns.request.id
     key = {:request_action, :retry_delivery, request_id}
 
-    AsyncActions.start_action(socket, key, fn ->
-      maybe_test_async_delay()
-      request = Batching.get_request_by_id!(request_id)
+    AsyncActions.start_shared_action(
+      socket,
+      key,
+      fn ->
+        maybe_test_async_delay()
+        request = Batching.get_request_by_id!(request_id)
 
-      case Batching.retry_request_delivery(request) do
-        {:ok, updated_request} ->
-          refreshed_request = Batching.get_request_by_id!(updated_request.id)
-          {:ok, %{type: :retry_delivery, request: refreshed_request}}
+        case Batching.retry_request_delivery(request) do
+          {:ok, updated_request} ->
+            refreshed_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
 
-        {:error, error} ->
-          {:error, "Failed to retry delivery: #{Exception.message(error)}"}
-      end
-    end)
+            {:ok,
+             %{type: :retry_delivery, request: refreshed_request, batch: refreshed_request.batch}}
+
+          {:error, error} ->
+            {:error, "Failed to retry delivery: #{Exception.message(error)}"}
+        end
+      end,
+      scope: {:request, request_id}
+    )
   end
 
   @impl true
@@ -147,19 +158,24 @@ defmodule BatcherWeb.RequestShowLive do
     key = {:request_action, :delete_request, request_id}
     batch_state = socket.assigns.batch.state
 
-    AsyncActions.start_action(socket, key, fn ->
-      maybe_test_async_delay()
-      request = Batching.get_request_by_id!(request_id)
+    AsyncActions.start_shared_action(
+      socket,
+      key,
+      fn ->
+        maybe_test_async_delay()
+        request = Batching.get_request_by_id!(request_id)
 
-      if batch_state == :building do
-        case Batching.destroy_request(request) do
-          :ok -> {:ok, %{type: :delete_request}}
-          {:error, _error} -> {:error, "Failed to delete request"}
+        if batch_state == :building do
+          case Batching.destroy_request(request) do
+            :ok -> {:ok, %{type: :delete_request}}
+            {:error, _error} -> {:error, "Failed to delete request"}
+          end
+        else
+          {:error, "Can only delete requests in building batches"}
         end
-      else
-        {:error, "Can only delete requests in building batches"}
-      end
-    end)
+      end,
+      scope: {:request, request_id}
+    )
   end
 
   @impl true
@@ -184,22 +200,14 @@ defmodule BatcherWeb.RequestShowLive do
   def handle_event("validate_delivery_config", %{"form" => params}, socket) do
     # Update form assigns based on current params
     selected_type = params["delivery_type"] || socket.assigns.selected_delivery_type
-    rabbitmq_mode = params["rabbitmq_mode"] || socket.assigns.form_rabbitmq_mode || "queue"
     webhook_url = params["webhook_url"] || socket.assigns.form_webhook_url || ""
     rabbitmq_queue = params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || ""
-    rabbitmq_exchange = params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || ""
-
-    rabbitmq_routing_key =
-      params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
 
     # Build merged params for validation
     merged_params = %{
       "delivery_type" => selected_type,
       "webhook_url" => webhook_url,
-      "rabbitmq_mode" => rabbitmq_mode,
-      "rabbitmq_queue" => rabbitmq_queue,
-      "rabbitmq_exchange" => rabbitmq_exchange,
-      "rabbitmq_routing_key" => rabbitmq_routing_key
+      "rabbitmq_queue" => rabbitmq_queue
     }
 
     # Build delivery_config and validate
@@ -214,10 +222,7 @@ defmodule BatcherWeb.RequestShowLive do
       |> assign(:delivery_config_form, form)
       |> assign(:selected_delivery_type, selected_type)
       |> assign(:form_webhook_url, webhook_url)
-      |> assign(:form_rabbitmq_mode, rabbitmq_mode)
       |> assign(:form_rabbitmq_queue, rabbitmq_queue)
-      |> assign(:form_rabbitmq_exchange, rabbitmq_exchange)
-      |> assign(:form_rabbitmq_routing_key, rabbitmq_routing_key)
 
     {:noreply, socket}
   end
@@ -228,12 +233,7 @@ defmodule BatcherWeb.RequestShowLive do
     merged_params = %{
       "delivery_type" => params["delivery_type"] || socket.assigns.selected_delivery_type,
       "webhook_url" => params["webhook_url"] || socket.assigns.form_webhook_url || "",
-      "rabbitmq_mode" => params["rabbitmq_mode"] || socket.assigns.form_rabbitmq_mode || "queue",
-      "rabbitmq_queue" => params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || "",
-      "rabbitmq_exchange" =>
-        params["rabbitmq_exchange"] || socket.assigns.form_rabbitmq_exchange || "",
-      "rabbitmq_routing_key" =>
-        params["rabbitmq_routing_key"] || socket.assigns.form_rabbitmq_routing_key || ""
+      "rabbitmq_queue" => params["rabbitmq_queue"] || socket.assigns.form_rabbitmq_queue || ""
     }
 
     # Build the delivery_config from merged params
@@ -243,32 +243,44 @@ defmodule BatcherWeb.RequestShowLive do
     key = {:request_action, :save_delivery_config, request_id}
     delivery_config_form = socket.assigns.delivery_config_form
 
-    AsyncActions.start_action(socket, key, fn ->
-      maybe_test_async_delay()
+    AsyncActions.start_shared_action(
+      socket,
+      key,
+      fn ->
+        maybe_test_async_delay()
 
-      case AshPhoenix.Form.submit(delivery_config_form,
-             params: %{"delivery_config" => delivery_config}
-           ) do
-        {:ok, updated_request} ->
-          updated_request = Batching.get_request_by_id!(updated_request.id)
-          {:ok, %{type: :save_delivery_config, request: updated_request}}
+        case AshPhoenix.Form.submit(delivery_config_form,
+               params: %{"delivery_config" => delivery_config}
+             ) do
+          {:ok, updated_request} ->
+            updated_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
 
-        {:error, form} ->
-          {:error, %{message: "Please fix the form errors", form: form}}
-      end
-    end)
+            {:ok,
+             %{
+               type: :save_delivery_config,
+               request: updated_request,
+               batch: updated_request.batch
+             }}
+
+          {:error, form} ->
+            {:error, %{message: "Please fix the form errors", form: form}}
+        end
+      end,
+      scope: {:request, request_id}
+    )
   end
 
   @impl true
   def handle_async({:request_action, action, request_id}, {:ok, result}, socket) do
-    socket = AsyncActions.clear_pending(socket, {:request_action, action, request_id})
+    key = {:request_action, action, request_id}
+    socket = AsyncActions.clear_shared_pending(socket, key, scope: {:request, request_id})
 
     case result do
-      {:ok, %{type: :retry_delivery, request: request}} ->
+      {:ok, %{type: :retry_delivery, request: request, batch: batch}} ->
         {:noreply,
          socket
          |> assign(:request, request)
-         |> maybe_refresh_batch(request.batch_id)
+         |> assign(:batch, batch)
          |> put_flash(:info, "Redelivery triggered")}
 
       {:ok, %{type: :delete_request}} ->
@@ -277,11 +289,11 @@ defmodule BatcherWeb.RequestShowLive do
          |> put_flash(:info, "Request deleted")
          |> redirect(to: ~p"/requests")}
 
-      {:ok, %{type: :save_delivery_config, request: updated_request}} ->
+      {:ok, %{type: :save_delivery_config, request: updated_request, batch: batch}} ->
         {:noreply,
          socket
          |> assign(:request, updated_request)
-         |> maybe_refresh_batch(updated_request.batch_id)
+         |> assign(:batch, batch)
          |> assign(:editing_delivery_config, false)
          |> assign_delivery_config_form_values(updated_request.delivery_config)
          |> assign_delivery_config_form(updated_request)
@@ -299,7 +311,9 @@ defmodule BatcherWeb.RequestShowLive do
   def handle_async({:request_action, action, request_id}, {:exit, reason}, socket) do
     {:noreply,
      socket
-     |> AsyncActions.clear_pending({:request_action, action, request_id})
+     |> AsyncActions.clear_shared_pending({:request_action, action, request_id},
+       scope: {:request, request_id}
+     )
      |> put_flash(:error, "Action failed unexpectedly: #{inspect(reason)}")}
   end
 
@@ -349,16 +363,36 @@ defmodule BatcherWeb.RequestShowLive do
   end
 
   @impl true
+  def handle_async({:request_refresh, request_key}, {:ok, {:ok, request}}, socket) do
+    if socket.assigns.request_refresh_request_key == request_key do
+      {:noreply, socket |> assign(:request, request) |> assign(:batch, request.batch)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_async({:request_refresh, request_key}, _result, socket) do
+    if socket.assigns.request_refresh_request_key == request_key do
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_info(
         %{topic: "requests:state_changed:" <> _request_id, payload: %{data: request}},
         socket
       ) do
-    request = Batching.get_request_by_id!(request.id)
+    request_key = {:request_refresh, request.id, System.unique_integer([:positive])}
 
     {:noreply,
      socket
-     |> assign(:request, request)
-     |> maybe_refresh_batch(request.batch_id)}
+     |> assign(:request_refresh_request_key, request_key)
+     |> start_async({:request_refresh, request_key}, fn ->
+       Batching.get_request_by_id(request.id, load: [:batch])
+     end)}
   end
 
   @impl true
@@ -385,6 +419,11 @@ defmodule BatcherWeb.RequestShowLive do
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_info(%{topic: "ui_actions:request:" <> _request_id}, socket) do
+    {:noreply, update(socket, :action_activity_version, &(&1 + 1))}
   end
 
   @impl true
@@ -533,9 +572,6 @@ defmodule BatcherWeb.RequestShowLive do
           Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) ->
             "RabbitMQ"
 
-          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) ->
-            "RabbitMQ"
-
           true ->
             "Unknown"
         end
@@ -553,10 +589,6 @@ defmodule BatcherWeb.RequestShowLive do
 
       queue = config["rabbitmq_queue"] || config[:rabbitmq_queue] ->
         queue
-
-      exchange = config["rabbitmq_exchange"] || config[:rabbitmq_exchange] ->
-        routing_key = config["rabbitmq_routing_key"] || config[:rabbitmq_routing_key] || ""
-        "#{exchange} → #{routing_key}"
 
       true ->
         "—"
@@ -579,21 +611,8 @@ defmodule BatcherWeb.RequestShowLive do
     socket
     |> assign(:selected_delivery_type, current_delivery_type(config))
     |> assign(:form_webhook_url, current_webhook_url(config))
-    |> assign(:form_rabbitmq_mode, current_rabbitmq_mode(config))
     |> assign(:form_rabbitmq_queue, current_rabbitmq_queue(config))
-    |> assign(:form_rabbitmq_exchange, current_rabbitmq_exchange(config))
-    |> assign(:form_rabbitmq_routing_key, current_rabbitmq_routing_key(config))
   end
-
-  defp current_rabbitmq_mode(nil), do: "queue"
-
-  defp current_rabbitmq_mode(config) when is_map(config) do
-    exchange = config["rabbitmq_exchange"] || config[:rabbitmq_exchange]
-
-    if non_empty?(exchange), do: "exchange", else: "queue"
-  end
-
-  defp current_rabbitmq_mode(_), do: "queue"
 
   defp build_delivery_config(params) when is_map(params) do
     type = params["delivery_type"]
@@ -603,23 +622,7 @@ defmodule BatcherWeb.RequestShowLive do
         %{"type" => "webhook", "webhook_url" => params["webhook_url"] || ""}
 
       "rabbitmq" ->
-        # Default to "queue" mode if not specified (e.g., when first switching to rabbitmq)
-        mode = params["rabbitmq_mode"] || "queue"
-
-        case mode do
-          "queue" ->
-            %{"type" => "rabbitmq", "rabbitmq_queue" => params["rabbitmq_queue"] || ""}
-
-          "exchange" ->
-            %{
-              "type" => "rabbitmq",
-              "rabbitmq_exchange" => params["rabbitmq_exchange"] || "",
-              "rabbitmq_routing_key" => params["rabbitmq_routing_key"] || ""
-            }
-
-          _ ->
-            %{"type" => "rabbitmq", "rabbitmq_queue" => ""}
-        end
+        %{"type" => "rabbitmq", "rabbitmq_queue" => params["rabbitmq_queue"] || ""}
 
       "" ->
         # No type selected yet
@@ -635,10 +638,6 @@ defmodule BatcherWeb.RequestShowLive do
   end
 
   defp build_delivery_config(_), do: %{}
-
-  defp non_empty?(nil), do: false
-  defp non_empty?(""), do: false
-  defp non_empty?(_), do: true
 
   @doc """
   Returns the normalized delivery type (`\"webhook\"` or `\"rabbitmq\"`) from config.
@@ -662,9 +661,6 @@ defmodule BatcherWeb.RequestShowLive do
             "webhook"
 
           Map.has_key?(config, "rabbitmq_queue") or Map.has_key?(config, :rabbitmq_queue) ->
-            "rabbitmq"
-
-          Map.has_key?(config, "rabbitmq_exchange") or Map.has_key?(config, :rabbitmq_exchange) ->
             "rabbitmq"
 
           true ->
@@ -691,22 +687,6 @@ defmodule BatcherWeb.RequestShowLive do
 
   def current_rabbitmq_queue(_), do: ""
 
-  def current_rabbitmq_exchange(nil), do: ""
-
-  def current_rabbitmq_exchange(config) when is_map(config) do
-    config["rabbitmq_exchange"] || config[:rabbitmq_exchange] || ""
-  end
-
-  def current_rabbitmq_exchange(_), do: ""
-
-  def current_rabbitmq_routing_key(nil), do: ""
-
-  def current_rabbitmq_routing_key(config) when is_map(config) do
-    config["rabbitmq_routing_key"] || config[:rabbitmq_routing_key] || ""
-  end
-
-  def current_rabbitmq_routing_key(_), do: ""
-
   def get_form_errors(form) do
     try do
       case AshPhoenix.Form.errors(form) do
@@ -726,7 +706,8 @@ defmodule BatcherWeb.RequestShowLive do
   end
 
   def pending_action?(pending_actions, action, request_id) do
-    AsyncActions.pending?(pending_actions, {:request_action, action, request_id})
+    key = {:request_action, action, request_id}
+    AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
   end
 
   def loading_delivery_attempts?(status), do: status in [:loading_initial, :refreshing]
@@ -752,21 +733,6 @@ defmodule BatcherWeb.RequestShowLive do
       end)
 
     {:noreply, socket}
-  end
-
-  defp maybe_refresh_batch(socket, batch_id) do
-    current_batch = socket.assigns[:batch]
-
-    cond do
-      is_nil(current_batch) ->
-        assign(socket, :batch, Batching.get_batch_by_id!(batch_id))
-
-      current_batch.id != batch_id ->
-        assign(socket, :batch, Batching.get_batch_by_id!(batch_id))
-
-      true ->
-        socket
-    end
   end
 
   defp parse_offset(nil), do: 0

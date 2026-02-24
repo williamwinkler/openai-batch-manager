@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.PersistedBatchCountersTest do
-  use Batcher.DataCase, async: false
+  use Batcher.DataCase, async: true
 
   alias Batcher.Batching
   alias Batcher.Repo
@@ -90,7 +90,7 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
     new_size = request.request_payload_size + 256
 
     Repo.query!(
-      "UPDATE requests SET request_payload_size = ?1 WHERE id = ?2",
+      "UPDATE requests SET request_payload_size = $1 WHERE id = $2",
       [new_size, request.id]
     )
 
@@ -124,7 +124,7 @@ defmodule Batcher.Batching.PersistedBatchCountersTest do
       })
 
     Repo.query!(
-      "UPDATE requests SET batch_id = ?1 WHERE id = ?2",
+      "UPDATE requests SET batch_id = $1 WHERE id = $2",
       [target_batch.id, request.id]
     )
 

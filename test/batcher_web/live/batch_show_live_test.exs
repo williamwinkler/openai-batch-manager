@@ -67,7 +67,7 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Click the upload button
       view
-      |> element("button[phx-click='upload_batch']")
+      |> element("#upload-batch")
       |> render_click()
 
       # The batch state should change
@@ -89,7 +89,7 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Click the cancel button
       view
-      |> element("button[phx-click='cancel_batch']")
+      |> element("#cancel-batch")
       |> render_click()
 
       :timer.sleep(150)
@@ -123,7 +123,7 @@ defmodule BatcherWeb.BatchShowLiveTest do
 
       # Click delete button
       view
-      |> element("button[phx-click='delete_batch']")
+      |> element("#delete-batch")
       |> render_click()
 
       assert has_element?(view, "button#delete-batch[disabled]", "Deleting...")
@@ -246,6 +246,10 @@ defmodule BatcherWeb.BatchShowLiveTest do
       |> element("button[phx-click='open_capacity_modal']")
       |> render_click()
 
+      wait_for(fn ->
+        render(view) =~ "starting it now would exceed the rate limit and cause errors"
+      end)
+
       html = render(view)
 
       assert html =~ "Why This Batch Is Waiting"
@@ -270,7 +274,7 @@ defmodule BatcherWeb.BatchShowLiveTest do
       {:ok, view, _html} = live(conn, ~p"/batches/#{failed_batch.id}")
 
       view
-      |> element("button[phx-click='restart_batch']")
+      |> element("#restart-batch")
       |> render_click()
 
       :timer.sleep(150)
@@ -292,7 +296,7 @@ defmodule BatcherWeb.BatchShowLiveTest do
       {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
 
       view
-      |> element("button[phx-click='cancel_batch']")
+      |> element("#cancel-batch")
       |> render_click()
 
       assert has_element?(view, "button#cancel-batch[disabled]", "Cancelling...")
@@ -370,6 +374,21 @@ defmodule BatcherWeb.BatchShowLiveTest do
       assert html =~ "Retry attempt"
       assert html =~ "2/5"
       assert html =~ "This batch will retry automatically"
+    end
+  end
+
+  defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)
+
+  defp wait_for(fun, attempts, _sleep_ms) when attempts <= 0 do
+    assert fun.()
+  end
+
+  defp wait_for(fun, attempts, sleep_ms) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(sleep_ms)
+      wait_for(fun, attempts - 1, sleep_ms)
     end
   end
 end

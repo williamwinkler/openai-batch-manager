@@ -1,10 +1,13 @@
 defmodule Batcher.Settings.Setting do
+  @moduledoc """
+  Ash resource storing singleton settings and model overrides.
+  """
   use Ash.Resource,
     otp_app: :batcher,
     domain: Batcher.Settings,
-    data_layer: AshSqlite.DataLayer
+    data_layer: AshPostgres.DataLayer
 
-  sqlite do
+  postgres do
     table "settings"
     repo Batcher.Repo
   end

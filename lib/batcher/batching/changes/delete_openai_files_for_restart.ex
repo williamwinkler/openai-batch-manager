@@ -1,10 +1,14 @@
 defmodule Batcher.Batching.Changes.DeleteOpenaiFilesForRestart do
+  @moduledoc """
+  Runs an Ash change callback for batch lifecycle updates.
+  """
   use Ash.Resource.Change
   require Logger
 
-  alias Batcher.OpenaiApiClient
+  alias Batcher.Clients.OpenAI.ApiClient
 
   @impl true
+  @doc false
   def change(changeset, _opts, _context) do
     Ash.Changeset.before_action(changeset, fn changeset ->
       batch = changeset.data
@@ -19,7 +23,7 @@ defmodule Batcher.Batching.Changes.DeleteOpenaiFilesForRestart do
           :ok
 
         {file_id, type} ->
-          case OpenaiApiClient.delete_file(file_id) do
+          case ApiClient.delete_file(file_id) do
             {:ok, _} ->
               Logger.info(
                 "Deleted OpenAI #{type} file #{file_id} while restarting batch #{batch.id}"

@@ -1,4 +1,7 @@
 defmodule Batcher.Batching.Changes.ResetRequestsForRestart do
+  @moduledoc """
+  Runs an Ash change callback for batch lifecycle updates.
+  """
   use Ash.Resource.Change
   require Ash.Query
 
@@ -16,6 +19,7 @@ defmodule Batcher.Batching.Changes.ResetRequestsForRestart do
   ]
 
   @impl true
+  @doc false
   def change(changeset, _opts, _context) do
     Ash.Changeset.before_action(changeset, fn changeset ->
       batch = changeset.data

@@ -11,10 +11,12 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
   simultaneously.
   """
   require Logger
+  require Ash.Query
 
   alias Batcher.Batching
   alias Batcher.Batching.Utils
 
+  @doc false
   def run(input, _opts, _context) do
     batch_id = Utils.extract_subject_id(input)
 
@@ -41,6 +43,8 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
 
   defp transition_to_delivery_state(batch) do
     %{delivered: delivered_count, failed: failed_count} = batch.delivery_stats
+    openai_failed_count = openai_failed_count(batch.id)
+    total_failed_count = failed_count + openai_failed_count
 
     # Re-fetch the batch to get the current state and avoid race conditions
     # with concurrent check_delivery_completion jobs
@@ -54,7 +58,7 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
       {:ok, fresh_batch}
     else
       cond do
-        delivered_count > 0 and failed_count == 0 ->
+        delivered_count > 0 and total_failed_count == 0 ->
           # All requests delivered successfully
           Logger.info("Batch #{batch.id} has all requests delivered successfully")
 
@@ -62,7 +66,7 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
           |> Ash.Changeset.for_update(:mark_delivered)
           |> Ash.update()
 
-        delivered_count == 0 and failed_count > 0 ->
+        delivered_count == 0 and total_failed_count > 0 ->
           # All requests failed to deliver
           Logger.info("Batch #{batch.id} has all requests failed to deliver")
 
@@ -70,10 +74,10 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
           |> Ash.Changeset.for_update(:mark_delivery_failed)
           |> Ash.update()
 
-        delivered_count > 0 and failed_count > 0 ->
+        delivered_count > 0 and total_failed_count > 0 ->
           # Mixed results - some delivered, some failed
           Logger.info(
-            "Batch #{batch.id} has mixed delivery results (#{delivered_count} delivered, #{failed_count} failed)"
+            "Batch #{batch.id} has mixed delivery results (#{delivered_count} delivered, #{total_failed_count} failed)"
           )
 
           fresh_batch
@@ -89,5 +93,11 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
           |> Ash.update()
       end
     end
+  end
+
+  defp openai_failed_count(batch_id) do
+    Batching.Request
+    |> Ash.Query.filter(batch_id == ^batch_id and state == :failed)
+    |> Ash.count!()
   end
 end

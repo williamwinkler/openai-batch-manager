@@ -2,6 +2,7 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
   use Batcher.DataCase, async: false
   use Oban.Testing, repo: Batcher.Repo
 
+  alias Batcher.Batching.BatchBuilder
   alias Batcher.Batching
   alias Oban.Job
 
@@ -187,6 +188,31 @@ defmodule Batcher.Batching.Actions.CancelBatchTest do
       latest_transition = List.last(batch_after.transitions)
       assert latest_transition.from == :building
       assert latest_transition.to == :cancelled
+    end
+
+    test "terminates BatchBuilder when cancelling a building batch", %{server: _server} do
+      url = "/v1/responses"
+      model = "gpt-4o-mini"
+
+      request_data = %{
+        custom_id: "cancel_builder_req",
+        url: url,
+        body: %{input: "test", model: model},
+        method: "POST",
+        delivery_config: %{type: "webhook", webhook_url: "https://example.com/webhook"}
+      }
+
+      {:ok, request} = BatchBuilder.add_request(url, model, request_data)
+      batch_before = Batching.get_batch_by_id!(request.batch_id)
+
+      [{pid, _}] = Registry.lookup(Batcher.Batching.Registry, {url, model})
+      assert Process.alive?(pid)
+
+      {:ok, batch_after} = Batching.cancel_batch(batch_before)
+      assert batch_after.state == :cancelled
+
+      assert Registry.lookup(Batcher.Batching.Registry, {url, model}) == []
+      refute Process.alive?(pid)
     end
 
     test "can cancel batch from different valid states", %{server: server} do

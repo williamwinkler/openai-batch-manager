@@ -404,11 +404,6 @@ defmodule BatcherWeb.RequestShowLiveTest do
       assert RequestShowLive.current_delivery_type(config) == "rabbitmq"
     end
 
-    test "current_delivery_type/1 handles legacy rabbitmq exchange config" do
-      config = %{"rabbitmq_exchange" => "test_exchange"}
-      assert RequestShowLive.current_delivery_type(config) == "rabbitmq"
-    end
-
     test "current_webhook_url/1 extracts webhook URL" do
       assert RequestShowLive.current_webhook_url(nil) == ""
 
@@ -426,26 +421,6 @@ defmodule BatcherWeb.RequestShowLiveTest do
                "my_queue"
 
       assert RequestShowLive.current_rabbitmq_queue(%{rabbitmq_queue: "my_queue"}) == "my_queue"
-    end
-
-    test "current_rabbitmq_exchange/1 extracts exchange name" do
-      assert RequestShowLive.current_rabbitmq_exchange(nil) == ""
-
-      assert RequestShowLive.current_rabbitmq_exchange(%{"rabbitmq_exchange" => "my_exchange"}) ==
-               "my_exchange"
-
-      assert RequestShowLive.current_rabbitmq_exchange(%{rabbitmq_exchange: "my_exchange"}) ==
-               "my_exchange"
-    end
-
-    test "current_rabbitmq_routing_key/1 extracts routing key" do
-      assert RequestShowLive.current_rabbitmq_routing_key(nil) == ""
-
-      assert RequestShowLive.current_rabbitmq_routing_key(%{"rabbitmq_routing_key" => "my_key"}) ==
-               "my_key"
-
-      assert RequestShowLive.current_rabbitmq_routing_key(%{rabbitmq_routing_key: "my_key"}) ==
-               "my_key"
     end
   end
 

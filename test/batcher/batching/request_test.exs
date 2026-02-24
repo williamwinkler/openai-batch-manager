@@ -2,6 +2,7 @@ defmodule Batcher.Batching.RequestTest do
   use Batcher.DataCase, async: false
 
   alias Batcher.Batching
+  alias Batcher.Settings
 
   import Batcher.Generator
 
@@ -255,6 +256,8 @@ defmodule Batcher.Batching.RequestTest do
 
     test "can't create request when incoming payload would exceed batch size limit (using test limit of 1MB)" do
       batch = generate(batch())
+      # Ensure this test hits the size guard, not the token-capacity guard.
+      Settings.upsert_model_override!(batch.model, 10_000_000)
 
       large_payload_base = %{
         body: %{
@@ -431,7 +434,7 @@ defmodule Batcher.Batching.RequestTest do
              end)
     end
 
-    test "can't create request with rabbitmq delivery but missing queue and exchange" do
+    test "can't create request with rabbitmq delivery but missing queue" do
       batch = generate(batch())
 
       {:error, %Ash.Error.Invalid{} = error} =
@@ -453,12 +456,11 @@ defmodule Batcher.Batching.RequestTest do
 
       assert Enum.any?(error.errors, fn err ->
                err.field == :delivery_config and
-                 String.contains?(err.message, "rabbitmq_queue") and
-                 String.contains?(err.message, "rabbitmq_exchange")
+                 String.contains?(err.message, "rabbitmq_queue is required")
              end)
     end
 
-    test "can't create request with rabbitmq exchange but missing routing_key" do
+    test "can't create request with rabbitmq_exchange (no longer supported)" do
       batch = generate(batch())
 
       {:error, %Ash.Error.Invalid{} = error} =
@@ -481,7 +483,7 @@ defmodule Batcher.Batching.RequestTest do
 
       assert Enum.any?(error.errors, fn err ->
                err.field == :delivery_config and
-                 String.contains?(err.message, "rabbitmq_routing_key is required")
+                 String.contains?(err.message, "rabbitmq_exchange is no longer supported")
              end)
     end
 
@@ -537,33 +539,6 @@ defmodule Batcher.Batching.RequestTest do
              end)
     end
 
-    test "can create request with rabbitmq exchange and routing_key" do
-      batch = generate(batch())
-
-      {:ok, request} =
-        Batching.create_request(%{
-          batch_id: batch.id,
-          custom_id: "req_rabbitmq_exchange",
-          url: batch.url,
-          model: batch.model,
-          request_payload: %{
-            custom_id: "req_rabbitmq_exchange",
-            body: %{input: "test", model: batch.model},
-            method: "POST",
-            url: batch.url
-          },
-          delivery_config: %{
-            "type" => "rabbitmq",
-            "rabbitmq_exchange" => "my_exchange",
-            "rabbitmq_routing_key" => "results.completed"
-          }
-        })
-
-      assert request.delivery_config["type"] == "rabbitmq"
-      assert request.delivery_config["rabbitmq_exchange"] == "my_exchange"
-      assert request.delivery_config["rabbitmq_routing_key"] == "results.completed"
-    end
-
     test "rejects request with both rabbitmq exchange and queue" do
       batch = generate(batch())
 
@@ -590,7 +565,7 @@ defmodule Batcher.Batching.RequestTest do
       assert {:error, %Ash.Error.Invalid{}} = result
     end
 
-    test "can create request with rabbitmq queue only (default exchange mode)" do
+    test "can create request with rabbitmq queue only" do
       batch = generate(batch())
 
       {:ok, request} =
@@ -613,7 +588,6 @@ defmodule Batcher.Batching.RequestTest do
 
       assert request.delivery_config["type"] == "rabbitmq"
       assert request.delivery_config["rabbitmq_queue"] == "results_queue"
-      assert request.delivery_config["rabbitmq_exchange"] == nil
     end
   end
 
@@ -1108,6 +1082,43 @@ defmodule Batcher.Batching.RequestTest do
         |> Ash.Changeset.for_update(:retry_delivery)
         |> Ash.update!()
       end
+    end
+  end
+
+  describe "pubsub notifications" do
+    test "state transitions publish both global and per-request state_changed topics" do
+      batch = generate(batch())
+
+      {:ok, request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "pubsub-state-change",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "pubsub-state-change",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      BatcherWeb.Endpoint.subscribe("requests:state_changed")
+      request_id = request.id
+      request_topic = "requests:state_changed:#{request_id}"
+      BatcherWeb.Endpoint.subscribe(request_topic)
+
+      request
+      |> Ash.Changeset.for_update(:begin_processing)
+      |> Ash.update!()
+
+      assert_receive %{topic: "requests:state_changed", payload: %{data: %{id: ^request_id}}}
+
+      assert_receive %{topic: ^request_topic, payload: %{data: %{id: ^request_id}}}
     end
   end
 

@@ -4,7 +4,7 @@ defmodule Batcher.Batching.Actions.DestroyBatchTest do
   alias Batcher.Batching
   alias Batcher.Batching.RequestDeliveryAttempt
   alias Batcher.Batching.BatchTransition
-  alias Batcher.BatchBuilder
+  alias Batcher.Batching.BatchBuilder
 
   import Batcher.Generator
   import Batcher.TestServer
@@ -49,7 +49,7 @@ defmodule Batcher.Batching.Actions.DestroyBatchTest do
       batch_id = request.batch_id
 
       # Verify BatchBuilder is running
-      [{pid, _}] = Registry.lookup(Batcher.BatchRegistry, {url, model})
+      [{pid, _}] = Registry.lookup(Batcher.Batching.Registry, {url, model})
       assert Process.alive?(pid)
 
       # Get the batch
@@ -64,7 +64,7 @@ defmodule Batcher.Batching.Actions.DestroyBatchTest do
       assert {:error, %Ash.Error.Invalid{}} = Batching.get_batch_by_id(batch_id)
 
       # Verify BatchBuilder was terminated and unregistered
-      assert Registry.lookup(Batcher.BatchRegistry, {url, model}) == []
+      assert Registry.lookup(Batcher.Batching.Registry, {url, model}) == []
     end
 
     test "cascade deletes requests, delivery attempts, and batch transitions" do

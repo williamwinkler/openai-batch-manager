@@ -6,24 +6,36 @@ defmodule Batcher.Batching.Calculations.BatchRequestsTerminal do
   """
   use Ash.Resource.Calculation
 
-  require Ash.Query
-  alias Batcher.Batching.Request
+  alias Ecto.Adapters.SQL
+  alias Batcher.Repo
 
   @terminal_states [:delivered, :failed, :delivery_failed, :expired, :cancelled]
 
   @impl true
+  @doc false
   def calculate(records, _opts, _context) do
-    # record is a batch here
-    Enum.map(records, fn record ->
-      # Count requests that are NOT in terminal states
-      # If count is 0, all requests are terminal
-      non_terminal_count =
-        Request
-        |> Ash.Query.filter(batch_id == ^record.id)
-        |> Ash.Query.filter(state not in ^@terminal_states)
-        |> Ash.count!()
+    batch_ids = Enum.map(records, & &1.id)
+    non_terminal_by_batch_id = load_non_terminal_counts(batch_ids)
 
-      non_terminal_count == 0
+    Enum.map(records, fn record ->
+      Map.get(non_terminal_by_batch_id, record.id, 0) == 0
     end)
+  end
+
+  defp load_non_terminal_counts([]), do: %{}
+
+  defp load_non_terminal_counts(batch_ids) do
+    query = """
+    SELECT batch_id, COUNT(*)::bigint AS non_terminal_count
+    FROM requests
+    WHERE batch_id = ANY($1)
+      AND state <> ALL($2)
+    GROUP BY batch_id
+    """
+
+    terminal_states = Enum.map(@terminal_states, &to_string/1)
+    %{rows: rows} = SQL.query!(Repo, query, [batch_ids, terminal_states])
+
+    Map.new(rows, fn [batch_id, non_terminal_count] -> {batch_id, non_terminal_count} end)
   end
 end

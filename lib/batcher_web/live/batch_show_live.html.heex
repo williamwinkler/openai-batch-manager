@@ -30,10 +30,19 @@
         >
           <.icon name="hero-chat-bubble-bottom-center-text" class="w-4 h-4" /> View Requests
         </.link>
+        <.link
+          :if={@batch.state in [:partially_delivered, :delivery_failed, :failed]}
+          navigate={
+            ~p"/requests?batch_id=#{@batch.id}&state=#{if @batch.state == :failed, do: "failed", else: "delivery_failed"}"
+          }
+          class="btn btn-sm btn-ghost"
+        >
+          <.icon name="hero-exclamation-circle" class="w-4 h-4" /> View Failed
+        </.link>
         <button
           :if={@batch.state == :building}
           id="upload-batch"
-          phx-click="upload_batch"
+          phx-click={JS.push("upload_batch", loading: "#upload-batch")}
           class="btn btn-sm btn-primary"
           disabled={upload_pending}
         >
@@ -54,7 +63,7 @@
             ]
           }
           id="cancel-batch"
-          phx-click="cancel_batch"
+          phx-click={JS.push("cancel_batch", loading: "#cancel-batch")}
           class="btn btn-sm btn-ghost text-warning"
           data-confirm="Are you sure you want to cancel this batch?"
           disabled={cancel_pending}
@@ -68,7 +77,7 @@
         <button
           :if={@batch.state == :failed}
           id="restart-batch"
-          phx-click="restart_batch"
+          phx-click={JS.push("restart_batch", loading: "#restart-batch")}
           class="btn btn-sm btn-primary"
           data-confirm="Restart this failed batch?"
           disabled={restart_pending}
@@ -83,6 +92,7 @@
           id="delete-batch"
           batch_id={@batch.id}
           batch_state={@batch.state}
+          phx_click={JS.push("delete_batch", value: %{id: @batch.id}, loading: "#delete-batch")}
           show_icon={false}
           loading={delete_pending}
           loading_label="Deleting..."
@@ -365,24 +375,32 @@
       <%!-- Delivery Stats Section --%>
       <% total = @batch.request_count || 0
       delivered = @delivery_stats[:delivered] || 0
+      queued = @delivery_stats[:queued] || 0
       delivering = @delivery_stats[:delivering] || 0
       failed = @delivery_stats[:failed] || 0
 
       # Calculate percentages for the stacked bar
-      {delivered_pct, delivering_pct, failed_pct} =
+      {delivered_pct, queued_pct, delivering_pct, failed_pct} =
         if total > 0 do
-          {delivered / total * 100, delivering / total * 100, failed / total * 100}
+          {
+            delivered / total * 100,
+            queued / total * 100,
+            delivering / total * 100,
+            failed / total * 100
+          }
         else
-          {0, 0, 0}
+          {0, 0, 0, 0}
         end %>
       <div class="border border-base-300/50 rounded-lg overflow-hidden">
         <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
           <span class="font-medium">Delivery</span>
           <button
             :if={@batch.state in [:partially_delivered, :delivery_failed]}
-            phx-click="redeliver_batch"
+            id="redeliver-batch"
+            phx-click={JS.push("redeliver_batch", loading: "#redeliver-batch")}
             class="btn btn-xs btn-primary"
             data-confirm="Redeliver all failed requests in this batch?"
+            disabled={pending_action?(@pending_actions, :redeliver, @batch.id)}
           >
             <.icon name="hero-arrow-path" class="w-3.5 h-3.5" /> Redeliver Failed
           </button>
@@ -404,6 +422,7 @@
               <%!-- Stacked progress bar --%>
               <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
                 <div class="bg-primary h-full" style={"width: #{delivered_pct}%"}></div>
+                <div class="bg-warning h-full" style={"width: #{queued_pct}%"}></div>
                 <div class="bg-info h-full" style={"width: #{delivering_pct}%"}></div>
                 <div class="bg-error h-full" style={"width: #{failed_pct}%"}></div>
               </div>
@@ -415,6 +434,13 @@
                   <span class="text-base-content/50">Delivered</span>
                 </span>
                 <span class="font-mono">{delivered}/{total}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-warning"></span>
+                  <span class="text-base-content/50">Queued</span>
+                </span>
+                <span class="font-mono">{queued}/{total}</span>
               </div>
               <div class="flex justify-between">
                 <span class="flex items-center gap-2">

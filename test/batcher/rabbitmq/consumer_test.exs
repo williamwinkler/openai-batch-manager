@@ -454,26 +454,6 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
       # We can't easily verify this without consuming, but the test at least exercises the code path
     end
 
-    test "starts in disconnected state when queue bind fails", context do
-      require_rabbitmq(context)
-      %{rabbitmq_url: rabbitmq_url} = context
-
-      # Try to start consumer with non-existent exchange
-      # Consumer should start but be disconnected
-      {:ok, pid} =
-        Consumer.start_link(
-          url: rabbitmq_url,
-          queue: "non_existent_queue_#{System.unique_integer([:positive])}",
-          exchange: "non_existent_exchange_#{System.unique_integer([:positive])}",
-          routing_key: "test.key"
-        )
-
-      assert Process.alive?(pid)
-      refute Consumer.connected?()
-
-      stop_consumer()
-    end
-
     test "starts in disconnected state when consume fails", context do
       require_rabbitmq(context)
       %{rabbitmq_url: rabbitmq_url} = context

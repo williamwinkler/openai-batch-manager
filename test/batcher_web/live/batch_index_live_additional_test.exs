@@ -180,13 +180,12 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
-      view
-      |> element("button[phx-click='cancel_batch'][phx-value-id='#{batch.id}']")
-      |> render_click()
+      render_click(view, "cancel_batch", %{"id" => Integer.to_string(batch.id)})
 
-      :timer.sleep(150)
-      html = render(view)
-      assert html =~ "Batch cancelled successfully" or html =~ "Cancelled" or html =~ "cancelled"
+      wait_for(fn ->
+        html = render(view)
+        html =~ "Batch cancelled successfully" or html =~ "Cancelled" or html =~ "cancelled"
+      end)
     end
   end
 
@@ -204,14 +203,9 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
-      view
-      |> element("button[phx-click='delete_batch'][phx-value-id='#{batch.id}']")
-      |> render_click()
+      render_click(view, "delete_batch", %{"id" => Integer.to_string(batch.id)})
 
-      :timer.sleep(150)
-      html = render(view)
-      # Batch should no longer be in the list
-      refute html =~ "id=\"batches-row-#{batch.id}\""
+      wait_for(fn -> not has_element?(view, "#batches-row-#{batch.id}") end)
     end
   end
 
@@ -224,12 +218,12 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       assert has_element?(
                view,
-               "button[phx-click='restart_batch'][phx-value-id='#{failed_batch.id}']"
+               "#restart-batch-#{failed_batch.id}"
              )
 
       refute has_element?(
                view,
-               "button[phx-click='restart_batch'][phx-value-id='#{active_batch.id}']"
+               "#restart-batch-#{active_batch.id}"
              )
     end
 
@@ -239,13 +233,10 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
 
       {:ok, view, _html} = live(conn, ~p"/batches")
 
-      view
-      |> element("button[phx-click='restart_batch'][phx-value-id='#{failed_batch.id}']")
-      |> render_click()
+      render_click(view, "restart_batch", %{"id" => Integer.to_string(failed_batch.id)})
 
-      :timer.sleep(150)
+      wait_for(fn -> render(view) =~ "Batch restart initiated successfully" end)
       html = render(view)
-      assert html =~ "Batch restart initiated successfully"
       assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
     end
   end
@@ -290,25 +281,14 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
       {:ok, view, _html} = live(conn, ~p"/batches")
 
       view
-      |> element("button[phx-click='cancel_batch'][phx-value-id='#{batch.id}']")
+      |> element("#cancel-batch-#{batch.id}")
       |> render_click()
 
-      cancel_button_html =
-        view
-        |> element("button[phx-click='cancel_batch'][phx-value-id='#{batch.id}']")
-        |> render()
-
-      upload_button_html =
-        view
-        |> element("button[phx-click='upload_batch'][phx-value-id='#{batch.id}']")
-        |> render()
-
-      assert cancel_button_html =~ "Cancelling..."
-      assert cancel_button_html =~ "disabled"
-      refute upload_button_html =~ "disabled"
+      wait_for(fn -> has_element?(view, "button#cancel-batch-#{batch.id}[disabled]") end)
+      refute has_element?(view, "button#upload-batch-#{batch.id}[disabled]")
 
       :timer.sleep(400)
-      refute render(view) =~ "Cancelling..."
+      refute has_element?(view, "button#cancel-batch-#{batch.id}[disabled]")
     end
 
     test "keeps batch action disabled after navigation while action lock is active", %{conn: conn} do
@@ -323,23 +303,30 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
       {:ok, view, _html} = live(conn, ~p"/batches")
 
       view
-      |> element("button[phx-click='cancel_batch'][phx-value-id='#{batch.id}']")
+      |> element("#cancel-batch-#{batch.id}")
       |> render_click()
 
-      assert has_element?(
-               view,
-               "button[phx-click='cancel_batch'][phx-value-id='#{batch.id}'][disabled]",
-               "Cancelling..."
-             )
+      wait_for(fn -> has_element?(view, "button#cancel-batch-#{batch.id}[disabled]") end)
 
       # Simulate leaving and coming back to /batches: lock should still keep button disabled.
       {:ok, view2, _html} = live(conn, ~p"/batches")
 
-      assert has_element?(
-               view2,
-               "button[phx-click='cancel_batch'][phx-value-id='#{batch.id}'][disabled]",
-               "Cancelling..."
-             )
+      assert has_element?(view2, "button#cancel-batch-#{batch.id}[disabled]")
+    end
+  end
+
+  defp wait_for(fun, attempts \\ 40, sleep_ms \\ 20)
+
+  defp wait_for(fun, attempts, _sleep_ms) when attempts <= 0 do
+    assert fun.()
+  end
+
+  defp wait_for(fun, attempts, sleep_ms) do
+    if fun.() do
+      :ok
+    else
+      Process.sleep(sleep_ms)
+      wait_for(fun, attempts - 1, sleep_ms)
     end
   end
 end

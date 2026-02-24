@@ -1,8 +1,11 @@
 defmodule BatcherWeb.BatchFileController do
+  @moduledoc """
+  Serves generated batch input/output files over HTTP.
+  """
   use BatcherWeb, :controller
 
   alias Batcher.Batching
-  alias Batcher.OpenaiApiClient
+  alias Batcher.Clients.OpenAI.ApiClient
 
   @valid_file_types %{
     "input" => :openai_input_file_id,
@@ -10,12 +13,15 @@ defmodule BatcherWeb.BatchFileController do
     "error" => :openai_error_file_id
   }
 
+  @doc """
+  Downloads a batch input/output/error file from OpenAI and streams it as JSONL.
+  """
   def download(conn, %{"batch_id" => batch_id, "file_type" => file_type}) do
     with {:ok, field} <- validate_file_type(file_type),
          {:ok, parsed_batch_id} <- parse_batch_id(batch_id),
          {:ok, batch} <- Batching.get_batch_by_id(parsed_batch_id),
          {:ok, file_id} <- extract_file_id(batch, field),
-         {:ok, content} <- OpenaiApiClient.get_file_content(file_id) do
+         {:ok, content} <- ApiClient.get_file_content(file_id) do
       filename = "#{file_id}.jsonl"
 
       conn

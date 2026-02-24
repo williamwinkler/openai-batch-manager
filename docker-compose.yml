@@ -1,15 +1,38 @@
 services:
+  postgres:
+    image: postgres:18
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-openai_batch_manager}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-openai_batch_manager}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   openai-batch-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: williamwinkler/openai-batch-manager:latest
     ports:
-      - "4001:${PORT}"
+      - "${PORT:-4000}:${PORT:-4000}"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PORT=${PORT} # Optional
-      - RABBITMQ_URL=${RABBITMQ_URL} # Optional
-      - RABBITMQ_INPUT_QUEUE=${RABBITMQ_INPUT_QUEUE} # Optional
-      - RABBITMQ_INPUT_EXCHANGE=${RABBITMQ_INPUT_EXCHANGE} # Optional
-      - RABBITMQ_INPUT_ROUTING_KEY=${RABBITMQ_INPUT_ROUTING_KEY} # Optional
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: ${DATABASE_URL:-ecto://postgres:postgres@postgres:5432/openai_batch_manager}
+      PORT: ${PORT:-4000}
+      # Optional RabbitMQ intake/delivery:
+      # - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      # - RABBITMQ_INPUT_QUEUE=batch_requests
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - openai-batch-manager-data:/data
     logging: # Optional
@@ -19,23 +42,24 @@ services:
         max-file: "3"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT}/"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-4000}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  rabbitmq:
-    image: rabbitmq:4-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # rabbitmq:
+  #   image: rabbitmq:4-management
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
 volumes:
+  postgres-data:
   openai-batch-manager-data:

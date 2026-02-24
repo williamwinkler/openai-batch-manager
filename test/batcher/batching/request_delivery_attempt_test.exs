@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.RequestDeliveryAttemptTest do
-  use Batcher.DataCase, async: false
+  use Batcher.DataCase, async: true
 
   alias Batcher.Batching.RequestDeliveryAttempt
 
@@ -62,8 +62,7 @@ defmodule Batcher.Batching.RequestDeliveryAttemptTest do
           outcome: :success,
           delivery_config: %{
             "type" => "rabbitmq",
-            "rabbitmq_queue" => "test_queue",
-            "rabbitmq_exchange" => ""
+            "rabbitmq_queue" => "test_queue"
           }
         })
 

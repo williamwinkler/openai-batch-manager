@@ -1,4 +1,7 @@
 defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
+  @moduledoc """
+  Runs an Ash change callback for batch lifecycle updates.
+  """
   use Ash.Resource.Change
   require Logger
 
@@ -6,6 +9,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
   alias Batcher.Batching.CapacityControl
 
   @impl true
+  @doc false
   def change(changeset, _opts, _context) do
     batch = changeset.data
 
@@ -40,7 +44,7 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
           case CapacityControl.decision(latest_batch) do
             {:admit, _ctx} ->
               # Create batch on OpenAI before transaction starts in case it fails
-              case Batcher.OpenaiApiClient.create_batch(
+              case Batcher.Clients.OpenAI.ApiClient.create_batch(
                      latest_batch.openai_input_file_id,
                      batch.url
                    ) do

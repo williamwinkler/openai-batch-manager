@@ -1,5 +1,8 @@
 defmodule Batcher.Batching.Handlers.RequestHandler do
-  alias Batcher.BatchBuilder
+  @moduledoc """
+  Coordinates request intake and assignment into batches.
+  """
+  alias Batcher.Batching.BatchBuilder
   require Logger
 
   def handle(request_data) when is_map(request_data) do

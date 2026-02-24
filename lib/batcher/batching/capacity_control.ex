@@ -22,7 +22,7 @@ defmodule Batcher.Batching.CapacityControl do
           {:admit, map()} | {:wait_capacity_blocked, map()}
   def decision(batch) do
     with {:ok, %{limit: limit, source: source}} <-
-           Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model),
+           Batcher.Clients.OpenAI.RateLimits.get_batch_limit_tokens(batch.model),
          {:ok, reserved} <- reserved_tokens_for_model(batch.model, exclude_batch_id: batch.id) do
       headroom = max(limit - reserved, 0)
       needed = batch.estimated_request_input_tokens_total || 0
@@ -97,7 +97,8 @@ defmodule Batcher.Batching.CapacityControl do
   """
   @spec should_rotate_building_batch?(Batching.Batch.t()) :: boolean()
   def should_rotate_building_batch?(batch) do
-    with {:ok, %{limit: limit}} <- Batcher.OpenaiRateLimits.get_batch_limit_tokens(batch.model) do
+    with {:ok, %{limit: limit}} <-
+           Batcher.Clients.OpenAI.RateLimits.get_batch_limit_tokens(batch.model) do
       (batch.estimated_request_input_tokens_total || 0) >= limit
     else
       _ -> false
