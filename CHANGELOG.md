@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.17...v0.1.18) (2026-02-25)
+
+
+### Bug Fixes
+
+* delivery webhook didnt support docker-style urls ([#47](https://github.com/williamwinkler/openai-batch-manager/issues/47)) ([052b901](https://github.com/williamwinkler/openai-batch-manager/commit/052b9019ea8a684aa181955ba2c6f5c2c2d74c58))
+
 ## [0.1.17](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.16...v0.1.17) (2026-02-24)
 
 
