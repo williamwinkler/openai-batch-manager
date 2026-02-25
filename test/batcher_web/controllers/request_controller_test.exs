@@ -230,6 +230,26 @@ defmodule BatcherWeb.RequestControllerTest do
       assert Map.has_key?(response_body, "errors")
     end
 
+    test "accepts webhook URLs with internal hostnames (docker-style)", %{conn: conn} do
+      invalid_body = %{
+        "custom_id" => "internal_webhook_host_#{System.unique_integer([:positive])}",
+        "url" => "/v1/responses",
+        "method" => "POST",
+        "body" => %{
+          "model" => "gpt-4o-mini",
+          "input" => "Test"
+        },
+        "delivery_config" => %{
+          "type" => "webhook",
+          "webhook_url" => "http://python-http-webhook:8080/webhook"
+        }
+      }
+
+      conn = post(conn, ~p"/api/requests", invalid_body)
+
+      assert response(conn, 202)
+    end
+
     test "returns 422 for rabbitmq exchange without routing_key", %{conn: conn} do
       invalid_body = %{
         "custom_id" => "missing_routing_key",

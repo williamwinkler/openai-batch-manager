@@ -29,6 +29,14 @@ defmodule Batcher.Batching.Handlers.RequestHandler do
         Logger.info("Duplicate custom_id rejected: #{request_data.custom_id}")
         {:error, :custom_id_already_taken}
 
+      {:error, %Ash.Error.Invalid{} = error} ->
+        Logger.info("Request validation failed during batch assignment",
+          custom_id: request_data.custom_id,
+          error: inspect(error, pretty: true)
+        )
+
+        {:error, error}
+
       error ->
         Logger.error("Failed to add request to batch: #{inspect(error)}")
         {:error, {:batch_assignment_error, inspect(error)}}

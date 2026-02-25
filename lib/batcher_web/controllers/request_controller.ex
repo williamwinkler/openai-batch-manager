@@ -94,6 +94,25 @@ defmodule BatcherWeb.RequestController do
             ]
           })
 
+        {:error, %Ash.Error.Invalid{} = error} ->
+          Logger.info("Request validation failed during batch assignment",
+            custom_id: request_body.custom_id,
+            errors: format_ash_invalid_errors(error)
+          )
+
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{
+            errors:
+              Enum.map(format_ash_invalid_errors(error), fn detail ->
+                %{
+                  code: "validation_error",
+                  title: "Validation Error",
+                  detail: detail
+                }
+              end)
+          })
+
         {:error, error} ->
           # Log the internal error details at error level
           Logger.error("Failed to create request",
@@ -345,4 +364,19 @@ defmodule BatcherWeb.RequestController do
       OpenApiSpex.Plug.CastAndValidate.init(json_render_error_v2: true)
     )
   end
+
+  defp format_ash_invalid_errors(%Ash.Error.Invalid{errors: errors}) when is_list(errors) do
+    Enum.map(errors, fn err ->
+      field = Map.get(err, :field)
+      message = Map.get(err, :message, "is invalid")
+
+      if field do
+        "#{field} #{message}"
+      else
+        to_string(message)
+      end
+    end)
+  end
+
+  defp format_ash_invalid_errors(error), do: [Exception.message(error)]
 end
