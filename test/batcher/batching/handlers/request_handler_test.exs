@@ -171,8 +171,12 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
         }
       }
 
-      assert {:error, {:batch_assignment_error, message}} = RequestHandler.handle(request_data)
-      assert message =~ "rabbitmq_exchange is no longer supported"
+      assert {:error, %Ash.Error.Invalid{} = error} = RequestHandler.handle(request_data)
+
+      assert Enum.any?(error.errors, fn err ->
+               err.field == :delivery_config and
+                 String.contains?(err.message, "rabbitmq_exchange is no longer supported")
+             end)
     end
 
     test "handles concurrent requests to same BatchBuilder" do
@@ -248,9 +252,8 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
       assert {:error, :custom_id_already_taken} = result
     end
 
-    test "wraps unexpected BatchBuilder errors" do
-      # Test with invalid delivery config to trigger a validation error
-      # that's not :custom_id_already_taken, which will be wrapped
+    test "returns validation errors from BatchBuilder" do
+      # Invalid delivery config should be returned as Ash validation error
       request_data = %{
         custom_id: "validation_error_wrap_test",
         url: "/v1/responses",
@@ -265,11 +268,14 @@ defmodule Batcher.Batching.Handlers.RequestHandlerTest do
         }
       }
 
-      # This should trigger the catch-all error handler
       result = RequestHandler.handle(request_data)
 
-      # Should wrap the validation error (not :custom_id_already_taken)
-      assert {:error, {:batch_assignment_error, _}} = result
+      assert {:error, %Ash.Error.Invalid{} = error} = result
+
+      assert Enum.any?(error.errors, fn err ->
+               err.field == :delivery_config and
+                 String.contains?(err.message, "webhook_url is required")
+             end)
     end
 
     test "retry on batch_full succeeds on second attempt" do

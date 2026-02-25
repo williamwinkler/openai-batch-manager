@@ -75,8 +75,8 @@ defmodule Batcher.Batching.Validations.DeliveryConfig do
   defp valid_url?(url) do
     case URI.parse(url) do
       %URI{scheme: scheme, host: host}
-      when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        host == "localhost" or String.contains?(host, ".")
+      when is_binary(scheme) and is_binary(host) and host != "" ->
+        String.downcase(scheme) in ["http", "https"]
 
       _ ->
         false

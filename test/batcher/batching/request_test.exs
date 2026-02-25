@@ -434,6 +434,30 @@ defmodule Batcher.Batching.RequestTest do
              end)
     end
 
+    test "can create request with docker-style webhook hostname" do
+      batch = generate(batch())
+
+      {:ok, request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "req_docker_host",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "req_docker_host",
+            body: %{input: "test", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "http://python-http-webhook:8080/webhook"
+          }
+        })
+
+      assert request.delivery_config["webhook_url"] == "http://python-http-webhook:8080/webhook"
+    end
+
     test "can't create request with rabbitmq delivery but missing queue" do
       batch = generate(batch())
 
