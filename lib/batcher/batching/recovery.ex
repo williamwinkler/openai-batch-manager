@@ -11,6 +11,7 @@ defmodule Batcher.Batching.Recovery do
   def resume_stale_work do
     enqueue_batches(:openai_completed, :start_downloading)
     enqueue_batches(:downloading, :process_downloaded_file)
+    enqueue_batches(:ready_to_deliver, :start_delivering)
     :ok
   end
 

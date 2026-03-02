@@ -84,12 +84,12 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
       assert r.state == :openai_processed
     end
 
-    test "returns batch unchanged when no failed requests exist" do
+    test "returns batch unchanged when no failed or queued requests exist" do
       batch =
         seeded_batch(state: :partially_delivered)
         |> generate()
 
-      # Only delivered requests, no failed ones
+      # Only delivered requests, nothing to redeliver or resume
       _delivered_request =
         seeded_request(
           batch_id: batch.id,
@@ -106,6 +106,41 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
 
       # Batch should remain in partially_delivered since no requests needed redelivery
       assert batch_after.state == :partially_delivered
+    end
+
+    test "resumes queued openai_processed requests even when no failed requests exist" do
+      batch =
+        seeded_batch(state: :partially_delivered)
+        |> generate()
+
+      _delivered_request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :delivered,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "already delivered"}
+        )
+        |> generate()
+
+      queued_request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "queued"}
+        )
+        |> generate()
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivering
+      assert_enqueued(worker: Batching.Request.AshOban.Worker.Deliver)
+
+      # Queued request remains openai_processed until worker starts it.
+      assert Batching.get_request_by_id!(queued_request.id).state == :openai_processed
     end
 
     test "returns error when batch is in building state" do
@@ -292,6 +327,35 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
 
       batch_after = Batching.get_batch_by_id!(batch.id)
       assert batch_after.state == :delivery_failed
+    end
+
+    test "returns error when only queued RabbitMQ requests exist and RabbitMQ is disconnected" do
+      if pid = Process.whereis(Batcher.RabbitMQ.Publisher) do
+        Process.exit(pid, :kill)
+      end
+
+      batch =
+        seeded_batch(state: :partially_delivered)
+        |> generate()
+
+      _queued_request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "rabbitmq", "rabbitmq_queue" => "batch_results"},
+          response_payload: %{"output" => "queued"}
+        )
+        |> generate()
+
+      result =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
+        |> Ash.run_action()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+
+      batch_after = Batching.get_batch_by_id!(batch.id)
+      assert batch_after.state == :partially_delivered
     end
   end
 end

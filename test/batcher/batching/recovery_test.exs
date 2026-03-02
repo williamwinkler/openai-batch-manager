@@ -32,5 +32,15 @@ defmodule Batcher.Batching.RecoveryTest do
 
       assert_enqueued(worker: Batching.Batch.AshOban.Worker.StartDownloading)
     end
+
+    test "re-enqueues start_delivering for ready_to_deliver batches" do
+      _batch =
+        seeded_batch(state: :ready_to_deliver)
+        |> generate()
+
+      :ok = Batcher.Batching.Recovery.resume_stale_work()
+
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.StartDelivering)
+    end
   end
 end

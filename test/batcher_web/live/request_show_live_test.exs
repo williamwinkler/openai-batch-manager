@@ -279,6 +279,35 @@ defmodule BatcherWeb.RequestShowLiveTest do
   end
 
   describe "mutating action loading states" do
+    test "request-level redelivery moves partially_delivered batch back to delivering", %{
+      conn: conn
+    } do
+      batch = generate(seeded_batch(state: :partially_delivered))
+
+      request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :delivery_failed,
+            response_payload: %{"output" => "response"},
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/requests/#{request.id}")
+
+      view
+      |> element("button#retry-delivery")
+      |> render_click()
+
+      :timer.sleep(120)
+
+      assert Batching.get_batch_by_id!(batch.id).state == :delivering
+    end
+
     test "shows redelivery spinner and disables button while pending", %{conn: conn} do
       batch = generate(seeded_batch(state: :delivering))
 

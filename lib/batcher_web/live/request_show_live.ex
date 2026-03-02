@@ -135,14 +135,18 @@ defmodule BatcherWeb.RequestShowLive do
       key,
       fn ->
         maybe_test_async_delay()
-        request = Batching.get_request_by_id!(request_id)
+        request = Batching.get_request_by_id!(request_id, load: [:batch])
 
-        case Batching.retry_request_delivery(request) do
-          {:ok, updated_request} ->
-            refreshed_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
+        with {:ok, _batch} <- ensure_batch_ready_for_request_redelivery(request.batch),
+             {:ok, updated_request} <- Batching.retry_request_delivery(request) do
+          refreshed_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
 
-            {:ok,
-             %{type: :retry_delivery, request: refreshed_request, batch: refreshed_request.batch}}
+          {:ok,
+           %{type: :retry_delivery, request: refreshed_request, batch: refreshed_request.batch}}
+        else
+          {:error, :invalid_batch_state} ->
+            {:error,
+             "Batch must be in delivering, partially_delivered, or delivery_failed state for request redelivery"}
 
           {:error, error} ->
             {:error, "Failed to retry delivery: #{Exception.message(error)}"}
@@ -750,6 +754,19 @@ defmodule BatcherWeb.RequestShowLive do
     case Application.get_env(:batcher, :batch_action_test_delay_ms, 0) do
       delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
       _ -> :ok
+    end
+  end
+
+  defp ensure_batch_ready_for_request_redelivery(batch) do
+    case batch.state do
+      :delivering ->
+        {:ok, batch}
+
+      state when state in [:partially_delivered, :delivery_failed] ->
+        Batching.begin_batch_redeliver(batch)
+
+      _ ->
+        {:error, :invalid_batch_state}
     end
   end
 end
