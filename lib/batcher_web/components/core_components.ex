@@ -992,8 +992,9 @@ defmodule BatcherWeb.CoreComponents do
     # - `after` means we're moving forward, so we definitely have a previous page.
     # - `before` means we're moving backward, and `more?` tells us if another previous page exists.
     has_prev = not is_nil(current_after) or (not is_nil(current_before) and page_more?)
+    has_next = not is_nil(current_before) or page_more?
     prev_cursor = if has_prev, do: first_keyset, else: nil
-    next_cursor = if page_more?, do: last_keyset, else: nil
+    next_cursor = if has_next, do: last_keyset, else: nil
     row_count = length(results)
 
     assigns =

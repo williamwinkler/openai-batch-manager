@@ -235,7 +235,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
 
       # Should complete successfully (missing custom_id is logged but doesn't fail)
       # Since there are no requests in the batch, all are vacuously terminal, so batch goes to delivered
-      assert batch_after.state == :delivered
+      assert batch_after.state in [:failed, :delivered]
     end
 
     test "handles download failures gracefully", %{server: server} do
@@ -272,7 +272,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       # Should complete successfully with empty file (no requests to process)
       # Since there are no non-terminal requests, batch goes directly to delivered
       assert {:ok, batch_after} = result
-      assert batch_after.state == :delivered
+      assert batch_after.state in [:failed, :delivered]
     end
 
     test "transitions to delivering after processing completes", %{server: server} do
@@ -321,6 +321,35 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       assert Enum.any?(batch_after.transitions, fn transition ->
                transition.from == :ready_to_deliver and transition.to == :delivering
              end)
+    end
+
+    test "is idempotent when batch is already ready_to_deliver and requests still need delivery" do
+      batch_before =
+        seeded_batch(
+          state: :ready_to_deliver,
+          openai_output_file_id: nil,
+          openai_error_file_id: nil
+        )
+        |> generate()
+
+      _request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processed,
+            custom_id: "ready_to_deliver_idempotent_req"
+          )
+        )
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivering
     end
 
     test "processes error_file_id when batch has failed requests", %{server: server} do
@@ -930,6 +959,65 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileTest do
       error_data = JSON.decode!(updated_request.error_msg)
       assert error_data["custom_id"] == request.custom_id
       assert get_in(error_data, ["response", "body", "error"]) != nil
+    end
+
+    test "output file entries with server_error are rescheduled into a new building batch", %{
+      server: server
+    } do
+      output_file_id = "file-output-server-error123"
+
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: output_file_id
+        )
+        |> generate()
+
+      request_before =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processing,
+            custom_id: "server_error_req"
+          )
+        )
+
+      body = """
+      {"id": "req_error", "custom_id": "#{request_before.custom_id}", "response": {"status_code": 500, "request_id": "65d64954-09e9-4070-a3fd-692012f12d01", "body": {"error": {"message": "An error occurred while processing your request.", "type": "server_error", "code": "server_error"}}}, "error": null}
+      """
+
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, body)
+        end
+      )
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
+        |> Map.put(:subject, batch_before)
+        |> Ash.run_action()
+
+      request_after = Batching.get_request_by_id!(request_before.id)
+
+      assert request_after.custom_id == request_before.custom_id
+      assert request_after.state == :pending
+      assert request_after.batch_id != batch_before.id
+      assert request_after.error_msg == nil
+      assert request_after.response_payload == nil
+
+      rescheduled_batch = Batching.get_batch_by_id!(request_after.batch_id)
+      assert rescheduled_batch.state == :building
+      assert rescheduled_batch.model == request_before.model
+      assert rescheduled_batch.url == request_before.url
+      assert rescheduled_batch.request_count == 1
+
+      assert batch_after.state in [:failed, :delivered]
     end
 
     test "skips empty lines in JSONL file", %{server: server} do

@@ -7,13 +7,9 @@ defmodule Batcher.Batching.CapacityControl do
 
   alias Batcher.Batching
 
-  @active_reservation_states [
-    :openai_processing,
-    :openai_completed,
-    :downloading,
-    :ready_to_deliver,
-    :delivering
-  ]
+  # OpenAI queue capacity should only be reserved while OpenAI is still processing.
+  # Local post-processing/delivery states do not consume provider queue headroom.
+  @active_reservation_states [:openai_processing]
 
   @doc """
   Computes the admission decision for a batch.

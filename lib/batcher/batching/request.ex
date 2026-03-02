@@ -474,7 +474,7 @@ defmodule Batcher.Batching.Request do
     update :restart_to_pending do
       description "Reset a request to pending state for batch restart"
       require_atomic? false
-      accept [:error_msg, :response_payload]
+      accept [:batch_id, :error_msg, :response_payload]
       change transition_state(:pending)
     end
 

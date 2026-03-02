@@ -97,6 +97,23 @@ defmodule BatcherWeb.RequestIndexLiveTest do
       wait_for(fn -> render(view) |> first_request_row_id() == first_page_first_id end)
     end
 
+    test "next button remains enabled after navigating back to first page", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
+
+      view
+      |> element("a.join-item", "Next")
+      |> render_click()
+
+      view
+      |> element("a.join-item", "Previous")
+      |> render_click()
+
+      wait_for(fn ->
+        html = render(view)
+        html =~ "Next" and not has_element?(view, "a.join-item.btn-disabled", "Next")
+      end)
+    end
+
     test "next button is disabled on last page", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
       view |> element("a.join-item", "Next") |> render_click()

@@ -58,14 +58,7 @@ defmodule Batcher.Batching.FileProcessing do
   Returns `{:ok, batch}` or `{:error, reason}`.
   """
   def finalize_and_determine_outcome(batch) do
-    Logger.info(
-      "Batch #{batch.id} download and processing complete, transitioning to ready_to_deliver"
-    )
-
-    {:ok, updated_batch} =
-      batch
-      |> Ash.Changeset.for_update(:finalize_processing)
-      |> Ash.update()
+    {:ok, updated_batch} = ensure_ready_to_deliver(batch)
 
     updated_batch = Ash.load!(updated_batch, [:requests_terminal_count, :delivery_stats])
 
@@ -278,6 +271,9 @@ defmodule Batcher.Batching.FileProcessing do
 
             []
 
+          openai_server_error?(row_data) ->
+            reschedule_request_with_notifications(request, row_data)
+
           file_type == "error" ->
             error_msg = JSON.encode!(row_data)
 
@@ -330,5 +326,65 @@ defmodule Batcher.Batching.FileProcessing do
       |> Ash.update!(return_notifications?: true)
 
     notifications
+  end
+
+  defp reschedule_request_with_notifications(request, row_data) do
+    target_batch = find_or_create_building_batch(request)
+    request_id = get_in(row_data, ["response", "request_id"])
+
+    Logger.info(
+      "Rescheduling request #{request.custom_id} due to OpenAI server_error (request_id=#{inspect(request_id)}) from batch #{request.batch_id} to batch #{target_batch.id}"
+    )
+
+    run_update_with_notifications(request, :restart_to_pending, %{
+      batch_id: target_batch.id,
+      response_payload: nil,
+      error_msg: nil
+    })
+  end
+
+  defp find_or_create_building_batch(request) do
+    case Batching.find_building_batch(request.model, request.url) do
+      {:ok, batch} -> batch
+      {:error, _} -> Batching.create_batch!(request.model, request.url)
+    end
+  end
+
+  defp openai_server_error?(row_data) do
+    status_code = get_in(row_data, ["response", "status_code"])
+    error = get_in(row_data, ["response", "body", "error"])
+
+    is_map(error) and is_integer(status_code) and status_code >= 500 and
+      (Map.get(error, "code") == "server_error" or Map.get(error, "type") == "server_error")
+  end
+
+  defp ensure_ready_to_deliver(batch) do
+    latest_batch = Batching.get_batch_by_id!(batch.id)
+
+    case latest_batch.state do
+      state when state in [:downloading, :expired] ->
+        Logger.info(
+          "Batch #{latest_batch.id} download and processing complete, transitioning to ready_to_deliver"
+        )
+
+        latest_batch
+        |> Ash.Changeset.for_update(:finalize_processing)
+        |> Ash.update()
+
+      :ready_to_deliver ->
+        Logger.info("Batch #{latest_batch.id} already ready_to_deliver, resuming delivery flow")
+        {:ok, latest_batch}
+
+      :delivering ->
+        Logger.info("Batch #{latest_batch.id} already delivering, no finalize transition needed")
+        {:ok, latest_batch}
+
+      state ->
+        Logger.info(
+          "Batch #{latest_batch.id} is in #{state}, skipping finalize transition and evaluating outcome"
+        )
+
+        {:ok, latest_batch}
+    end
   end
 end
