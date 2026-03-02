@@ -36,37 +36,6 @@ defmodule Batcher.Batching.Batch do
       index [:expires_at]
       index [:created_at, :id], name: "batches_pagination_created_at_id_index"
     end
-
-    custom_statements do
-      statement :backfill_batch_counters do
-        up """
-        UPDATE batches
-        SET
-          request_count = (
-            SELECT COUNT(*)
-            FROM requests
-            WHERE requests.batch_id = batches.id
-          ),
-          estimated_input_tokens_total = COALESCE((
-            SELECT SUM(estimated_input_tokens)
-            FROM requests
-            WHERE requests.batch_id = batches.id
-          ), 0),
-          estimated_request_input_tokens_total = COALESCE((
-            SELECT SUM(estimated_request_input_tokens)
-            FROM requests
-            WHERE requests.batch_id = batches.id
-          ), 0),
-          size_bytes = COALESCE((
-            SELECT SUM(request_payload_size)
-            FROM requests
-            WHERE requests.batch_id = batches.id
-          ), 0)
-        """
-
-        down "SELECT 1;"
-      end
-    end
   end
 
   state_machine do
@@ -210,6 +179,16 @@ defmodule Batcher.Batching.Batch do
         on_error :handle_download_error
         worker_module_name Batching.Batch.AshOban.Worker.ProcessDownloadedFile
         scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessDownloadedFile
+      end
+
+      trigger :start_delivering do
+        action :start_delivering
+        scheduler_cron "*/5 * * * *"
+        where expr(state == :ready_to_deliver)
+        # Use batch_processing queue (concurrency 1) to serialize delivery start
+        queue :batch_processing
+        worker_module_name Batching.Batch.AshOban.Worker.StartDelivering
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.StartDelivering
       end
 
       trigger :delete_expired_batch do
@@ -498,6 +477,7 @@ defmodule Batcher.Batching.Batch do
       description "Transition batch back to delivering state for redelivery"
       require_atomic? false
       change transition_state(:delivering)
+      change Batching.Changes.EnqueuePendingDeliveries
     end
 
     update :cancel do

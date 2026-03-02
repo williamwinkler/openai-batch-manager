@@ -42,13 +42,11 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
   end
 
   defp transition_to_delivery_state(batch) do
-    %{delivered: delivered_count, failed: failed_count} = batch.delivery_stats
-    openai_failed_count = openai_failed_count(batch.id)
-    total_failed_count = failed_count + openai_failed_count
-
     # Re-fetch the batch to get the current state and avoid race conditions
     # with concurrent check_delivery_completion jobs
-    fresh_batch = Batching.get_batch_by_id!(batch.id)
+    fresh_batch =
+      Batching.get_batch_by_id!(batch.id)
+      |> Ash.load!([:requests_terminal_count, :delivery_stats])
 
     if fresh_batch.state != :delivering do
       Logger.debug(
@@ -57,40 +55,51 @@ defmodule Batcher.Batching.Actions.CheckDeliveryCompletion do
 
       {:ok, fresh_batch}
     else
-      cond do
-        delivered_count > 0 and total_failed_count == 0 ->
-          # All requests delivered successfully
-          Logger.info("Batch #{batch.id} has all requests delivered successfully")
+      # Re-check terminal status and stats on the fresh snapshot to avoid transitioning
+      # while there are newly queued or in-flight deliveries.
+      if not fresh_batch.requests_terminal_count do
+        Logger.debug("Batch #{batch.id} still has queued or in-flight deliveries")
+        {:ok, fresh_batch}
+      else
+        %{delivered: delivered_count, failed: failed_count} = fresh_batch.delivery_stats
+        openai_failed_count = openai_failed_count(batch.id)
+        total_failed_count = failed_count + openai_failed_count
 
-          fresh_batch
-          |> Ash.Changeset.for_update(:mark_delivered)
-          |> Ash.update()
+        cond do
+          delivered_count > 0 and total_failed_count == 0 ->
+            # All requests delivered successfully
+            Logger.info("Batch #{batch.id} has all requests delivered successfully")
 
-        delivered_count == 0 and total_failed_count > 0 ->
-          # All requests failed to deliver
-          Logger.info("Batch #{batch.id} has all requests failed to deliver")
+            fresh_batch
+            |> Ash.Changeset.for_update(:mark_delivered)
+            |> Ash.update()
 
-          fresh_batch
-          |> Ash.Changeset.for_update(:mark_delivery_failed)
-          |> Ash.update()
+          delivered_count == 0 and total_failed_count > 0 ->
+            # All requests failed to deliver
+            Logger.info("Batch #{batch.id} has all requests failed to deliver")
 
-        delivered_count > 0 and total_failed_count > 0 ->
-          # Mixed results - some delivered, some failed
-          Logger.info(
-            "Batch #{batch.id} has mixed delivery results (#{delivered_count} delivered, #{total_failed_count} failed)"
-          )
+            fresh_batch
+            |> Ash.Changeset.for_update(:mark_delivery_failed)
+            |> Ash.update()
 
-          fresh_batch
-          |> Ash.Changeset.for_update(:mark_partially_delivered)
-          |> Ash.update()
+          delivered_count > 0 and total_failed_count > 0 ->
+            # Mixed results - some delivered, some failed
+            Logger.info(
+              "Batch #{batch.id} has mixed delivery results (#{delivered_count} delivered, #{total_failed_count} failed)"
+            )
 
-        true ->
-          # Edge case: empty batch (no requests) - mark as delivered
-          Logger.info("Batch #{batch.id} has no requests, marking as delivered")
+            fresh_batch
+            |> Ash.Changeset.for_update(:mark_partially_delivered)
+            |> Ash.update()
 
-          fresh_batch
-          |> Ash.Changeset.for_update(:mark_delivered)
-          |> Ash.update()
+          true ->
+            # Edge case: empty batch (no requests) - mark as delivered
+            Logger.info("Batch #{batch.id} has no requests, marking as delivered")
+
+            fresh_batch
+            |> Ash.Changeset.for_update(:mark_delivered)
+            |> Ash.update()
+        end
       end
     end
   end

@@ -417,12 +417,6 @@
               Loading delivery stats...
             </div>
           <% else %>
-            <div
-              :if={@delivery_stats_status == :refreshing}
-              class="text-xs text-base-content/60 mb-2 flex items-center gap-1"
-            >
-              <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" /> Refreshing...
-            </div>
             <div class="space-y-3 text-sm">
               <%!-- Stacked progress bar --%>
               <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
@@ -461,6 +455,12 @@
                 </span>
                 <span class="font-mono">{failed}/{total}</span>
               </div>
+            </div>
+            <div
+              :if={@delivery_stats_status == :refreshing}
+              class="text-xs text-base-content/60 mt-3 flex items-center gap-1"
+            >
+              <.icon name="hero-arrow-path" class="w-3 h-3 animate-spin" /> Refreshing...
             </div>
           <% end %>
         </div>

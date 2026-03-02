@@ -8,7 +8,7 @@ defmodule BatcherWeb.BatchShowLive do
   alias Batcher.Utils.Format
 
   @delivery_stats_refresh_throttle_ms 2_000
-  @delivery_stats_fallback_poll_ms 20_000
+  @delivery_stats_fallback_poll_ms 5_000
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do

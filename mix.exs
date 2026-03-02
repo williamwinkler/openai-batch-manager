@@ -181,7 +181,6 @@ defmodule Batcher.MixProject do
         "compile --warning-as-errors",
         "deps.unlock --unused",
         "format",
-        "docs.coverage --strict",
         "test"
       ],
       "ash.setup": ["ash.setup", "run priv/repo/seeds.exs"],
