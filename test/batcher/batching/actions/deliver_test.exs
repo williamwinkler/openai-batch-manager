@@ -1640,6 +1640,72 @@ defmodule Batcher.Batching.Actions.DeliverTest do
       assert request_after.state == :delivery_failed
     end
 
+    test "retry_delivery grants a fresh 3-attempt cycle", %{server: server} do
+      webhook_url = TestServer.url(server) <> "/webhook"
+      response_payload = %{"output" => "test response"}
+
+      batch =
+        seeded_batch(state: :delivering)
+        |> generate()
+
+      request =
+        seeded_request(
+          batch_id: batch.id,
+          state: :openai_processed,
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => webhook_url
+          },
+          response_payload: response_payload
+        )
+        |> generate()
+
+      # First delivery cycle: 3 failed attempts -> delivery_failed
+      expect_json_response(server, :post, "/webhook", %{error: "fail 1"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      expect_json_response(server, :post, "/webhook", %{error: "fail 2"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      expect_json_response(server, :post, "/webhook", %{error: "fail 3"}, 500)
+      assert {:ok, request_after_cycle1} = run_deliver(request)
+      assert request_after_cycle1.state == :delivery_failed
+
+      request_after_cycle1 = Ash.load!(request_after_cycle1, [:delivery_attempt_count])
+      assert request_after_cycle1.delivery_attempt_count == 3
+
+      # Manual redelivery should reset attempt budgeting for a new cycle.
+      request_retried =
+        request_after_cycle1
+        |> Ash.Changeset.for_update(:retry_delivery)
+        |> Ash.update!()
+
+      assert request_retried.state == :openai_processed
+
+      # Second delivery cycle: gets another 3 attempts (2 failures + success)
+      expect_json_response(server, :post, "/webhook", %{error: "retry fail 1"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      request_mid = Batching.get_request_by_id!(request.id)
+      assert request_mid.state == :delivering
+
+      expect_json_response(server, :post, "/webhook", %{error: "retry fail 2"}, 500)
+      assert {:error, _} = run_deliver(request)
+
+      request_mid = Batching.get_request_by_id!(request.id)
+      assert request_mid.state == :delivering
+
+      expect_json_response(server, :post, "/webhook", %{received: true}, 200)
+      assert {:ok, request_after_cycle2} = run_deliver(request)
+
+      request_after_cycle2 =
+        Ash.load!(request_after_cycle2, [:delivery_attempt_count, :delivery_attempts])
+
+      assert request_after_cycle2.state == :delivered
+      assert request_after_cycle2.delivery_attempt_count == 6
+      assert length(request_after_cycle2.delivery_attempts) == 6
+    end
+
     test "validation errors are not retried for webhook" do
       batch =
         seeded_batch(state: :delivering)

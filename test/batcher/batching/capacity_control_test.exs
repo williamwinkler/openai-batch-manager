@@ -81,6 +81,40 @@ defmodule Batcher.Batching.CapacityControlTest do
 
       assert {:admit, _context} = CapacityControl.decision(candidate)
     end
+
+    test "does not reserve tokens for non-openai-processing states" do
+      model = "gpt-4o-mini"
+
+      _ready_to_deliver =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :ready_to_deliver,
+            estimated_request_input_tokens_total: 1_350_000
+          )
+        )
+
+      _partially_delivered =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :partially_delivered,
+            estimated_request_input_tokens_total: 600_000
+          )
+        )
+
+      candidate =
+        generate(
+          seeded_batch(
+            model: model,
+            state: :waiting_for_capacity,
+            estimated_request_input_tokens_total: 1_900_000
+          )
+        )
+
+      assert {:admit, %{reserved: 0, headroom: 2_000_000, needed: 1_900_000}} =
+               CapacityControl.decision(candidate)
+    end
   end
 
   describe "fits_headroom?/3" do

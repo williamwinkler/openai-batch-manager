@@ -7,14 +7,11 @@
   >
     <!-- Header - fixed height -->
     <div class="flex items-center pb-4 shrink-0">
-      <div class="flex-1 flex items-center">
+      <div class="flex-1 flex items-center gap-3">
         <div class="shrink-0">
           <h1 class="text-2xl font-bold">Requests</h1>
           <p class="text-sm text-base-content/60 mt-1">Manage your requests</p>
         </div>
-      </div>
-      <.search_box query={@query_text} />
-      <div class="flex-1 flex items-center justify-end gap-3">
         <div :if={@pending_refresh_count > 0} class="flex items-center gap-2">
           <span class="badge badge-warning badge-outline">
             {@pending_refresh_count} new updates
@@ -23,6 +20,9 @@
             Refresh
           </button>
         </div>
+      </div>
+      <.search_box query={@query_text} />
+      <div class="flex-1 flex items-center justify-end gap-3">
         <.state_filter_changer state_filter={@state_filter} />
         <.sort_changer selected={@sort_by} batch_id={@batch_id} />
       </div>
