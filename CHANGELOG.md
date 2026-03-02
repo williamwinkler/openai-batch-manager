@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.20](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.19...v0.1.20) (2026-03-02)
+
+
+### Bug Fixes
+
+* delivery stuck bugs ([#51](https://github.com/williamwinkler/openai-batch-manager/issues/51)) ([84590e9](https://github.com/williamwinkler/openai-batch-manager/commit/84590e984a3c80c16d15186eaca42c7e102f9383))
+
 ## [0.1.19](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.18...v0.1.19) (2026-03-02)
 
 
