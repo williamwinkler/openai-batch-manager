@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.18...v0.1.19) (2026-03-02)
+
+
+### Bug Fixes
+
+* bugs found by restarting ([#49](https://github.com/williamwinkler/openai-batch-manager/issues/49)) ([a88fa53](https://github.com/williamwinkler/openai-batch-manager/commit/a88fa53f5834125668c1f2fd588e6b049967f19d))
+
 ## [0.1.18](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.17...v0.1.18) (2026-02-25)
 
 
