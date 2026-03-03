@@ -116,6 +116,9 @@ OpenAI Batch Manager abstracts that workflow away. You get:
 | `RABBITMQ_URL` | No | Enables RabbitMQ output delivery, and input consumption if `RABBITMQ_INPUT_QUEUE` is set. |
 | `RABBITMQ_INPUT_QUEUE` | No | Enables RabbitMQ intake from this queue name (requires `RABBITMQ_URL`). |
 | `DISABLE_DELIVERY_RETRY` | No | When true, delivery attempts are not retried. |
+| `DELIVERY_QUEUE_CONCURRENCY` | No | Number of delivery workers (default: `8`). Lower values reduce DB pressure spikes; higher values improve throughput. |
+| `DELIVERY_ENQUEUE_CHUNK_SIZE` | No | Number of requests enqueued per chunk when a batch starts delivering (default: `200`). |
+| `DELIVERY_ENQUEUE_MAX_ERROR_LOGS` | No | Maximum per-request enqueue warning logs before suppressing repetitive failures (default: `5`). |
 
 ## Operational Notes
 
@@ -126,6 +129,15 @@ OpenAI Batch Manager abstracts that workflow away. You get:
   - **Expired OpenAI batches** (24h processing timeout) have their partial results downloaded and unprocessed requests resubmitted in a new batch.
 
 When a batch is deleted locally, its associated OpenAI files (input, output, error) are also cleaned up on the OpenAI platform.
+
+Delivery stability defaults are tuned to avoid bursty DB lock pressure:
+
+- Delivery worker concurrency defaults to `8`.
+- Delivery enqueue fanout is chunked (`200` requests per chunk).
+- Repetitive enqueue failures are summarized to keep logs actionable.
+
+For very high load, reduce `DELIVERY_QUEUE_CONCURRENCY` and/or `DELIVERY_ENQUEUE_CHUNK_SIZE`.
+If throughput is too slow and Postgres is healthy, increase concurrency gradually.
 
 ## Limitations / Not Supported
 
