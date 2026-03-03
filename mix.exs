@@ -4,7 +4,7 @@ defmodule Batcher.MixProject do
   def project do
     [
       app: :batcher,
-      version: "0.1.20",
+      version: "0.1.21",
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

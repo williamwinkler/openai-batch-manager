@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.20...v0.1.21) (2026-03-03)
+
+
+### Bug Fixes
+
+* reduce db preasure when delivering ([#53](https://github.com/williamwinkler/openai-batch-manager/issues/53)) ([1175560](https://github.com/williamwinkler/openai-batch-manager/commit/11755602021842d93caa6c048e25390ea5ed35a4))
+
 ## [0.1.20](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.19...v0.1.20) (2026-03-02)
 
 
