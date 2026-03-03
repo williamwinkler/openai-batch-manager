@@ -45,8 +45,34 @@ if config_env() != :test do
   end
 end
 
-delivery_queue_concurrency = 24
+parse_positive_integer_env = fn var_name, default ->
+  case System.get_env(var_name) do
+    nil ->
+      default
+
+    value ->
+      case Integer.parse(value) do
+        {parsed, ""} when parsed > 0 -> parsed
+        _ -> default
+      end
+  end
+end
+
+# Delivery worker fanout; lower values reduce burst pressure on Postgres.
+delivery_queue_concurrency = parse_positive_integer_env.("DELIVERY_QUEUE_CONCURRENCY", 8)
 batch_processing_queue_concurrency = 4
+
+delivery_enqueue_chunk_size =
+  parse_positive_integer_env.(
+    "DELIVERY_ENQUEUE_CHUNK_SIZE",
+    Application.get_env(:batcher, :delivery_enqueue_chunk_size, 200)
+  )
+
+delivery_enqueue_max_error_logs =
+  parse_positive_integer_env.(
+    "DELIVERY_ENQUEUE_MAX_ERROR_LOGS",
+    Application.get_env(:batcher, :delivery_enqueue_max_error_logs, 5)
+  )
 
 oban_config = Application.get_env(:batcher, Oban, [])
 oban_queues = Keyword.get(oban_config, :queues, [])
@@ -60,6 +86,9 @@ config :batcher,
          |> Keyword.put(:delivery, delivery_queue_concurrency)
          |> Keyword.put(:batch_processing, batch_processing_queue_concurrency)
        )
+
+config :batcher, :delivery_enqueue_chunk_size, delivery_enqueue_chunk_size
+config :batcher, :delivery_enqueue_max_error_logs, delivery_enqueue_max_error_logs
 
 # Delivery retry toggle
 # - DISABLE_DELIVERY_RETRY=true: force delivery to a single attempt (no retries)

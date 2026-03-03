@@ -914,6 +914,89 @@ defmodule Batcher.Batching.BatchTest do
 
       assert_enqueued(worker: Batching.Request.AshOban.Worker.Deliver)
     end
+
+    test "enqueues all openai_processed requests across multiple chunks" do
+      previous_chunk_size = Application.get_env(:batcher, :delivery_enqueue_chunk_size)
+      Application.put_env(:batcher, :delivery_enqueue_chunk_size, 3)
+
+      on_exit(fn ->
+        if is_nil(previous_chunk_size) do
+          Application.delete_env(:batcher, :delivery_enqueue_chunk_size)
+        else
+          Application.put_env(:batcher, :delivery_enqueue_chunk_size, previous_chunk_size)
+        end
+      end)
+
+      batch_before =
+        seeded_batch(
+          state: :ready_to_deliver,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      generate_many(
+        seeded_request(
+          batch_id: batch_before.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "response"}
+        ),
+        7
+      )
+
+      _batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:start_delivering)
+        |> Ash.update!()
+
+      queued_count =
+        all_enqueued(worker: Batching.Request.AshOban.Worker.Deliver)
+        |> length()
+
+      assert queued_count == 7
+    end
+
+    test "enqueues delivery jobs only for openai_processed requests" do
+      batch_before =
+        seeded_batch(
+          state: :ready_to_deliver,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      generate(
+        seeded_request(
+          batch_id: batch_before.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "queued-1"}
+        )
+      )
+
+      generate(
+        seeded_request(
+          batch_id: batch_before.id,
+          state: :openai_processed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "queued-2"}
+        )
+      )
+
+      generate(seeded_request(batch_id: batch_before.id, state: :pending))
+      generate(seeded_request(batch_id: batch_before.id, state: :delivering))
+      generate(seeded_request(batch_id: batch_before.id, state: :delivery_failed))
+
+      _batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:start_delivering)
+        |> Ash.update!()
+
+      queued_count =
+        all_enqueued(worker: Batching.Request.AshOban.Worker.Deliver)
+        |> length()
+
+      assert queued_count == 2
+    end
   end
 
   describe "Batcher.Batching.Batch.mark_delivered" do

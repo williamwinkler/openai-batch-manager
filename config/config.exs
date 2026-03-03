@@ -24,7 +24,7 @@ config :ash_oban, pro?: false
 
 config :batcher, Oban,
   notifier: Oban.Notifiers.PG,
-  queues: [default: 10, batch_uploads: 1, batch_processing: 1, capacity_dispatch: 1, delivery: 24],
+  queues: [default: 10, batch_uploads: 1, batch_processing: 1, capacity_dispatch: 1, delivery: 8],
   repo: Batcher.Repo,
   # Keep polling moderate under heavy queue load
   poll_interval: 1_000,
@@ -35,6 +35,9 @@ config :batcher, Oban,
     # Prune completed jobs older than 1 day every hour
     {Oban.Plugins.Pruner, max_age: 86_400, interval: 3600}
   ]
+
+config :batcher, :delivery_enqueue_chunk_size, 200
+config :batcher, :delivery_enqueue_max_error_logs, 5
 
 # BatchBuilder configuration
 config :batcher, Batcher.Batching.BatchBuilder,
