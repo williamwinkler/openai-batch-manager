@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.21...v0.1.22) (2026-03-09)
+
+
+### Features
+
+* simplify delivery ([#55](https://github.com/williamwinkler/openai-batch-manager/issues/55)) ([4e9630e](https://github.com/williamwinkler/openai-batch-manager/commit/4e9630ef9e80a291dd2231f86412d3c10c514927))
+
 ## [0.1.21](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.20...v0.1.21) (2026-03-03)
 
 
