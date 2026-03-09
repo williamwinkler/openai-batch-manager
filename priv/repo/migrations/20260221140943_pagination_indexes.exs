@@ -12,13 +12,17 @@ defmodule Batcher.Repo.Migrations.PaginationIndexes do
 
     drop_if_exists index(:requests, [:created_at])
 
-    create index(:requests, [:batch_id, :created_at, :id],
-             name: "requests_batch_pagination_created_at_id_index"
-           )
+    create_if_not_exists index(:requests, [:batch_id, :created_at, :id],
+                           name: "requests_batch_pagination_created_at_id_index"
+                         )
 
-    create index(:requests, [:created_at, :id], name: "requests_pagination_created_at_id_index")
+    create_if_not_exists index(:requests, [:created_at, :id],
+                           name: "requests_pagination_created_at_id_index"
+                         )
 
-    create index(:batches, [:created_at, :id], name: "batches_pagination_created_at_id_index")
+    create_if_not_exists index(:batches, [:created_at, :id],
+                           name: "batches_pagination_created_at_id_index"
+                         )
   end
 
   def down do

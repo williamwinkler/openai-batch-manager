@@ -227,8 +227,7 @@ defmodule BatcherWeb.RequestController do
   """
   def redeliver_by_custom_id(conn, %{"custom_id" => custom_id}) do
     with {:ok, [request]} <- Batching.list_requests_by_custom_id(custom_id, load: [:batch]),
-         {:ok, _batch} <- ensure_batch_ready_for_request_redelivery(request.batch),
-         {:ok, updated_request} <- Batching.retry_request_delivery(request) do
+         {:ok, updated_request} <- Batching.manual_redeliver_request(request) do
       conn
       |> put_status(:accepted)
       |> json(%{
@@ -286,8 +285,7 @@ defmodule BatcherWeb.RequestController do
             %{
               code: "invalid_batch_state",
               title: "Invalid Batch State",
-              detail:
-                "Batch must be in delivering, partially_delivered, or delivery_failed state for request redelivery"
+              detail: "Batch cannot redeliver while it is currently delivering"
             }
           ]
         })
@@ -343,19 +341,6 @@ defmodule BatcherWeb.RequestController do
       delivery_attempt_count: length(attempts),
       delivery_attempts: attempts
     }
-  end
-
-  defp ensure_batch_ready_for_request_redelivery(batch) do
-    case batch.state do
-      :delivering ->
-        {:ok, batch}
-
-      state when state in [:partially_delivered, :delivery_failed] ->
-        Batching.begin_batch_redeliver(batch)
-
-      _ ->
-        {:error, :invalid_batch_state}
-    end
   end
 
   defp cast_and_validate(conn, _opts) do

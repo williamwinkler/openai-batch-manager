@@ -52,4 +52,15 @@ defmodule Batcher.SettingsTest do
       end
     end
   end
+
+  describe "defaults initialization" do
+    test "ensure_defaults creates singleton row only once" do
+      # Running defaults multiple times should still leave exactly one settings row.
+      Batcher.Settings.Initializer.ensure_defaults()
+      Batcher.Settings.Initializer.ensure_defaults()
+
+      all = Ash.read!(Setting)
+      assert length(all) == 1
+    end
+  end
 end

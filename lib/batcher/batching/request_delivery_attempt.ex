@@ -21,7 +21,6 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
     custom_indexes do
       index [:request_id]
       index [:request_id, :attempted_at]
-      index [:request_id, :attempt_number], unique: true
     end
   end
 
@@ -29,10 +28,9 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
     defaults [:read]
 
     create :create do
-      accept [:request_id, :attempt_number, :outcome, :delivery_config, :error_msg]
+      accept [:request_id, :outcome, :delivery_config, :error_msg]
 
       validate Batching.Validations.DeliveryConfig
-      change Batching.Changes.AssignDeliveryAttemptNumber
       primary? true
     end
 
@@ -60,11 +58,6 @@ defmodule Batcher.Batching.RequestDeliveryAttempt do
 
   attributes do
     integer_primary_key :id
-
-    attribute :attempt_number, :integer do
-      description "1-based attempt number for this request delivery"
-      allow_nil? false
-    end
 
     attribute :outcome, Batching.Types.RequestDeliveryAttemptOutcome do
       description "The outcome of the delivery attempt"

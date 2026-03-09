@@ -19,6 +19,11 @@ defmodule Batcher.Batching.Batch do
                             [:batch_limits, :max_requests_per_batch],
                             50_000
                           )
+  @capacity_recheck_cron Application.compile_env(
+                           :batcher,
+                           [:capacity_control, :capacity_recheck_cron],
+                           "*/1 * * * *"
+                         )
 
   postgres do
     table "batches"
@@ -63,8 +68,6 @@ defmodule Batcher.Batching.Batch do
       transition :mark_partially_delivered, from: :delivering, to: :partially_delivered
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
       transition :mark_done, from: :delivering, to: :done
-
-      transition :begin_redeliver, from: [:partially_delivered, :delivery_failed], to: :delivering
 
       transition :failed,
         from: [
@@ -129,10 +132,12 @@ defmodule Batcher.Batching.Batch do
 
       trigger :dispatch_waiting_for_capacity do
         action :dispatch_waiting_for_capacity
-        where expr(state == :waiting_for_capacity)
+        where expr(state in [:uploaded, :waiting_for_capacity])
+        scheduler_cron @capacity_recheck_cron
         # Serialize waiting-queue admission scans to prevent concurrent dispatchers
         # from racing and transitioning the same waiting batch multiple times.
         queue :capacity_dispatch
+        max_attempts 5
         worker_module_name Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity
         scheduler_module_name Batching.Batch.AshOban.Scheduler.DispatchWaitingForCapacity
       end
@@ -473,13 +478,6 @@ defmodule Batcher.Batching.Batch do
       change transition_state(:done)
     end
 
-    update :begin_redeliver do
-      description "Transition batch back to delivering state for redelivery"
-      require_atomic? false
-      change transition_state(:delivering)
-      change Batching.Changes.EnqueuePendingDeliveries
-    end
-
     update :cancel do
       require_atomic? false
       change Batching.Changes.CancelBatch
@@ -580,6 +578,14 @@ defmodule Batcher.Batching.Batch do
       constraints instance_of: __MODULE__
       transaction? false
       run Batching.Actions.Redeliver
+    end
+
+    action :redeliver_failed, :struct do
+      description "Redeliver only failed requests in the batch"
+      argument :id, :integer, allow_nil?: false
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.RedeliverFailed
     end
 
     action :delete_expired_batch, :struct do

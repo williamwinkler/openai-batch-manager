@@ -9,6 +9,10 @@ defmodule BatcherWeb.BatchShowLive do
 
   @delivery_stats_refresh_throttle_ms 2_000
   @delivery_stats_fallback_poll_ms 5_000
+  @redeliverable_batch_states [
+    :partially_delivered,
+    :delivery_failed
+  ]
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -91,8 +95,22 @@ defmodule BatcherWeb.BatchShowLive do
     do: start_current_batch_action_async(socket, :restart)
 
   @impl true
-  def handle_event("redeliver_batch", _params, socket),
-    do: start_current_batch_action_async(socket, :redeliver)
+  def handle_event("redeliver_batch", _params, socket) do
+    batch_id = socket.assigns.batch.id
+
+    socket =
+      if pending_action?(socket.assigns.pending_actions, :redeliver, batch_id) do
+        socket
+      else
+        reset_delivery_stats_ui_for_redelivery(socket)
+      end
+
+    start_current_batch_action_async(socket, :redeliver)
+  end
+
+  @impl true
+  def handle_event("redeliver_failed_batch", _params, socket),
+    do: start_current_batch_action_async(socket, :redeliver_failed)
 
   @impl true
   def handle_event("show_batch_error", _params, socket) do
@@ -513,11 +531,22 @@ defmodule BatcherWeb.BatchShowLive do
 
           :redeliver ->
             case Batching.redeliver_batch(batch_id) do
-              {:ok, _} ->
-                {:ok, action, "Redelivery initiated for failed requests"}
+              {:ok, _batch_after} ->
+                message = "Redelivery requested for deliverable requests"
+                {:ok, action, message}
 
               {:error, error} ->
                 {:error, format_generic_action_error("Failed to redeliver", error)}
+            end
+
+          :redeliver_failed ->
+            case Batching.redeliver_failed_batch(batch_id) do
+              {:ok, _batch_after} ->
+                message = "Redelivery requested for failed requests"
+                {:ok, action, message}
+
+              {:error, error} ->
+                {:error, format_generic_action_error("Failed to redeliver failed", error)}
             end
         end
 
@@ -529,6 +558,12 @@ defmodule BatcherWeb.BatchShowLive do
   def pending_action?(pending_actions, action, batch_id) do
     key = {:batch_action, action, batch_id}
     AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
+  end
+
+  def can_redeliver_batch?(batch), do: batch.state in @redeliverable_batch_states
+
+  def can_redeliver_failed_batch?(batch, delivery_stats) do
+    can_redeliver_batch?(batch) and Map.get(delivery_stats || %{}, :failed, 0) > 0
   end
 
   defp start_section_loads(socket, batch_id) do
@@ -699,6 +734,14 @@ defmodule BatcherWeb.BatchShowLive do
   end
 
   defp mark_delivery_stats_dirty(socket), do: assign(socket, :delivery_stats_dirty, true)
+
+  defp reset_delivery_stats_ui_for_redelivery(socket) do
+    socket
+    |> assign(:delivery_stats, %{delivered: 0, queued: 0, delivering: 0, failed: 0})
+    |> assign(:delivery_stats_status, :refreshing)
+    |> mark_delivery_stats_dirty()
+    |> maybe_schedule_delivery_stats_refresh()
+  end
 
   defp maybe_schedule_delivery_stats_refresh(socket) do
     cond do

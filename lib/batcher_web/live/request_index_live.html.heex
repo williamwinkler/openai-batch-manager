@@ -105,6 +105,23 @@
                   {Format.time_ago(request.updated_at)}
                 </span>
               </:col>
+              <:action :let={request}>
+                <% retry_pending = pending_action?(@pending_actions, :retry_delivery, request.id) %>
+                <button
+                  :if={can_redeliver_request?(request, request.batch)}
+                  id={"retry-delivery-#{request.id}"}
+                  phx-click={JS.push("retry_delivery", loading: "#retry-delivery-#{request.id}")}
+                  phx-value-id={request.id}
+                  class="btn btn-sm btn-primary"
+                  disabled={retry_pending}
+                >
+                  <%= if retry_pending do %>
+                    <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Redelivering...
+                  <% else %>
+                    <.icon name="hero-arrow-path" class="w-4 h-4" /> Retry delivery
+                  <% end %>
+                </button>
+              </:action>
             </.table>
           </div>
         <% end %>

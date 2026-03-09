@@ -1,5 +1,5 @@
 defmodule Batcher.Clients.OpenAI.RateLimitsTest do
-  use Batcher.DataCase, async: false
+  use Batcher.DataCase, async: true
 
   alias Batcher.Clients.OpenAI.RateLimits
   alias Batcher.Settings

@@ -241,7 +241,6 @@ defmodule Batcher.RabbitMQ.Consumer do
           # Same code path as HTTP from here
           case request_handler.handle(validated) do
             {:ok, _request} ->
-              Logger.debug("Successfully processed RabbitMQ message")
               :ack
 
             {:error, :custom_id_already_taken} ->

@@ -32,12 +32,9 @@ config :batcher, Oban,
     {Oban.Plugins.Cron, []},
     # Rescue jobs left in `executing` after node restarts/crashes.
     {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(2)},
-    # Prune completed jobs older than 1 day every hour
-    {Oban.Plugins.Pruner, max_age: 86_400, interval: 3600}
+    # Prune completed jobs older than 12 hours every 15 minutes
+    {Oban.Plugins.Pruner, max_age: 43_200, interval: 900}
   ]
-
-config :batcher, :delivery_enqueue_chunk_size, 200
-config :batcher, :delivery_enqueue_max_error_logs, 5
 
 # BatchBuilder configuration
 config :batcher, Batcher.Batching.BatchBuilder,

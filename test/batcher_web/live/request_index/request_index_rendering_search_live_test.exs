@@ -1,4 +1,4 @@
-defmodule BatcherWeb.RequestIndexLiveAdditionalTest do
+defmodule BatcherWeb.RequestIndexRenderingSearchLiveTest do
   use BatcherWeb.LiveViewCase, async: false
 
   alias Batcher.Batching

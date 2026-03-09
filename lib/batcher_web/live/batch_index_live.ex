@@ -131,10 +131,6 @@ defmodule BatcherWeb.BatchIndexLive do
     do: start_batch_action_async(socket, :restart, id)
 
   @impl true
-  def handle_event("redeliver_batch", %{"id" => id}, socket),
-    do: start_batch_action_async(socket, :redeliver, id)
-
-  @impl true
   def handle_async({:batch_action, action, batch_id}, {:ok, result}, socket) do
     key = {:batch_action, action, batch_id}
     socket = AsyncActions.clear_shared_pending(socket, key, scope: {:batch, batch_id})
@@ -439,7 +435,6 @@ defmodule BatcherWeb.BatchIndexLive do
       :cancel -> perform_cancel(batch_id)
       :delete -> perform_delete(batch_id)
       :restart -> perform_restart(batch_id)
-      :redeliver -> perform_redeliver(batch_id)
     end
   end
 
@@ -512,16 +507,6 @@ defmodule BatcherWeb.BatchIndexLive do
       end
     else
       {:error, _} -> {:error, "Batch not found", reload?: false}
-    end
-  end
-
-  defp perform_redeliver(batch_id) do
-    case Batching.redeliver_batch(batch_id) do
-      {:ok, _} ->
-        {:ok, "Redelivery initiated for failed requests", reload?: true}
-
-      {:error, error} ->
-        {:error, format_generic_action_error("Failed to redeliver", error), reload?: false}
     end
   end
 
