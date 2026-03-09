@@ -1,117 +1,58 @@
 defmodule Batcher.Batching.Actions.Deliver do
   @moduledoc """
-  Delivers the response_payload to the configured webhook_url or RabbitMQ queue.
+  Delivers the response_payload to the configured delivery destination.
 
-  Uses Oban's retry mechanism for backoff between attempts. The request stays
-  in :delivering state during all retry attempts — no premature batch completion.
+  This action intentionally performs exactly one delivery attempt:
+  - A single webhook or RabbitMQ delivery attempt is executed.
+  - On success the request transitions to `:delivered`.
+  - On failure the request transitions to `:delivery_failed`.
 
-  On intermediate failure: records a RequestDeliveryAttempt and returns
-  `{:error, ...}` which causes `Ash.run_action!` (in the AshOban worker)
-  to raise, triggering an Oban retry with backoff.
-
-  On final failure (attempt in the current delivery cycle >= max_attempts): transitions the
-  request to :delivery_failed and returns `{:ok, ...}` so Oban considers
-  the job complete.
-
-  Validation errors (missing webhook_url, missing response_payload, etc.)
-  are never retried — they return immediately.
-
-  For webhook delivery:
-  - POSTs response_payload to webhook_url
-  - Records delivery attempt (success or failure)
-  - On success: transitions request to :delivered
-  - On failure: transitions request to :delivery_failed (not :failed, which is for OpenAI errors)
-  - Error details are stored on delivery_attempt only (not on request.error_msg)
-
-  For RabbitMQ delivery:
-  - Publishes response_payload to RabbitMQ queue
-  - Records delivery attempt (success or failure)
-  - On success: transitions request to :delivered
-  - On failure: transitions request to :delivery_failed (not :failed, which is for OpenAI errors)
-  - Error details are stored on delivery_attempt only (not on request.error_msg)
+  All failures are recorded as delivery attempts on the request history.
   """
   require Logger
   require Ash.Query
 
-  alias Batcher.Batching
-  alias Batcher.Batching.Utils
-
-  @default_max_attempts 3
+  @default_delivery_receive_timeout 15_000
+  @default_delivery_connect_timeout 10_000
 
   @doc false
   def run(input, _opts, _context) do
-    request_id = Utils.extract_subject_id(input)
+    request_id = Batcher.Batching.Utils.extract_subject_id(input)
 
     request =
-      Batching.Request
+      Batcher.Batching.Request
       |> Ash.Query.filter(id == ^request_id)
       |> Ash.read_one!()
-      |> Ash.load!([:batch])
 
-    batch = request.batch
-
-    if batch.state != :delivering do
-      Logger.debug(
-        "Skipping delivery for request #{request.id}; batch #{batch.id} is in state #{batch.state}"
-      )
-
-      {:ok, request}
-    else
-      # On first attempt: openai_processed → delivering
-      # On Oban retry: already in delivering, skip transition
-      request_updated =
-        case request.state do
-          :openai_processed -> begin_delivery(request)
-          :delivering -> request
-        end
-
-      cycle_attempt = current_cycle_attempt(request_updated)
-      global_attempt = next_global_attempt(request_updated)
-      max = max_attempts()
-      started_at = System.monotonic_time()
-
-      Logger.info(
-        "Delivering request #{request_updated.id} (cycle attempt #{cycle_attempt}/#{max}, global attempt #{global_attempt})"
-      )
-
-      if cycle_attempt == 1 and request_updated.updated_at do
-        enqueue_to_start_ms =
-          DateTime.diff(DateTime.utc_now(), request_updated.updated_at, :millisecond)
-
-        :telemetry.execute(
-          [:batcher, :delivery, :enqueue_to_start],
-          %{
-            duration: System.convert_time_unit(max(enqueue_to_start_ms, 0), :millisecond, :native)
-          },
-          %{request_id: request_updated.id}
-        )
+    request_to_deliver =
+      case request.state do
+        :openai_processed -> begin_delivery(request)
+        _ -> request
       end
 
-      if cycle_attempt > 1 do
-        :telemetry.execute(
-          [:batcher, :delivery, :retry],
-          %{count: 1},
-          %{request_id: request_updated.id, attempt: cycle_attempt}
-        )
+    Logger.info("Delivering request #{request_to_deliver.id}")
+
+    started_at = System.monotonic_time()
+
+    result =
+      case request_to_deliver.delivery_config["type"] do
+        "rabbitmq" ->
+          deliver_rabbitmq(request_to_deliver)
+
+        "webhook" ->
+          deliver_webhook(request_to_deliver)
+
+        _ ->
+          deliver_webhook(request_to_deliver)
       end
 
-      result =
-        case request_updated.delivery_config["type"] do
-          "rabbitmq" ->
-            deliver_rabbitmq(request_updated, batch, cycle_attempt, global_attempt, max)
-
-          "webhook" ->
-            deliver_webhook(request_updated, batch, cycle_attempt, global_attempt, max)
-        end
-
-      emit_attempt_duration(result, request_updated.delivery_config["type"], started_at)
-      result
-    end
+    emit_attempt_duration(result, request_to_deliver.delivery_config["type"], started_at)
+    result
   end
 
   # --- Webhook delivery ---
 
-  defp deliver_webhook(request, batch, cycle_attempt, global_attempt, max) do
+  defp deliver_webhook(request) do
     webhook_url = request.delivery_config["webhook_url"]
 
     cond do
@@ -130,28 +71,21 @@ defmodule Batcher.Batching.Actions.Deliver do
         )
 
       true ->
-        case try_webhook_delivery(webhook_url, request, cycle_attempt, global_attempt) do
+        case try_webhook_delivery(webhook_url, request) do
           :ok ->
-            Logger.info("Delivery successful for request #{request.id}")
-            handle_delivery_success(request, batch, global_attempt)
+            Logger.info("Webhook delivery succeeded for request #{request.id}")
+            handle_delivery_success(request)
 
           {:error, outcome, error_msg} ->
-            handle_attempt_failure(
-              request,
-              batch,
-              outcome,
-              error_msg,
-              cycle_attempt,
-              global_attempt,
-              max
-            )
+            Logger.error("Webhook delivery failed for request #{request.id}: #{error_msg}")
+            handle_delivery_failure(request, outcome, error_msg)
         end
     end
   end
 
-  defp try_webhook_delivery(webhook_url, request, cycle_attempt, global_attempt) do
-    case post_webhook(webhook_url, request, cycle_attempt, global_attempt) do
-      {:ok, status, _headers, _body} when status >= 200 and status < 300 ->
+  defp try_webhook_delivery(webhook_url, request) do
+    case post_webhook(webhook_url, request) do
+      {:ok, status, _headers, _body} when status in 200..299 ->
         :ok
 
       {:ok, _status, _headers, body} ->
@@ -164,123 +98,62 @@ defmodule Batcher.Batching.Actions.Deliver do
 
   # --- RabbitMQ delivery ---
 
-  defp deliver_rabbitmq(request, batch, cycle_attempt, global_attempt, max) do
+  defp deliver_rabbitmq(request) do
     queue = request.delivery_config["rabbitmq_queue"]
 
-    # Check if RabbitMQ Publisher is running BEFORE delivery attempt
-    rabbitmq_configured? = Batcher.RabbitMQ.Publisher.started?()
+    if not Batcher.RabbitMQ.Publisher.started?() do
+      error_msg =
+        "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
 
-    cond do
-      not rabbitmq_configured? ->
-        # Non-retryable configuration error — go straight to delivery_failed
-        error_msg =
-          "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
+      Logger.error("Webhook delivery failed for request #{request.id}: #{error_msg}")
 
-        Logger.error("Delivery failed for request #{request.id}: #{error_msg}")
+      handle_delivery_failure(request, :connection_error, error_msg)
+    else
+      cond do
+        is_nil(queue) or queue == "" ->
+          validation_error(
+            :delivery_config,
+            "rabbitmq_queue is required for RabbitMQ delivery",
+            request.id
+          )
 
-        handle_delivery_failure(
-          request,
-          batch,
-          :rabbitmq_not_configured,
-          error_msg,
-          global_attempt
-        )
+        is_nil(request.response_payload) ->
+          validation_error(
+            :response_payload,
+            "response_payload is required for delivery",
+            request.id
+          )
 
-      is_nil(queue) or queue == "" ->
-        validation_error(
-          :delivery_config,
-          "rabbitmq_queue is required for RabbitMQ delivery",
-          request.id
-        )
+        true ->
+          case try_rabbitmq_delivery(queue, request) do
+            :ok ->
+              Logger.info("RabbitMQ delivery succeeded for request #{request.id}")
+              handle_delivery_success(request)
 
-      is_nil(request.response_payload) ->
-        validation_error(
-          :response_payload,
-          "response_payload is required for delivery",
-          request.id
-        )
-
-      true ->
-        case try_rabbitmq_delivery(queue, request, cycle_attempt, global_attempt) do
-          :ok ->
-            Logger.info("Delivery successful for request #{request.id}")
-            handle_delivery_success(request, batch, global_attempt)
-
-          {:error, outcome, error_msg} ->
-            handle_attempt_failure(
-              request,
-              batch,
-              outcome,
-              error_msg,
-              cycle_attempt,
-              global_attempt,
-              max
-            )
-        end
+            {:error, outcome, error_msg} ->
+              Logger.error("RabbitMQ delivery failed for request #{request.id}: #{error_msg}")
+              handle_delivery_failure(request, outcome, error_msg)
+          end
+      end
     end
   end
 
-  defp try_rabbitmq_delivery(queue, request, cycle_attempt, global_attempt) do
-    idempotency_key = idempotency_key(request.id, global_attempt)
+  defp try_rabbitmq_delivery(queue, request) do
+    idempotency_key = idempotency_key(request.id)
 
     publish_opts = [
       message_id: idempotency_key,
       headers: [
         {"x-batcher-request-id", request.id},
         {"x-batcher-custom-id", request.custom_id},
-        {"x-batcher-attempt", cycle_attempt},
-        {"x-batcher-global-attempt", global_attempt},
         {"idempotency-key", idempotency_key}
       ]
     ]
 
-    case Batcher.RabbitMQ.Publisher.publish(
-           "",
-           queue,
-           request.response_payload,
-           publish_opts
-         ) do
+    case Batcher.RabbitMQ.Publisher.publish("", queue, request.response_payload, publish_opts) do
       :ok -> :ok
       {:error, reason} -> {:error, map_rabbitmq_error(reason), format_rabbitmq_error(reason)}
     end
-  end
-
-  # --- Attempt failure handling ---
-
-  # Final attempt — transition to delivery_failed and return ok (job complete)
-  defp handle_attempt_failure(
-         request,
-         batch,
-         outcome,
-         error_msg,
-         cycle_attempt,
-         global_attempt,
-         max
-       )
-       when cycle_attempt >= max do
-    Logger.error(
-      "Delivery failed after #{max} attempt(s) for request #{request.id}: #{error_msg}"
-    )
-
-    handle_delivery_failure(request, batch, outcome, error_msg, global_attempt)
-  end
-
-  # Intermediate attempt — record attempt and return error to trigger Oban retry
-  defp handle_attempt_failure(
-         request,
-         _batch,
-         outcome,
-         error_msg,
-         cycle_attempt,
-         global_attempt,
-         max
-       ) do
-    Logger.warning(
-      "Delivery attempt #{cycle_attempt}/#{max} failed for request #{request.id}: #{error_msg}, will retry..."
-    )
-
-    record_intermediate_attempt(request, outcome, error_msg, global_attempt)
-    {:error, "Delivery attempt #{cycle_attempt}/#{max} failed: #{error_msg}"}
   end
 
   # --- State transition helpers ---
@@ -292,53 +165,41 @@ defmodule Batcher.Batching.Actions.Deliver do
     |> Ash.load!(:batch)
   end
 
-  defp handle_delivery_success(request, _batch, global_attempt) do
+  defp handle_delivery_success(request) do
     request_after =
       request
       |> Ash.Changeset.for_update(:complete_delivery)
-      |> Ash.Changeset.put_context(:delivery_attempt, %{
-        outcome: :success,
-        attempt_number: global_attempt
-      })
+      |> Ash.Changeset.put_context(:delivery_attempt, %{outcome: :success})
       |> Ash.update!()
 
     {:ok, request_after}
   end
 
-  defp handle_delivery_failure(request, _batch, outcome, error_msg, global_attempt) do
-    # Mark request as delivery_failed (not :failed) because this is a delivery error,
-    # not an OpenAI processing error. The error is recorded on the delivery_attempt.
+  defp handle_delivery_failure(request, outcome, error_msg) do
     request_after =
       request
-      |> Ash.Changeset.for_update(:mark_delivery_failed, %{})
+      |> Ash.Changeset.for_update(:mark_delivery_failed)
       |> Ash.Changeset.put_context(:delivery_attempt, %{
         outcome: outcome,
-        error_msg: error_msg,
-        attempt_number: global_attempt
+        error_msg: error_msg
       })
       |> Ash.update!()
 
     {:ok, request_after}
-  end
-
-  defp record_intermediate_attempt(request, outcome, error_msg, global_attempt) do
-    Ash.create!(Batching.RequestDeliveryAttempt, %{
-      request_id: request.id,
-      attempt_number: global_attempt,
-      delivery_config: request.delivery_config,
-      outcome: outcome,
-      error_msg: error_msg
-    })
   end
 
   # --- HTTP helpers ---
 
-  defp post_webhook(url, request, cycle_attempt, global_attempt) do
-    # Use configurable timeout - low for tests, reasonable for production
+  defp post_webhook(url, request) do
     http_timeouts = Application.get_env(:batcher, :http_timeouts, [])
-    receive_timeout = Keyword.get(http_timeouts, :receive_timeout, 30_000)
-    connect_timeout = Keyword.get(http_timeouts, :connect_timeout, 10_000)
-    idempotency_key = idempotency_key(request.id, global_attempt)
+
+    receive_timeout =
+      Keyword.get(http_timeouts, :receive_timeout, @default_delivery_receive_timeout)
+
+    connect_timeout =
+      Keyword.get(http_timeouts, :connect_timeout, @default_delivery_connect_timeout)
+
+    idempotency_key = idempotency_key(request.id)
 
     case Req.post(url,
            json: request.response_payload,
@@ -346,9 +207,7 @@ defmodule Batcher.Batching.Actions.Deliver do
              {"content-type", "application/json"},
              {"idempotency-key", idempotency_key},
              {"x-batcher-request-id", to_string(request.id)},
-             {"x-batcher-custom-id", to_string(request.custom_id)},
-             {"x-batcher-attempt", Integer.to_string(cycle_attempt)},
-             {"x-batcher-global-attempt", Integer.to_string(global_attempt)}
+             {"x-batcher-custom-id", to_string(request.custom_id)}
            ],
            retry: false,
            receive_timeout: receive_timeout,
@@ -376,16 +235,6 @@ defmodule Batcher.Batching.Actions.Deliver do
          }
        ]
      )}
-  end
-
-  # --- Config ---
-
-  defp max_attempts do
-    if Application.get_env(:batcher, :disable_delivery_retry, false) do
-      1
-    else
-      Application.get_env(:batcher, :delivery_max_attempts, @default_max_attempts)
-    end
   end
 
   # --- Error mapping and formatting ---
@@ -427,7 +276,6 @@ defmodule Batcher.Batching.Actions.Deliver do
   end
 
   defp encode_response_body(body) when is_binary(body) do
-    # Try to parse as JSON, if it fails, return as-is
     case JSON.decode(body) do
       {:ok, decoded} -> JSON.encode!(decoded)
       {:error, _} -> body
@@ -456,7 +304,7 @@ defmodule Batcher.Batching.Actions.Deliver do
         {:ok, %{state: :delivered}} -> :delivered
         {:ok, %{state: :delivery_failed}} -> :delivery_failed
         {:ok, _} -> :ok
-        {:error, _} -> :retryable_error
+        {:error, _} -> :failed
       end
 
     :telemetry.execute(
@@ -466,24 +314,7 @@ defmodule Batcher.Batching.Actions.Deliver do
     )
   end
 
-  defp next_global_attempt(request) do
-    (request.delivery_attempt_count || 0) + 1
-  end
-
-  defp current_cycle_attempt(request) do
-    if is_nil(request.updated_at) do
-      1
-    else
-      attempts_in_cycle =
-        Batching.RequestDeliveryAttempt
-        |> Ash.Query.filter(request_id == ^request.id and attempted_at >= ^request.updated_at)
-        |> Ash.count!()
-
-      attempts_in_cycle + 1
-    end
-  end
-
-  defp idempotency_key(request_id, attempt_number) do
-    "batcher:req:#{request_id}:attempt:#{attempt_number}"
+  defp idempotency_key(request_id) do
+    "batcher:req:#{request_id}"
   end
 end

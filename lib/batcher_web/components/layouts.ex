@@ -224,15 +224,7 @@ defmodule BatcherWeb.Layouts do
           if consumer_config do
             queue = Keyword.get(consumer_config, :queue, "N/A")
 
-            details = details ++ [%{label: "Input queue", value: queue}]
-
-            details ++
-              [
-                %{
-                  label: "Input mode",
-                  value: "Queue"
-                }
-              ]
+            details ++ [%{label: "Input queue", value: queue}]
           else
             details ++
               [

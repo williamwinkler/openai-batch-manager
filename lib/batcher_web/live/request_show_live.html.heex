@@ -186,33 +186,33 @@
           </span>
         </div>
         <div class="flex items-center gap-2">
-          <button
-            :if={@request.state == :delivering}
-            type="button"
-            class="btn btn-sm btn-primary btn-disabled"
-            disabled
-          >
-            <span class="loading loading-spinner loading-xs"></span> Delivering...
-          </button>
-          <div
-            :if={@request.state in [:openai_processed, :delivered, :delivery_failed]}
-            class="tooltip tooltip-left"
-            data-tip="Redeliver with current delivery config"
-          >
-            <button
-              type="button"
-              id="retry-delivery"
-              class="btn btn-sm btn-primary"
-              phx-click={JS.push("retry_delivery", loading: "#retry-delivery")}
-              disabled={pending_action?(@pending_actions, :retry_delivery, @request.id)}
-            >
-              <%= if pending_action?(@pending_actions, :retry_delivery, @request.id) do %>
+          <%= cond do %>
+            <% pending_action?(@pending_actions, :retry_delivery, @request.id) -> %>
+              <button type="button" id="retry-delivery" class="btn btn-sm btn-primary" disabled>
                 <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Redelivering...
-              <% else %>
-                <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
-              <% end %>
-            </button>
-          </div>
+              </button>
+            <% @request.state == :delivering or @batch.state == :delivering -> %>
+              <button
+                type="button"
+                id="retry-delivery"
+                class="btn btn-sm btn-primary btn-disabled"
+                disabled
+              >
+                <span class="loading loading-spinner loading-xs"></span> Delivering...
+              </button>
+            <% can_redeliver_request?(@request, @batch) -> %>
+              <div class="tooltip tooltip-left" data-tip="Redeliver with current delivery config">
+                <button
+                  type="button"
+                  id="retry-delivery"
+                  class="btn btn-sm btn-primary"
+                  phx-click={JS.push("retry_delivery", loading: "#retry-delivery")}
+                >
+                  <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
+                </button>
+              </div>
+            <% true -> %>
+          <% end %>
         </div>
       </div>
 

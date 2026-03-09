@@ -391,4 +391,50 @@ defmodule BatcherWeb.BatchShowLiveTest do
       wait_for(fun, attempts - 1, sleep_ms)
     end
   end
+
+  describe "redeliver button visibility" do
+    test "shows redeliver all button for partially delivered batch", %{conn: conn} do
+      batch = generate(seeded_batch(state: :partially_delivered))
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+      assert html =~ "id=\"redeliver-batch\""
+    end
+
+    test "shows redeliver failed button when failed requests exist", %{conn: conn} do
+      batch = generate(seeded_batch(state: :delivery_failed))
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          state: :delivery_failed,
+          response_payload: %{"ok" => true}
+        )
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      wait_for(fn ->
+        has_element?(view, "#redeliver-failed-batch")
+      end)
+
+      assert has_element?(view, "#redeliver-failed-batch")
+    end
+
+    test "hides redeliver buttons for non-redeliverable batch states", %{conn: conn} do
+      building_batch = generate(seeded_batch(state: :building))
+      {:ok, _view, building_html} = live(conn, ~p"/batches/#{building_batch.id}")
+      refute building_html =~ "id=\"redeliver-batch\""
+      refute building_html =~ "id=\"redeliver-failed-batch\""
+
+      batch = generate(seeded_batch(state: :delivering))
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+      refute html =~ "id=\"redeliver-batch\""
+      refute html =~ "id=\"redeliver-failed-batch\""
+    end
+
+    test "hides redeliver failed button when there are no failed requests", %{conn: conn} do
+      batch = generate(seeded_batch(state: :delivery_failed))
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+      refute html =~ "id=\"redeliver-failed-batch\""
+    end
+  end
 end

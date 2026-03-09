@@ -32,10 +32,8 @@ defmodule Batcher.Batching.Changes.EnqueuePendingDeliveries do
 
   defp enqueue_pending_deliveries(batch) do
     trigger = AshOban.Info.oban_trigger(Batching.Request, :deliver)
-    chunk_size = positive_integer_config(:delivery_enqueue_chunk_size, @default_chunk_size)
-
-    max_error_logs =
-      positive_integer_config(:delivery_enqueue_max_error_logs, @default_max_error_logs)
+    chunk_size = @default_chunk_size
+    max_error_logs = @default_max_error_logs
 
     started_at = System.monotonic_time()
 
@@ -99,13 +97,6 @@ defmodule Batcher.Batching.Changes.EnqueuePendingDeliveries do
       Logger.info(message)
     else
       Logger.warning(message)
-    end
-  end
-
-  defp positive_integer_config(key, default) do
-    case Application.get_env(:batcher, key, default) do
-      value when is_integer(value) and value > 0 -> value
-      _ -> default
     end
   end
 end

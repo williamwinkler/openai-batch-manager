@@ -26,12 +26,12 @@ defmodule Batcher.Batching do
         args: [:query]
 
       define :cancel_batch, action: :cancel
-      define :begin_batch_redeliver, action: :begin_redeliver
       define :restart_batch, action: :restart
       define :handle_batch_token_limit_exceeded, action: :handle_token_limit_exceeded
       define :fail_batch_token_limit_exhausted, action: :fail_token_limit_exhausted
       define :destroy_batch, action: :destroy
       define :redeliver_batch, action: :redeliver, args: [:id]
+      define :redeliver_failed_batch, action: :redeliver_failed, args: [:id]
     end
 
     resource Batcher.Batching.Request do
@@ -72,4 +72,29 @@ defmodule Batcher.Batching do
         args: [:request_id, :skip, :limit]
     end
   end
+
+  @doc """
+  Executes manual one-shot redelivery for a request.
+
+  Returns `{:error, :invalid_batch_state}` when the request's batch is currently delivering.
+  """
+  @spec manual_redeliver_request(map()) :: {:ok, map()} | {:error, term()}
+  def manual_redeliver_request(request) do
+    with {:ok, request_with_batch} <- ensure_request_batch_loaded(request),
+         :ok <- ensure_batch_not_delivering(request_with_batch.batch),
+         {:ok, updated_request} <- retry_request_delivery(request_with_batch) do
+      {:ok, updated_request}
+    end
+  end
+
+  defp ensure_request_batch_loaded(%{batch: %{state: _}} = request), do: {:ok, request}
+
+  defp ensure_request_batch_loaded(%{id: id}) do
+    {:ok, get_request_by_id!(id, load: [:batch])}
+  rescue
+    error -> {:error, error}
+  end
+
+  defp ensure_batch_not_delivering(%{state: :delivering}), do: {:error, :invalid_batch_state}
+  defp ensure_batch_not_delivering(_batch), do: :ok
 end

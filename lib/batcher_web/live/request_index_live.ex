@@ -2,6 +2,8 @@ defmodule BatcherWeb.RequestIndexLive do
   use BatcherWeb, :live_view
 
   alias Batcher.Batching
+  alias BatcherWeb.Live.Utils.ActionActivity
+  alias BatcherWeb.Live.Utils.AsyncActions
   alias BatcherWeb.Live.Utils.AsyncPagination
   alias Batcher.Utils.Format
 
@@ -16,9 +18,13 @@ defmodule BatcherWeb.RequestIndexLive do
     socket =
       socket
       |> assign(:page_title, "Requests")
+      |> assign(:pending_actions, MapSet.new())
+      |> assign(:action_activity_version, 0)
       |> assign(:pending_refresh_count, 0)
       |> assign(:pending_refresh_reasons, MapSet.new())
       |> assign(:last_event_at_ms, nil)
+      |> assign(:visible_created_before, DateTime.utc_now())
+      |> assign(:clear_pending_on_next_params?, false)
       |> assign(:page_limit, 25)
       |> assign(:state_filter, nil)
       |> assign(:cursor_after, nil)
@@ -65,7 +71,13 @@ defmodule BatcherWeb.RequestIndexLive do
       page =
         Batching.search_requests!(
           query_text,
-          %{sort_input: sort_input, batch_id: batch_id, state_filter: state_filter},
+          %{
+            sort_input: sort_input,
+            batch_id: batch_id,
+            state_filter: state_filter,
+            created_before: socket.assigns.visible_created_before
+          },
+          load: [:batch],
           page: page_opts
         )
 
@@ -79,8 +91,14 @@ defmodule BatcherWeb.RequestIndexLive do
         |> assign(:cursor_after, page_opts[:after])
         |> assign(:cursor_before, page_opts[:before])
         |> assign(:page, page)
-        |> clear_pending_refresh()
-        |> schedule_count(query_text, sort_input, batch_id, state_filter)
+        |> maybe_clear_pending_refresh()
+        |> schedule_count(
+          query_text,
+          sort_input,
+          batch_id,
+          state_filter,
+          socket.assigns.visible_created_before
+        )
 
       {:noreply, socket}
     end
@@ -98,7 +116,10 @@ defmodule BatcherWeb.RequestIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
+    {:noreply,
+     socket
+     |> mark_pending_clear_on_next_params()
+     |> push_patch(to: ~p"/requests?#{params}")}
   end
 
   @impl true
@@ -125,7 +146,10 @@ defmodule BatcherWeb.RequestIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
+    {:noreply,
+     socket
+     |> mark_pending_clear_on_next_params()
+     |> push_patch(to: ~p"/requests?#{params}")}
   end
 
   @impl true
@@ -142,7 +166,10 @@ defmodule BatcherWeb.RequestIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
+    {:noreply,
+     socket
+     |> mark_pending_clear_on_next_params()
+     |> push_patch(to: ~p"/requests?#{params}")}
   end
 
   @impl true
@@ -156,7 +183,10 @@ defmodule BatcherWeb.RequestIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
+    {:noreply,
+     socket
+     |> mark_pending_clear_on_next_params()
+     |> push_patch(to: ~p"/requests?#{params}")}
   end
 
   @impl true
@@ -173,17 +203,26 @@ defmodule BatcherWeb.RequestIndexLive do
       ]
       |> remove_empty()
 
-    {:noreply, push_patch(socket, to: ~p"/requests?#{params}")}
+    {:noreply,
+     socket
+     |> mark_pending_clear_on_next_params()
+     |> push_patch(to: ~p"/requests?#{params}")}
   end
 
   @impl true
   def handle_event("refresh_requests", _params, socket) do
     socket =
       socket
+      |> assign(:visible_created_before, DateTime.utc_now())
       |> reload_page(refresh_count?: true)
       |> clear_pending_refresh()
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("retry_delivery", %{"id" => request_id}, socket) do
+    start_request_action_async(socket, :retry_delivery, request_id)
   end
 
   @impl true
@@ -197,6 +236,11 @@ defmodule BatcherWeb.RequestIndexLive do
   end
 
   @impl true
+  def handle_info(%{topic: "ui_actions:request:" <> _request_id}, socket) do
+    {:noreply, update(socket, :action_activity_version, &(&1 + 1))}
+  end
+
+  @impl true
   def handle_info(_message, socket) do
     {:noreply, socket}
   end
@@ -204,6 +248,30 @@ defmodule BatcherWeb.RequestIndexLive do
   @impl true
   def handle_async({:page_count, count_request_key}, result, socket) do
     {:noreply, AsyncPagination.handle_count_async(socket, count_request_key, result)}
+  end
+
+  @impl true
+  def handle_async({:request_action, action, request_id}, {:ok, result}, socket) do
+    key = {:request_action, action, request_id}
+    socket = AsyncActions.clear_shared_pending(socket, key, scope: {:request, request_id})
+
+    case result do
+      {:ok, message} ->
+        {:noreply, socket |> put_flash(:info, message) |> reload_page(refresh_count?: false)}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  @impl true
+  def handle_async({:request_action, action, request_id}, {:exit, reason}, socket) do
+    key = {:request_action, action, request_id}
+
+    {:noreply,
+     socket
+     |> AsyncActions.clear_shared_pending(key, scope: {:request, request_id})
+     |> put_flash(:error, "Request action failed unexpectedly: #{inspect(reason)}")}
   end
 
   defp reload_page(socket, opts) do
@@ -222,7 +290,13 @@ defmodule BatcherWeb.RequestIndexLive do
     page =
       Batching.search_requests!(
         query_text,
-        %{sort_input: sort_input, batch_id: batch_id, state_filter: state_filter},
+        %{
+          sort_input: sort_input,
+          batch_id: batch_id,
+          state_filter: state_filter,
+          created_before: socket.assigns.visible_created_before
+        },
+        load: [:batch],
         page: keyset_page_opts_from_assigns(page_limit, cursor_after, cursor_before)
       )
 
@@ -231,21 +305,36 @@ defmodule BatcherWeb.RequestIndexLive do
       |> assign(:page, page)
 
     if Keyword.get(opts, :refresh_count?, true) do
-      schedule_count(socket, query_text, sort_input, batch_id, state_filter)
+      schedule_count(
+        socket,
+        query_text,
+        sort_input,
+        batch_id,
+        state_filter,
+        socket.assigns.visible_created_before
+      )
     else
       socket
     end
   end
 
-  defp schedule_count(socket, query_text, sort_input, batch_id, state_filter) do
-    count_request_key = {:requests_count, query_text, sort_input, batch_id, state_filter}
+  defp schedule_count(
+         socket,
+         query_text,
+         sort_input,
+         batch_id,
+         state_filter,
+         visible_created_before
+       ) do
+    count_request_key =
+      {:requests_count, query_text, sort_input, batch_id, state_filter, visible_created_before}
 
     AsyncPagination.schedule_count(socket, count_request_key, fn ->
-      count_requests(query_text, batch_id, state_filter)
+      count_requests(query_text, batch_id, state_filter, visible_created_before)
     end)
   end
 
-  defp count_requests(query_text, batch_id, state_filter) do
+  defp count_requests(query_text, batch_id, state_filter, visible_created_before) do
     maybe_test_count_delay(query_text)
 
     if maybe_test_count_error?(query_text) do
@@ -253,7 +342,11 @@ defmodule BatcherWeb.RequestIndexLive do
     else
       case Batching.count_requests_for_search(
              query_text,
-             %{batch_id: batch_id, state_filter: state_filter},
+             %{
+               batch_id: batch_id,
+               state_filter: state_filter,
+               created_before: visible_created_before
+             },
              page: [limit: 1, count: true]
            ) do
         {:ok, page} -> {:ok, page.count || 0}
@@ -284,6 +377,47 @@ defmodule BatcherWeb.RequestIndexLive do
 
   defp test_env? do
     Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) and Mix.env() == :test
+  end
+
+  defp start_request_action_async(socket, action, raw_request_id) do
+    case parse_batch_id(raw_request_id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Invalid request id")}
+
+      request_id ->
+        key = {:request_action, action, request_id}
+
+        AsyncActions.start_shared_action(
+          socket,
+          key,
+          fn -> perform_request_action(action, request_id) end,
+          scope: {:request, request_id}
+        )
+    end
+  end
+
+  defp perform_request_action(:retry_delivery, request_id) do
+    request = Batching.get_request_by_id!(request_id, load: [:batch])
+
+    with {:ok, _updated_request} <- Batching.manual_redeliver_request(request) do
+      {:ok, "Redelivery triggered"}
+    else
+      {:error, :invalid_batch_state} ->
+        {:error, "Batch cannot redeliver while it is currently delivering"}
+
+      {:error, error} ->
+        {:error, "Failed to retry delivery: #{Exception.message(error)}"}
+    end
+  end
+
+  def pending_action?(pending_actions, action, request_id) do
+    key = {:request_action, action, request_id}
+    AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
+  end
+
+  def can_redeliver_request?(request, batch) do
+    request.state != :delivering and not is_nil(request.response_payload) and
+      not is_nil(batch) and batch.state != :delivering
   end
 
   defp parse_batch_id(nil), do: nil
@@ -465,6 +599,20 @@ defmodule BatcherWeb.RequestIndexLive do
     socket
     |> assign(:pending_refresh_count, 0)
     |> assign(:pending_refresh_reasons, MapSet.new())
+  end
+
+  defp mark_pending_clear_on_next_params(socket) do
+    assign(socket, :clear_pending_on_next_params?, true)
+  end
+
+  defp maybe_clear_pending_refresh(socket) do
+    if socket.assigns.clear_pending_on_next_params? do
+      socket
+      |> clear_pending_refresh()
+      |> assign(:clear_pending_on_next_params?, false)
+    else
+      socket
+    end
   end
 
   defp buffer_pending_refresh(socket, reason) do

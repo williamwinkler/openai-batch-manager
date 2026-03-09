@@ -186,6 +186,22 @@ defmodule Batcher.Batching.Request do
         """
       end
 
+      statement :request_delivery_attempts_after_insert_update_request_attempt_count_drop_trigger do
+        up """
+        DROP TRIGGER IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count ON request_delivery_attempts;
+        """
+
+        down "SELECT 1;"
+      end
+
+      statement :request_delivery_attempts_after_insert_update_request_attempt_count_drop_function do
+        up """
+        DROP FUNCTION IF EXISTS request_delivery_attempts_after_insert_update_request_attempt_count_fn();
+        """
+
+        down "SELECT 1;"
+      end
+
       statement :ensure_pg_trgm_extension do
         up "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
         down "SELECT 1;"
@@ -233,7 +249,14 @@ defmodule Batcher.Batching.Request do
 
       # Redeliver - allows redelivery from any state that has a response
       transition :retry_delivery,
-        from: [:openai_processed, :delivered, :delivery_failed],
+        from: [
+          :openai_processed,
+          :delivered,
+          :failed,
+          :delivery_failed,
+          :expired,
+          :cancelled
+        ],
         to: :openai_processed
 
       transition :reset_to_pending, from: [:openai_processing, :failed], to: :pending
@@ -267,7 +290,7 @@ defmodule Batcher.Batching.Request do
         where expr(state == :openai_processed)
         scheduler_cron "* * * * *"
         queue :delivery
-        max_attempts 3
+        max_attempts 1
         backoff 10
         on_error :handle_delivery_error
         worker_module_name Batching.Request.AshOban.Worker.Deliver
@@ -353,6 +376,10 @@ defmodule Batcher.Batching.Request do
         default "-created_at"
       end
 
+      argument :created_before, :utc_datetime_usec do
+        description "Only include requests created at or before this timestamp"
+      end
+
       prepare fn query, _context ->
         sort_input = Ash.Query.get_argument(query, :sort_input)
 
@@ -362,6 +389,7 @@ defmodule Batcher.Batching.Request do
           |> apply_sorting(sort_input)
           |> apply_batch_filter()
           |> apply_state_filter()
+          |> apply_created_before_filter()
 
         query
       end
@@ -386,11 +414,16 @@ defmodule Batcher.Batching.Request do
         description "Filter requests by an exact state"
       end
 
+      argument :created_before, :utc_datetime_usec do
+        description "Only include requests created at or before this timestamp"
+      end
+
       prepare fn query, _context ->
         query
         |> apply_query_filter()
         |> apply_batch_filter()
         |> apply_state_filter()
+        |> apply_created_before_filter()
       end
 
       pagination offset?: true, countable: true
@@ -488,7 +521,7 @@ defmodule Batcher.Batching.Request do
     update :retry_delivery do
       description "Retry delivery of a request that failed"
       require_atomic? false
-      validate Batcher.Batching.Validations.RabbitmqConnectedForRetryDelivery
+      validate present(:response_payload)
       change transition_state(:openai_processed)
       change run_oban_trigger(:deliver)
     end
@@ -593,12 +626,6 @@ defmodule Batcher.Batching.Request do
       description "Error message if processing or delivery failed"
     end
 
-    attribute :delivery_attempt_count, :integer do
-      description "Number of delivery attempts recorded for this request"
-      allow_nil? false
-      default 0
-    end
-
     create_timestamp :created_at, public?: true
     update_timestamp :updated_at, public?: true
   end
@@ -614,6 +641,12 @@ defmodule Batcher.Batching.Request do
     has_many :delivery_attempts, Batching.RequestDeliveryAttempt do
       description "Audit trail of delivery attempts for this request"
     end
+  end
+
+  calculations do
+    calculate :delivery_attempt_count,
+              :integer,
+              Batcher.Batching.Calculations.RequestDeliveryAttemptCount
   end
 
   defp apply_sorting(query, nil), do: Ash.Query.sort(query, created_at: :desc, id: :desc)
@@ -659,6 +692,16 @@ defmodule Batcher.Batching.Request do
         contains(custom_id, ^query_value) or contains(model, ^query_value) or
           contains(url, ^query_value)
       )
+    end
+  end
+
+  defp apply_created_before_filter(query) do
+    created_before = Ash.Query.get_argument(query, :created_before)
+
+    if created_before do
+      Ash.Query.filter(query, created_at <= ^created_before)
+    else
+      query
     end
   end
 

@@ -9,6 +9,8 @@ defmodule Batcher.Batching.Recovery do
   alias Batcher.Batching
 
   def resume_stale_work do
+    enqueue_batches(:uploaded, :dispatch_waiting_for_capacity)
+    enqueue_batches(:waiting_for_capacity, :dispatch_waiting_for_capacity)
     enqueue_batches(:openai_completed, :start_downloading)
     enqueue_batches(:downloading, :process_downloaded_file)
     enqueue_batches(:ready_to_deliver, :start_delivering)

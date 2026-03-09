@@ -1,4 +1,4 @@
-defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
+defmodule BatcherWeb.BatchIndexRenderingActionsProgressLiveTest do
   use BatcherWeb.LiveViewCase, async: false
 
   import Batcher.Generator
@@ -318,8 +318,13 @@ defmodule BatcherWeb.BatchIndexLiveAdditionalTest do
       wait_for(fn -> has_element?(view, "button#cancel-batch-#{batch.id}[disabled]") end)
       refute has_element?(view, "button#upload-batch-#{batch.id}[disabled]")
 
-      :timer.sleep(400)
-      refute has_element?(view, "button#cancel-batch-#{batch.id}[disabled]")
+      wait_for(
+        fn ->
+          not has_element?(view, "button#cancel-batch-#{batch.id}[disabled]")
+        end,
+        40,
+        25
+      )
     end
 
     test "keeps batch action disabled after navigation while action lock is active", %{conn: conn} do

@@ -24,7 +24,9 @@ defmodule BatcherWeb.Endpoint do
     at: "/",
     from: :batcher,
     gzip: not code_reloading?,
-    only: BatcherWeb.static_paths()
+    only: BatcherWeb.static_paths(),
+    # Allow digested root files like favicon-<hash>.svg in release builds.
+    only_matching: ~w(assets fonts images favicon icon robots)
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
@@ -41,6 +43,7 @@ defmodule BatcherWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
+  plug Plug.Logger
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,

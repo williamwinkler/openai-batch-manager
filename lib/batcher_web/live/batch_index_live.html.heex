@@ -109,7 +109,6 @@
               <:action :let={batch}>
                 <div class="flex items-center justify-end gap-2">
                   <% upload_pending = pending_action?(@pending_actions, :upload, batch.id) %>
-                  <% redeliver_pending = pending_action?(@pending_actions, :redeliver, batch.id) %>
                   <% restart_pending = pending_action?(@pending_actions, :restart, batch.id) %>
                   <% cancel_pending = pending_action?(@pending_actions, :cancel, batch.id) %>
                   <% delete_pending = pending_action?(@pending_actions, :delete, batch.id) %>
@@ -127,29 +126,6 @@
                       <.icon name="hero-arrow-up-tray" class="w-4 h-4" /> Upload
                     <% end %>
                   </button>
-                  <div
-                    :if={batch.state in [:partially_delivered, :delivery_failed]}
-                    class="tooltip tooltip-left"
-                    data-tip="Redeliver all failed requests"
-                  >
-                    <button
-                      id={"redeliver-batch-#{batch.id}"}
-                      phx-click={
-                        JS.push("redeliver_batch", loading: "#redeliver-batch-#{batch.id}")
-                      }
-                      phx-value-id={batch.id}
-                      class="btn btn-sm btn-primary"
-                      data-confirm="Redeliver all failed requests in this batch?"
-                      disabled={redeliver_pending}
-                    >
-                      <%= if redeliver_pending do %>
-                        <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
-                        Redelivering...
-                      <% else %>
-                        <.icon name="hero-arrow-path" class="w-4 h-4" /> Redeliver
-                      <% end %>
-                    </button>
-                  </div>
                   <button
                     :if={batch.state == :failed}
                     id={"restart-batch-#{batch.id}"}

@@ -1,5 +1,5 @@
 defmodule Batcher.Batching.RecoveryTest do
-  use Batcher.DataCase, async: false
+  use Batcher.DataCase, async: true
   use Oban.Testing, repo: Batcher.Repo
 
   alias Batcher.Batching
@@ -7,6 +7,33 @@ defmodule Batcher.Batching.RecoveryTest do
   import Batcher.Generator
 
   describe "resume_stale_work/0" do
+    test "re-enqueues dispatch for uploaded batches" do
+      _batch =
+        seeded_batch(
+          state: :uploaded,
+          openai_input_file_id: "file-input-123"
+        )
+        |> generate()
+
+      :ok = Batcher.Batching.Recovery.resume_stale_work()
+
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
+    end
+
+    test "re-enqueues dispatch for waiting_for_capacity batches" do
+      _batch =
+        seeded_batch(
+          state: :waiting_for_capacity,
+          openai_input_file_id: "file-input-123",
+          waiting_for_capacity_since_at: DateTime.utc_now()
+        )
+        |> generate()
+
+      :ok = Batcher.Batching.Recovery.resume_stale_work()
+
+      assert_enqueued(worker: Batching.Batch.AshOban.Worker.DispatchWaitingForCapacity)
+    end
+
     test "re-enqueues processing for downloading batches" do
       _batch =
         seeded_batch(

@@ -8,6 +8,21 @@ defmodule Batcher.Repo.Migrations.Init do
   use Ecto.Migration
 
   def up do
+    if core_schema_exists?() do
+      :ok
+    else
+      run_init_migration()
+    end
+  end
+
+  defp core_schema_exists? do
+    %{rows: [[exists?]]} =
+      repo().query!("SELECT to_regclass('public.settings') IS NOT NULL")
+
+    exists?
+  end
+
+  defp run_init_migration do
     create table(:settings, primary_key: false) do
       add :id, :bigserial, null: false, primary_key: true
       add :name, :text, null: false, default: "openai_rate_limits"

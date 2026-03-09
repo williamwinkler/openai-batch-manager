@@ -360,8 +360,8 @@ defmodule Batcher.Batching.BatchBuilder do
       {:ok, request} ->
         publish_batch_metrics_delta(request)
 
-        Logger.debug(
-          "[Batch #{state.batch_id}] Request added successfully with custom_id=#{request.custom_id}"
+        Logger.info(
+          "Request with custom_id=#{request.custom_id} added to batch #{state.batch_id}"
         )
 
         maybe_rotate_after_successful_append(request, state)

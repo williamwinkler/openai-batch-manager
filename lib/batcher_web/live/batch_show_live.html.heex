@@ -383,15 +383,16 @@
       queued = @delivery_stats[:queued] || 0
       delivering = @delivery_stats[:delivering] || 0
       failed = @delivery_stats[:failed] || 0
+      displayed_total = delivered + queued + delivering + failed
 
       # Calculate percentages for the stacked bar
       {delivered_pct, queued_pct, delivering_pct, failed_pct} =
-        if total > 0 do
+        if displayed_total > 0 do
           {
-            delivered / total * 100,
-            queued / total * 100,
-            delivering / total * 100,
-            failed / total * 100
+            delivered / displayed_total * 100,
+            queued / displayed_total * 100,
+            delivering / displayed_total * 100,
+            failed / displayed_total * 100
           }
         else
           {0, 0, 0, 0}
@@ -399,16 +400,38 @@
       <div class="border border-base-300/50 rounded-lg overflow-hidden">
         <div class="px-4 py-3 border-b border-base-300/50 bg-base-200/30 flex items-center justify-between">
           <span class="font-medium">Delivery</span>
-          <button
-            :if={@batch.state in [:partially_delivered, :delivery_failed]}
-            id="redeliver-batch"
-            phx-click={JS.push("redeliver_batch", loading: "#redeliver-batch")}
-            class="btn btn-xs btn-primary"
-            data-confirm="Redeliver all failed requests in this batch?"
-            disabled={pending_action?(@pending_actions, :redeliver, @batch.id)}
-          >
-            <.icon name="hero-arrow-path" class="w-3.5 h-3.5" /> Redeliver Failed
-          </button>
+          <div :if={can_redeliver_batch?(@batch)} class="flex items-center gap-2">
+            <% redeliver_all_pending = pending_action?(@pending_actions, :redeliver, @batch.id) %>
+            <% redeliver_failed_pending =
+              pending_action?(@pending_actions, :redeliver_failed, @batch.id) %>
+            <button
+              id="redeliver-batch"
+              phx-click={JS.push("redeliver_batch", loading: "#redeliver-batch")}
+              class="btn btn-xs btn-primary"
+              data-confirm="Redeliver all deliverable requests in this batch?"
+              disabled={redeliver_all_pending}
+            >
+              <%= if redeliver_all_pending do %>
+                <.icon name="hero-arrow-path" class="w-3.5 h-3.5 animate-spin" /> Redelivering...
+              <% else %>
+                <.icon name="hero-arrow-path" class="w-3.5 h-3.5" /> Redeliver all
+              <% end %>
+            </button>
+            <button
+              :if={can_redeliver_failed_batch?(@batch, @delivery_stats)}
+              id="redeliver-failed-batch"
+              phx-click={JS.push("redeliver_failed_batch", loading: "#redeliver-failed-batch")}
+              class="btn btn-xs btn-error"
+              data-confirm="Redeliver failed requests in this batch?"
+              disabled={redeliver_failed_pending}
+            >
+              <%= if redeliver_failed_pending do %>
+                <.icon name="hero-arrow-path" class="w-3.5 h-3.5 animate-spin" /> Redelivering...
+              <% else %>
+                <.icon name="hero-exclamation-triangle" class="w-3.5 h-3.5" /> Redeliver failed
+              <% end %>
+            </button>
+          </div>
         </div>
         <div class="p-4">
           <%= if @delivery_stats_status == :loading_initial and @delivery_stats == %{} do %>

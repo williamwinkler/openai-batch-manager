@@ -8,9 +8,9 @@ defmodule Batcher.Repo.Migrations.KeysetPaginationAndTransitionIndex do
   use Ecto.Migration
 
   def up do
-    create index(:batch_transitions, [:batch_id, :to, :transitioned_at],
-             name: "batch_transitions_processing_since_index"
-           )
+    create_if_not_exists index(:batch_transitions, [:batch_id, :to, :transitioned_at],
+                           name: "batch_transitions_processing_since_index"
+                         )
   end
 
   def down do
