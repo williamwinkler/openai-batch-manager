@@ -30,8 +30,6 @@ defmodule Batcher.Batching.Actions.Deliver do
         _ -> request
       end
 
-    Logger.info("Delivering request #{request_to_deliver.id}")
-
     started_at = System.monotonic_time()
 
     result =
@@ -57,27 +55,41 @@ defmodule Batcher.Batching.Actions.Deliver do
 
     cond do
       is_nil(webhook_url) ->
+        error_msg = "webhook_url is required for webhook delivery"
+
+        log_webhook_failure(
+          request.custom_id,
+          error_msg
+        )
+
         validation_error(
           :delivery_config,
-          "webhook_url is required for webhook delivery",
+          error_msg,
           request.id
         )
 
       is_nil(request.response_payload) ->
+        error_msg = "response_payload is required for delivery"
+
+        log_webhook_failure(
+          request.custom_id,
+          error_msg
+        )
+
         validation_error(
           :response_payload,
-          "response_payload is required for delivery",
+          error_msg,
           request.id
         )
 
       true ->
         case try_webhook_delivery(webhook_url, request) do
           :ok ->
-            Logger.info("Webhook delivery succeeded for request #{request.id}")
+            log_webhook_success(request.custom_id)
             handle_delivery_success(request)
 
           {:error, outcome, error_msg} ->
-            Logger.error("Webhook delivery failed for request #{request.id}: #{error_msg}")
+            log_webhook_failure(request.custom_id, error_msg)
             handle_delivery_failure(request, outcome, error_msg)
         end
     end
@@ -105,33 +117,49 @@ defmodule Batcher.Batching.Actions.Deliver do
       error_msg =
         "RabbitMQ is not configured. Set RABBITMQ_URL environment variable to enable RabbitMQ delivery."
 
-      Logger.error("Webhook delivery failed for request #{request.id}: #{error_msg}")
+      log_rabbitmq_failure(request.custom_id, queue, error_msg)
 
       handle_delivery_failure(request, :connection_error, error_msg)
     else
       cond do
         is_nil(queue) or queue == "" ->
+          error_msg = "rabbitmq_queue is required for RabbitMQ delivery"
+
+          log_rabbitmq_failure(
+            request.custom_id,
+            queue,
+            error_msg
+          )
+
           validation_error(
             :delivery_config,
-            "rabbitmq_queue is required for RabbitMQ delivery",
+            error_msg,
             request.id
           )
 
         is_nil(request.response_payload) ->
+          error_msg = "response_payload is required for delivery"
+
+          log_rabbitmq_failure(
+            request.custom_id,
+            queue,
+            error_msg
+          )
+
           validation_error(
             :response_payload,
-            "response_payload is required for delivery",
+            error_msg,
             request.id
           )
 
         true ->
           case try_rabbitmq_delivery(queue, request) do
             :ok ->
-              Logger.info("RabbitMQ delivery succeeded for request #{request.id}")
+              log_rabbitmq_success(request.custom_id, queue)
               handle_delivery_success(request)
 
             {:error, outcome, error_msg} ->
-              Logger.error("RabbitMQ delivery failed for request #{request.id}: #{error_msg}")
+              log_rabbitmq_failure(request.custom_id, queue, error_msg)
               handle_delivery_failure(request, outcome, error_msg)
           end
       end
@@ -316,5 +344,27 @@ defmodule Batcher.Batching.Actions.Deliver do
 
   defp idempotency_key(request_id) do
     "batcher:req:#{request_id}"
+  end
+
+  defp log_rabbitmq_success(custom_id, queue) do
+    Logger.info(
+      "Successfully delivered request custom_id=#{custom_id} to RabbitMQ queue=#{queue}"
+    )
+  end
+
+  defp log_rabbitmq_failure(custom_id, queue, error_msg) do
+    Logger.info(
+      "Failed to deliver request custom_id=#{custom_id} to RabbitMQ queue=#{queue} with error: #{error_msg}"
+    )
+  end
+
+  defp log_webhook_success(custom_id) do
+    Logger.info("Successfully delivered request custom_id=#{custom_id} to webhook")
+  end
+
+  defp log_webhook_failure(custom_id, error_msg) do
+    Logger.info(
+      "Failed to deliver request custom_id=#{custom_id} to webhook with error: #{error_msg}"
+    )
   end
 end

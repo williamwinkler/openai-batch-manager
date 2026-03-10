@@ -202,14 +202,8 @@ If you are trying to understand the product quickly, start with:
 
 When a batch is deleted locally, its associated OpenAI files are also cleaned up on the OpenAI platform.
 
-Delivery defaults are tuned to avoid bursty Postgres lock pressure:
-
-- Delivery worker concurrency is fixed at `8`.
-- Delivery enqueue fanout is fixed at `200` requests.
-- Repetitive enqueue failures are summarized with up to `5` warning logs.
-
-For very large batches, RabbitMQ delivery is strongly recommended.
-Webhook endpoints can become the bottleneck at that scale and can increase timeouts or connection errors.
+**For very large batches, RabbitMQ delivery is strongly recommended.
+Webhook endpoints can become the bottleneck at that scale and can increase timeouts or connection errors.** 
 
 ## Limitations
 

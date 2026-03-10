@@ -244,8 +244,11 @@ defmodule Batcher.Batching.Request do
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
 
       # Safety net for Oban on_error — transitions to delivery_failed if the
-      # deliver action crashes unexpectedly on the final Oban attempt
-      transition :handle_delivery_error, from: :delivering, to: :delivery_failed
+      # deliver action crashes unexpectedly on the final Oban attempt.
+      # Include :openai_processed in case the crash happens before begin_delivery.
+      transition :handle_delivery_error,
+        from: [:openai_processed, :delivering],
+        to: :delivery_failed
 
       # Redeliver - allows redelivery from any state that has a response
       transition :retry_delivery,
@@ -290,7 +293,9 @@ defmodule Batcher.Batching.Request do
         where expr(state == :openai_processed)
         scheduler_cron "* * * * *"
         queue :delivery
-        max_attempts 1
+        # Retries are only for unexpected crashes. Known delivery failures are
+        # handled in the action and transition to :delivery_failed without retrying.
+        max_attempts 3
         backoff 10
         on_error :handle_delivery_error
         worker_module_name Batching.Request.AshOban.Worker.Deliver

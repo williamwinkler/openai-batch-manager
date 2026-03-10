@@ -132,8 +132,6 @@ defmodule Batcher.RabbitMQ.PublisherWorker do
     destination = {exchange, routing_key}
     destination_str = format_destination(exchange, routing_key)
 
-    Logger.info("Publishing message to RabbitMQ: #{destination_str}")
-
     case ensure_connected(state) do
       {:ok, state} ->
         case check_destination_cache(state, destination) do
@@ -148,7 +146,6 @@ defmodule Batcher.RabbitMQ.PublisherWorker do
               :ok ->
                 # Mark destination as validated
                 state = put_destination(state, destination, :validated)
-                Logger.info("Successfully published message to #{destination_str}")
                 {:reply, :ok, state}
 
               {:error, reason} = error ->
