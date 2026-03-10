@@ -119,13 +119,13 @@ defmodule Batcher.Batching.Actions.DeliverLifecycleTest do
   end
 
   describe "oban configuration" do
-    test "deliver trigger is configured with max_attempts of 1" do
+    test "deliver trigger is configured with bounded retries" do
       triggers = Batching.Request |> AshOban.Info.oban_triggers()
 
       deliver_trigger = Enum.find(triggers, fn trigger -> trigger.action == :deliver end)
 
       assert deliver_trigger != nil, "Expected :deliver trigger to exist"
-      assert deliver_trigger.max_attempts == 1, "Expected max_attempts to be 1"
+      assert deliver_trigger.max_attempts == 3, "Expected max_attempts to be 3"
     end
   end
 end
