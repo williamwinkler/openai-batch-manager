@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.22...v0.1.23) (2026-03-10)
+
+
+### Bug Fixes
+
+* reduce delivery log noise ([#57](https://github.com/williamwinkler/openai-batch-manager/issues/57)) ([a2aa611](https://github.com/williamwinkler/openai-batch-manager/commit/a2aa611047dcbb8dc251f6f7ea2483ff01bdeec4))
+
 ## [0.1.22](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.21...v0.1.22) (2026-03-09)
 
 
