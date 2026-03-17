@@ -39,10 +39,13 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
       end
     end
 
-    Process.sleep(100)
+    assert_eventually(fn -> Process.whereis(Consumer) == nil end, 500, 10)
   end
 
   setup do
+    original_consumer_cfg = Application.get_env(:batcher, :rabbitmq_consumer, [])
+    Application.put_env(:batcher, :rabbitmq_consumer, initial_backoff_ms: 25, max_backoff_ms: 100)
+
     stop_consumer()
 
     # Start PubSub if not already running (it's started by the application in most cases)
@@ -50,10 +53,30 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
     Phoenix.PubSub.subscribe(Batcher.PubSub, "rabbitmq:status")
 
     on_exit(fn ->
+      Application.put_env(:batcher, :rabbitmq_consumer, original_consumer_cfg)
       stop_consumer()
     end)
 
     :ok
+  end
+
+  defp assert_eventually(fun, timeout_ms, interval_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+
+    do_assert_eventually(fun, deadline, interval_ms)
+  end
+
+  defp do_assert_eventually(fun, deadline, interval_ms) do
+    if fun.() do
+      :ok
+    else
+      if System.monotonic_time(:millisecond) >= deadline do
+        flunk("condition was not met within timeout")
+      else
+        Process.sleep(interval_ms)
+        do_assert_eventually(fun, deadline, interval_ms)
+      end
+    end
   end
 
   describe "disconnected state and reconnection" do
@@ -85,9 +108,15 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
       # Drain the initial disconnected broadcast
       assert_receive {:rabbitmq_status, %{process: :consumer, status: :disconnected}}, 5000
 
-      # Wait for a natural reconnect cycle (1s backoff + fast connection failure)
-      # The reconnect will fail and schedule another attempt with doubled backoff
-      Process.sleep(1500)
+      # With short test backoff configured, we should quickly observe backoff growth.
+      assert_eventually(
+        fn ->
+          state = :sys.get_state(pid)
+          state.backoff_ms > 25
+        end,
+        1_000,
+        10
+      )
 
       # Consumer should still be alive after failed reconnect attempts
       assert Process.alive?(pid)
@@ -107,8 +136,7 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
       # Simulate a :DOWN message (as if connection process died)
       fake_pid = spawn(fn -> :ok end)
       send(pid, {:DOWN, make_ref(), :process, fake_pid, :connection_closed})
-
-      Process.sleep(100)
+      assert_eventually(fn -> Process.alive?(pid) end, 300, 10)
 
       # Consumer should still be alive
       assert Process.alive?(pid)
@@ -126,8 +154,7 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
 
       # Simulate broker cancellation
       send(pid, {:basic_cancel, %{consumer_tag: "fake_tag"}})
-
-      Process.sleep(100)
+      assert_eventually(fn -> Process.alive?(pid) end, 300, 10)
 
       # Consumer should still be alive
       assert Process.alive?(pid)
@@ -141,8 +168,7 @@ defmodule Batcher.RabbitMQ.ConsumerReconnectTest do
         )
 
       send(pid, :some_unknown_message)
-
-      Process.sleep(100)
+      assert_eventually(fn -> Process.alive?(pid) end, 300, 10)
       assert Process.alive?(pid)
     end
   end

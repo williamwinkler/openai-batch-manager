@@ -58,20 +58,20 @@ defmodule Batcher.RabbitMQ.Consumer do
       queue: queue,
       conn: nil,
       chan: nil,
-      backoff_ms: @initial_backoff_ms,
+      backoff_ms: initial_backoff_ms(),
       reconnect_ref: nil
     }
 
     case connect_and_setup(url, queue) do
       {:ok, conn_state} ->
         broadcast_status(:connected)
-        {:ok, Map.merge(state, conn_state) |> Map.put(:backoff_ms, @initial_backoff_ms)}
+        {:ok, Map.merge(state, conn_state) |> Map.put(:backoff_ms, initial_backoff_ms())}
 
       {:error, reason} ->
         Logger.error("Failed to connect to RabbitMQ: #{inspect(reason)}")
-        Logger.info("Consumer will retry connection in #{@initial_backoff_ms}ms")
+        Logger.info("Consumer will retry connection in #{initial_backoff_ms()}ms")
         broadcast_status(:disconnected)
-        ref = schedule_reconnect(@initial_backoff_ms)
+        ref = schedule_reconnect(initial_backoff_ms())
         {:ok, %{state | reconnect_ref: ref}}
     end
   end
@@ -130,11 +130,11 @@ defmodule Batcher.RabbitMQ.Consumer do
 
         {:noreply,
          Map.merge(state, conn_state)
-         |> Map.put(:backoff_ms, @initial_backoff_ms)
+         |> Map.put(:backoff_ms, initial_backoff_ms())
          |> Map.put(:reconnect_ref, nil)}
 
       {:error, reason} ->
-        next_backoff = min(state.backoff_ms * 2, @max_backoff_ms)
+        next_backoff = min(state.backoff_ms * 2, max_backoff_ms())
         Logger.error("Failed to reconnect to RabbitMQ: #{inspect(reason)}")
         Logger.info("Consumer will retry in #{next_backoff}ms")
         ref = schedule_reconnect(next_backoff)
@@ -290,6 +290,16 @@ defmodule Batcher.RabbitMQ.Consumer do
 
   defp schedule_reconnect(delay_ms) do
     Process.send_after(self(), :reconnect, delay_ms)
+  end
+
+  defp initial_backoff_ms do
+    Application.get_env(:batcher, :rabbitmq_consumer, [])
+    |> Keyword.get(:initial_backoff_ms, @initial_backoff_ms)
+  end
+
+  defp max_backoff_ms do
+    Application.get_env(:batcher, :rabbitmq_consumer, [])
+    |> Keyword.get(:max_backoff_ms, @max_backoff_ms)
   end
 
   defp broadcast_status(status) do

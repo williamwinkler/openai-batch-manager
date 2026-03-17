@@ -7,6 +7,7 @@ config :batcher, :openai_rate_limits_enabled, false
 
 # Disable HTTP retries in tests to avoid TestServer receiving multiple requests
 config :batcher, :disable_http_retries, true
+config :batcher, :delivery_queue_watchdog, enabled: false
 
 config :batcher, :capacity_control,
   default_unknown_model_batch_limit_tokens: 2_000_000,

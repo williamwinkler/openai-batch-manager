@@ -5,8 +5,6 @@ defmodule Batcher.Settings do
   use Ash.Domain,
     otp_app: :batcher
 
-  require Ash.Query
-
   alias Batcher.Settings.Setting
 
   resources do
@@ -55,12 +53,8 @@ defmodule Batcher.Settings do
   @spec upsert_model_override!(String.t(), pos_integer()) :: Batcher.Settings.Setting.t()
   def upsert_model_override!(model_prefix, token_limit)
       when is_binary(model_prefix) and is_integer(token_limit) do
-    ensure_rate_limit_settings!()
-    |> Ash.Changeset.for_update(:upsert_model_override, %{
-      model_prefix: model_prefix,
-      token_limit: token_limit
-    })
-    |> Ash.update!()
+    settings = ensure_rate_limit_settings!()
+    set_model_override!(settings, model_prefix, token_limit)
   end
 
   @doc """
@@ -68,9 +62,8 @@ defmodule Batcher.Settings do
   """
   @spec delete_model_override!(String.t()) :: Batcher.Settings.Setting.t()
   def delete_model_override!(model_prefix) when is_binary(model_prefix) do
-    ensure_rate_limit_settings!()
-    |> Ash.Changeset.for_update(:delete_model_override, %{model_prefix: model_prefix})
-    |> Ash.update!()
+    settings = ensure_rate_limit_settings!()
+    remove_model_override!(settings, model_prefix)
   end
 
   @doc """
@@ -101,8 +94,24 @@ defmodule Batcher.Settings do
   end
 
   defp read_singleton do
-    Setting
-    |> Ash.Query.for_read(:singleton, %{})
-    |> Ash.read_one()
+    case fetch_rate_limit_settings() do
+      {:ok, %Setting{} = settings} ->
+        {:ok, settings}
+
+      {:error, error} ->
+        if not_found_error?(error) do
+          {:ok, nil}
+        else
+          {:error, error}
+        end
+    end
   end
+
+  defp not_found_error?(%Ash.Error.Query.NotFound{}), do: true
+
+  defp not_found_error?(%Ash.Error.Invalid{errors: errors}) when is_list(errors) do
+    Enum.any?(errors, &not_found_error?/1)
+  end
+
+  defp not_found_error?(_), do: false
 end

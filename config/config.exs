@@ -55,6 +55,14 @@ config :batcher, :ui_batch_reload_coalesce_ms, 1_500
 
 config :batcher, :openai_rate_limits_enabled, true
 
+config :batcher, :delivery_queue_watchdog,
+  enabled: true,
+  check_interval_ms: :timer.minutes(1),
+  stale_after_seconds: 120,
+  restart_cooldown_seconds: 120,
+  restart_delay_ms: 1_000,
+  min_available_jobs: 100
+
 config :ash,
   default_belongs_to_type: :integer,
   allow_forbidden_field_for_relationships_by_default?: true,

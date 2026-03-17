@@ -227,7 +227,7 @@ defmodule BatcherWeb.RequestController do
   """
   def redeliver_by_custom_id(conn, %{"custom_id" => custom_id}) do
     with {:ok, [request]} <- Batching.list_requests_by_custom_id(custom_id, load: [:batch]),
-         {:ok, updated_request} <- Batching.manual_redeliver_request(request) do
+         {:ok, updated_request} <- Batching.retry_request_delivery(request) do
       conn
       |> put_status(:accepted)
       |> json(%{
@@ -265,27 +265,16 @@ defmodule BatcherWeb.RequestController do
         })
 
       {:error, %Ash.Error.Invalid{} = error} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{
-          errors: [
-            %{
-              code: "invalid_state",
-              title: "Invalid Request State",
-              detail: Exception.message(error)
-            }
-          ]
-        })
+        {code, title, detail} = redelivery_invalid_error_payload(error)
 
-      {:error, :invalid_batch_state} ->
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{
           errors: [
             %{
-              code: "invalid_batch_state",
-              title: "Invalid Batch State",
-              detail: "Batch cannot redeliver while it is currently delivering"
+              code: code,
+              title: title,
+              detail: detail
             }
           ]
         })
@@ -364,4 +353,15 @@ defmodule BatcherWeb.RequestController do
   end
 
   defp format_ash_invalid_errors(error), do: [Exception.message(error)]
+
+  defp redelivery_invalid_error_payload(%Ash.Error.Invalid{} = error) do
+    message = Exception.message(error)
+
+    if String.contains?(message, "Batch cannot redeliver while it is currently delivering") do
+      {"invalid_batch_state", "Invalid Batch State",
+       "Batch cannot redeliver while it is currently delivering"}
+    else
+      {"invalid_state", "Invalid Request State", message}
+    end
+  end
 end

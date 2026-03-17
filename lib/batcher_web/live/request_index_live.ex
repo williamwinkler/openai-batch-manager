@@ -211,13 +211,21 @@ defmodule BatcherWeb.RequestIndexLive do
 
   @impl true
   def handle_event("refresh_requests", _params, socket) do
-    socket =
-      socket
-      |> assign(:visible_created_before, DateTime.utc_now())
-      |> reload_page(refresh_count?: true)
-      |> clear_pending_refresh()
+    params =
+      [
+        q: socket.assigns.query_text,
+        sort_by: socket.assigns.sort_by,
+        batch_id: socket.assigns.batch_id,
+        state: state_filter_param(socket.assigns.state_filter),
+        limit: socket.assigns.page_limit
+      ]
+      |> remove_empty()
 
-    {:noreply, socket}
+    {:noreply,
+     socket
+     |> assign(:visible_created_before, DateTime.utc_now())
+     |> clear_pending_refresh()
+     |> push_patch(to: ~p"/requests?#{params}")}
   end
 
   @impl true
@@ -340,20 +348,59 @@ defmodule BatcherWeb.RequestIndexLive do
     if maybe_test_count_error?(query_text) do
       {:error, :forced_count_error}
     else
-      case Batching.count_requests_for_search(
-             query_text,
-             %{
-               batch_id: batch_id,
-               state_filter: state_filter,
-               created_before: visible_created_before
-             },
-             page: [limit: 1, count: true]
-           ) do
-        {:ok, page} -> {:ok, page.count || 0}
-        {:error, error} -> {:error, error}
+      if use_estimated_count?(query_text, state_filter) do
+        case estimate_count_from_batches(batch_id) do
+          {:ok, count} ->
+            {:ok, count}
+
+          {:error, _reason} ->
+            exact_count_requests(query_text, batch_id, state_filter, visible_created_before)
+        end
+      else
+        exact_count_requests(query_text, batch_id, state_filter, visible_created_before)
       end
     end
   end
+
+  defp exact_count_requests(query_text, batch_id, state_filter, visible_created_before) do
+    case Batching.count_requests_for_search(
+           query_text,
+           %{
+             batch_id: batch_id,
+             state_filter: state_filter,
+             created_before: visible_created_before
+           },
+           page: [limit: 1, count: true]
+         ) do
+      {:ok, page} -> {:ok, page.count || 0}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp use_estimated_count?(query_text, state_filter) do
+    Application.get_env(:batcher, :request_index_use_estimated_counts, true) and
+      query_text in [nil, ""] and is_nil(state_filter)
+  end
+
+  defp estimate_count_from_batches(nil) do
+    case Batching.list_batches(query: [select: [:request_count]]) do
+      {:ok, batches} ->
+        total = Enum.reduce(batches, 0, fn batch, acc -> acc + (batch.request_count || 0) end)
+        {:ok, total}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp estimate_count_from_batches(batch_id) when is_integer(batch_id) do
+    case Batching.get_batch_by_id(batch_id) do
+      {:ok, batch} -> {:ok, batch.request_count || 0}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp estimate_count_from_batches(_batch_id), do: {:error, :invalid_batch_id}
 
   defp maybe_test_count_delay(query_text) do
     if test_env?() do
@@ -399,12 +446,9 @@ defmodule BatcherWeb.RequestIndexLive do
   defp perform_request_action(:retry_delivery, request_id) do
     request = Batching.get_request_by_id!(request_id, load: [:batch])
 
-    with {:ok, _updated_request} <- Batching.manual_redeliver_request(request) do
+    with {:ok, _updated_request} <- Batching.retry_request_delivery(request) do
       {:ok, "Redelivery triggered"}
     else
-      {:error, :invalid_batch_state} ->
-        {:error, "Batch cannot redeliver while it is currently delivering"}
-
       {:error, error} ->
         {:error, "Failed to retry delivery: #{Exception.message(error)}"}
     end

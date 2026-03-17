@@ -5,10 +5,14 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileHappyPathTransitionsTest
 
   import Batcher.Generator
 
-  setup do
+  setup_all do
     {:ok, server} = TestServer.start()
-    Process.put(:openai_base_url, TestServer.url(server))
-    {:ok, server: server}
+    {:ok, server: server, openai_base_url: TestServer.url(server)}
+  end
+
+  setup %{openai_base_url: openai_base_url} do
+    Process.put(:openai_base_url, openai_base_url)
+    :ok
   end
 
   describe "process_downloaded_file action" do

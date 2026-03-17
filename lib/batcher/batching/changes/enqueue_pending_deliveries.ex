@@ -30,7 +30,7 @@ defmodule Batcher.Batching.Changes.EnqueuePendingDeliveries do
     end)
   end
 
-  defp enqueue_pending_deliveries(batch) do
+  def enqueue_pending_deliveries(batch) do
     trigger = AshOban.Info.oban_trigger(Batching.Request, :deliver)
     chunk_size = @default_chunk_size
     max_error_logs = @default_max_error_logs

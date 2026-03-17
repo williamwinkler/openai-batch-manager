@@ -167,6 +167,50 @@ defmodule Batcher.Batching.BatchDeliveryStateTest do
     end
   end
 
+  describe "Batcher.Batching.Batch.resume_delivering" do
+    test "transitions batch from partially_delivered to delivering" do
+      batch_before =
+        seeded_batch(
+          state: :partially_delivered,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:resume_delivering)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :delivering
+
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :partially_delivered
+      assert latest_transition.to == :delivering
+      assert latest_transition.transitioned_at
+    end
+
+    test "transitions batch from delivery_failed to delivering" do
+      batch_before =
+        seeded_batch(
+          state: :delivery_failed,
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      batch_after =
+        batch_before
+        |> Ash.Changeset.for_update(:resume_delivering)
+        |> Ash.update!(load: [:transitions])
+
+      assert batch_after.state == :delivering
+
+      latest_transition = List.last(batch_after.transitions)
+      assert latest_transition.from == :delivery_failed
+      assert latest_transition.to == :delivering
+      assert latest_transition.transitioned_at
+    end
+  end
+
   describe "Batcher.Batching.Batch.mark_partially_delivered" do
     test "transitions batch from delivering to partially_delivered" do
       batch_before =
