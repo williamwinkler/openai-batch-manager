@@ -375,6 +375,30 @@ defmodule Batcher.Batching.RequestStateMachineTest do
       end
     end
 
+    test "rejects retry_delivery when parent batch is delivering" do
+      batch =
+        seeded_batch(state: :delivering, model: "gpt-4o-mini", url: "/v1/responses")
+        |> generate()
+
+      request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            state: :delivery_failed,
+            response_payload: %{"output" => "response"},
+            delivery_config: %{
+              "type" => "webhook",
+              "webhook_url" => "https://example.com/webhook"
+            }
+          )
+        )
+
+      assert {:error, %Ash.Error.Invalid{} = error} = Batching.retry_request_delivery(request)
+
+      assert Exception.message(error) =~
+               "Batch cannot redeliver while it is currently delivering"
+    end
+
     test "allows RabbitMQ retry even when publisher is disconnected" do
       if pid = Process.whereis(Batcher.RabbitMQ.Publisher) do
         Process.exit(pid, :kill)

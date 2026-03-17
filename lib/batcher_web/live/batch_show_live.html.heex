@@ -383,16 +383,16 @@
       queued = @delivery_stats[:queued] || 0
       delivering = @delivery_stats[:delivering] || 0
       failed = @delivery_stats[:failed] || 0
-      displayed_total = delivered + queued + delivering + failed
+      progress_total = max(total, delivered + queued + delivering + failed)
 
       # Calculate percentages for the stacked bar
       {delivered_pct, queued_pct, delivering_pct, failed_pct} =
-        if displayed_total > 0 do
+        if progress_total > 0 do
           {
-            delivered / displayed_total * 100,
-            queued / displayed_total * 100,
-            delivering / displayed_total * 100,
-            failed / displayed_total * 100
+            delivered / progress_total * 100,
+            queued / progress_total * 100,
+            delivering / progress_total * 100,
+            failed / progress_total * 100
           }
         else
           {0, 0, 0, 0}
@@ -442,11 +442,11 @@
           <% else %>
             <div class="space-y-3 text-sm">
               <%!-- Stacked progress bar --%>
-              <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex">
+              <div class="w-full h-3 bg-base-300 rounded-full overflow-hidden flex ring-1 ring-base-300/80">
                 <div class="bg-primary h-full" style={"width: #{delivered_pct}%"}></div>
-                <div class="bg-warning h-full" style={"width: #{queued_pct}%"}></div>
-                <div class="bg-info h-full" style={"width: #{delivering_pct}%"}></div>
-                <div class="bg-error h-full" style={"width: #{failed_pct}%"}></div>
+                <div class="bg-amber-400 h-full" style={"width: #{queued_pct}%"}></div>
+                <div class="bg-sky-500 h-full" style={"width: #{delivering_pct}%"}></div>
+                <div class="bg-rose-500 h-full" style={"width: #{failed_pct}%"}></div>
               </div>
 
               <%!-- Stats with x/total format --%>
@@ -459,21 +459,21 @@
               </div>
               <div class="flex justify-between">
                 <span class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-warning"></span>
+                  <span class="w-2 h-2 rounded-full bg-amber-400"></span>
                   <span class="text-base-content/50">Queued</span>
                 </span>
                 <span class="font-mono">{queued}/{total}</span>
               </div>
               <div class="flex justify-between">
                 <span class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-info"></span>
+                  <span class="w-2 h-2 rounded-full bg-sky-500"></span>
                   <span class="text-base-content/50">Delivering</span>
                 </span>
                 <span class="font-mono">{delivering}/{total}</span>
               </div>
               <div class="flex justify-between">
                 <span class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-error"></span>
+                  <span class="w-2 h-2 rounded-full bg-rose-500"></span>
                   <span class="text-base-content/50">Failed</span>
                 </span>
                 <span class="font-mono">{failed}/{total}</span>

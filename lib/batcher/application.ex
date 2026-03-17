@@ -47,6 +47,7 @@ defmodule Batcher.Application do
           {Task, fn -> Batcher.Batching.Recovery.resume_stale_work() end},
           id: :batch_recovery_task
         ),
+        maybe_delivery_queue_watchdog(),
         # PubSub must start before RabbitMQ so status broadcasts work during init
         {Phoenix.PubSub, name: Batcher.PubSub},
         # RabbitMQ publisher (optional - only starts if configured)
@@ -119,6 +120,14 @@ defmodule Batcher.Application do
   defp maybe_openai_rate_limits do
     if Application.get_env(:batcher, :openai_rate_limits_enabled, true) do
       Batcher.Clients.OpenAI.RateLimits
+    end
+  end
+
+  defp maybe_delivery_queue_watchdog do
+    config = Application.get_env(:batcher, :delivery_queue_watchdog, [])
+
+    if Keyword.get(config, :enabled, true) do
+      {Batcher.System.DeliveryQueueWatchdog, config}
     end
   end
 

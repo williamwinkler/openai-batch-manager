@@ -262,6 +262,17 @@ defmodule Batcher.Batching.Request do
         ],
         to: :openai_processed
 
+      transition :retry_delivery_for_batch_redelivery,
+        from: [
+          :openai_processed,
+          :delivered,
+          :failed,
+          :delivery_failed,
+          :expired,
+          :cancelled
+        ],
+        to: :openai_processed
+
       transition :reset_to_pending, from: [:openai_processing, :failed], to: :pending
       transition :bulk_reset_to_pending, from: :openai_processing, to: :pending
 
@@ -527,8 +538,16 @@ defmodule Batcher.Batching.Request do
       description "Retry delivery of a request that failed"
       require_atomic? false
       validate present(:response_payload)
+      validate Batching.Validations.BatchNotDeliveringForRetry
       change transition_state(:openai_processed)
       change run_oban_trigger(:deliver)
+    end
+
+    update :retry_delivery_for_batch_redelivery do
+      description "Retry delivery as part of a batch-level redelivery flow"
+      require_atomic? false
+      validate present(:response_payload)
+      change transition_state(:openai_processed)
     end
 
     action :deliver, :struct do

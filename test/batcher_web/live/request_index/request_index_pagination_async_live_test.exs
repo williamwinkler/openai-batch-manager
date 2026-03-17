@@ -256,6 +256,55 @@ defmodule BatcherWeb.RequestIndexPaginationAsyncLiveTest do
       refute has_element?(view, "button[phx-click='refresh_requests']", "Refresh")
     end
 
+    test "refresh button returns to first page", %{conn: conn, batch: batch} do
+      {:ok, view, _html} = live(conn, ~p"/requests?limit=10")
+      first_page_first_id = render(view) |> first_request_row_id()
+
+      view
+      |> element("a.join-item", "Next")
+      |> render_click()
+
+      wait_for(fn -> render(view) |> first_request_row_id() != first_page_first_id end)
+      second_page_first_id = render(view) |> first_request_row_id()
+
+      {:ok, created_request} =
+        Batching.create_request(%{
+          batch_id: batch.id,
+          custom_id: "buffered-reset-first-page",
+          url: batch.url,
+          model: batch.model,
+          request_payload: %{
+            custom_id: "buffered-reset-first-page",
+            body: %{input: "buffered", model: batch.model},
+            method: "POST",
+            url: batch.url
+          },
+          delivery_config: %{
+            "type" => "webhook",
+            "webhook_url" => "https://example.com/webhook"
+          }
+        })
+
+      BatcherWeb.Endpoint.broadcast(
+        "requests:created",
+        "created",
+        %{data: created_request}
+      )
+
+      wait_for(fn -> has_element?(view, "button[phx-click='refresh_requests']", "Refresh") end)
+
+      view
+      |> element("button[phx-click='refresh_requests']")
+      |> render_click()
+
+      wait_for(fn ->
+        html = render(view)
+
+        first_request_row_id(html) != second_page_first_id and
+          has_element?(view, "a.join-item.btn-disabled", "Previous")
+      end)
+    end
+
     test "incoming requests stay buffered across passive patch reloads", %{
       conn: conn,
       batch: batch

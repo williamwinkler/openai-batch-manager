@@ -45,7 +45,7 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
         |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
         |> Ash.run_action()
 
-      assert batch_after.state == :partially_delivered
+      assert batch_after.state == :delivering
 
       # Failed requests should be reset to openai_processed
       r1 = Batching.get_request_by_id!(failed_request1.id)
@@ -77,7 +77,7 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
         |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
         |> Ash.run_action()
 
-      assert batch_after.state == :delivery_failed
+      assert batch_after.state == :delivering
 
       r = Batching.get_request_by_id!(failed_request.id)
       assert r.state == :openai_processed
@@ -157,7 +157,7 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
         |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
         |> Ash.run_action()
 
-      assert batch_after.state == :partially_delivered
+      assert batch_after.state == :delivering
       assert_enqueued(worker: Batching.Request.AshOban.Worker.Deliver)
 
       # Queued request remains openai_processed until worker starts it.
@@ -219,7 +219,7 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
         |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
         |> Ash.run_action()
 
-      assert batch_after.state == :delivered
+      assert batch_after.state == :delivering
       assert Batching.get_request_by_id!(deliverable_request.id).state == :openai_processed
     end
 
@@ -265,8 +265,60 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
         |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
         |> Ash.run_action()
 
-      assert batch_after.state == :partially_delivered
+      assert batch_after.state == :delivering
       assert Batching.get_request_by_id!(delivered_request.id).state == :openai_processed
+    end
+
+    test "redeliver all resets every replayable request state in the batch" do
+      batch =
+        seeded_batch(state: :partially_delivered)
+        |> generate()
+
+      request_ids =
+        [
+          seeded_request(
+            batch_id: batch.id,
+            state: :openai_processed,
+            response_payload: %{"output" => "queued"}
+          ),
+          seeded_request(
+            batch_id: batch.id,
+            state: :delivered,
+            response_payload: %{"output" => "delivered"}
+          ),
+          seeded_request(
+            batch_id: batch.id,
+            state: :failed,
+            response_payload: %{"output" => "failed"}
+          ),
+          seeded_request(
+            batch_id: batch.id,
+            state: :delivery_failed,
+            response_payload: %{"output" => "delivery failed"}
+          ),
+          seeded_request(
+            batch_id: batch.id,
+            state: :expired,
+            response_payload: %{"output" => "expired"}
+          ),
+          seeded_request(
+            batch_id: batch.id,
+            state: :cancelled,
+            response_payload: %{"output" => "cancelled"}
+          )
+        ]
+        |> Enum.map(&generate(&1).id)
+
+      {:ok, batch_after} =
+        Batching.Batch
+        |> Ash.ActionInput.for_action(:redeliver, %{id: batch.id})
+        |> Ash.run_action()
+
+      assert batch_after.state == :delivering
+
+      for request_id <- request_ids do
+        assert Batching.get_request_by_id!(request_id).state == :openai_processed
+      end
     end
 
     test "schedules delivery oban jobs for each failed request" do
@@ -373,7 +425,7 @@ defmodule Batcher.Batching.Actions.RedeliverTest do
         |> Ash.ActionInput.for_action(:redeliver_failed, %{id: batch.id})
         |> Ash.run_action()
 
-      assert batch_after.state == :partially_delivered
+      assert batch_after.state == :delivering
       assert Batching.get_request_by_id!(failed_request.id).state == :openai_processed
       assert Batching.get_request_by_id!(delivered_request.id).state == :delivered
     end

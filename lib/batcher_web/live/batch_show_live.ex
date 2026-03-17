@@ -8,8 +8,9 @@ defmodule BatcherWeb.BatchShowLive do
   alias Batcher.Utils.Format
 
   @delivery_stats_refresh_throttle_ms 2_000
-  @delivery_stats_fallback_poll_ms 5_000
+  @delivery_stats_fallback_poll_ms 2_000
   @redeliverable_batch_states [
+    :delivered,
     :partially_delivered,
     :delivery_failed
   ]
@@ -23,6 +24,7 @@ defmodule BatcherWeb.BatchShowLive do
       BatcherWeb.Endpoint.subscribe("batches:destroyed:#{batch_id}")
       BatcherWeb.Endpoint.subscribe("batches:progress_updated:#{batch_id}")
       BatcherWeb.Endpoint.subscribe("batches:metrics_delta")
+      BatcherWeb.Endpoint.subscribe("requests:state_changed")
       ActionActivity.subscribe({:batch, batch_id})
     end
 
@@ -372,6 +374,21 @@ defmodule BatcherWeb.BatchShowLive do
      |> mark_capacity_info_stale()
      |> mark_delivery_stats_dirty()
      |> maybe_schedule_delivery_stats_refresh()}
+  end
+
+  @impl true
+  def handle_info(
+        %{topic: "requests:state_changed", payload: %{data: request}},
+        %{assigns: %{batch: batch}} = socket
+      ) do
+    if request.batch_id == batch.id do
+      {:noreply,
+       socket
+       |> mark_delivery_stats_dirty()
+       |> maybe_schedule_delivery_stats_refresh()}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true

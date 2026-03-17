@@ -137,15 +137,12 @@ defmodule BatcherWeb.RequestShowLive do
         maybe_test_async_delay()
         request = Batching.get_request_by_id!(request_id, load: [:batch])
 
-        with {:ok, updated_request} <- Batching.manual_redeliver_request(request) do
+        with {:ok, updated_request} <- Batching.retry_request_delivery(request) do
           refreshed_request = Batching.get_request_by_id!(updated_request.id, load: [:batch])
 
           {:ok,
            %{type: :retry_delivery, request: refreshed_request, batch: refreshed_request.batch}}
         else
-          {:error, :invalid_batch_state} ->
-            {:error, "Batch cannot redeliver while it is currently delivering"}
-
           {:error, error} ->
             {:error, "Failed to retry delivery: #{Exception.message(error)}"}
         end

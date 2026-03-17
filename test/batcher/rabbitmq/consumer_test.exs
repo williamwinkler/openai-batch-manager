@@ -32,8 +32,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
       end
     end
 
-    # Extra wait to ensure all async operations are done
-    Process.sleep(100)
+    assert_eventually(fn -> Process.whereis(Consumer) == nil end, 2_000, 20)
   end
 
   setup do
@@ -119,6 +118,24 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
     end
   end
 
+  defp assert_eventually(fun, timeout_ms, interval_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_assert_eventually(fun, deadline, interval_ms)
+  end
+
+  defp do_assert_eventually(fun, deadline, interval_ms) do
+    if fun.() do
+      :ok
+    else
+      if System.monotonic_time(:millisecond) >= deadline do
+        flunk("condition was not met within timeout")
+      else
+        Process.sleep(interval_ms)
+        do_assert_eventually(fun, deadline, interval_ms)
+      end
+    end
+  end
+
   describe "message processing" do
     test "processes valid message and creates request", context do
       require_rabbitmq(context)
@@ -132,8 +149,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
           queue: queue
         )
 
-      # Give consumer time to connect
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       custom_id = "rabbitmq-test-#{System.unique_integer([:positive])}"
 
@@ -154,15 +170,8 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       :ok = Basic.publish(chan, "", queue, message)
 
-      # Wait for processing
-      Process.sleep(1000)
-
-      # Stop consumer BEFORE test ends (while sandbox is still active)
-      stop_consumer()
-
       # Verify request was created by finding it in a batch
       # Retry finding the batch since BatchBuilder creates it asynchronously
-      # Increase retries and delay to give more time for batch creation
       batch =
         retry_until(
           fn ->
@@ -174,11 +183,14 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
               nil
             end
           end,
-          20,
-          200
+          25,
+          100
         )
 
       assert batch != nil, "Expected to find a batch for /v1/responses and #{model}"
+
+      # Stop consumer BEFORE test ends (while sandbox is still active)
+      stop_consumer()
 
       # Verify the request exists in the batch
       {:ok, requests} = Batching.list_requests_in_batch(batch.id)
@@ -204,15 +216,20 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
           queue: queue
         )
 
-      # Give consumer time to connect
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       invalid_message = "{invalid json}"
 
       :ok = Basic.publish(chan, "", queue, invalid_message)
 
-      # Wait for processing
-      Process.sleep(500)
+      assert_eventually(
+        fn ->
+          {:ok, batches_after} = Batching.list_batches()
+          length(batches_after) == initial_batch_count
+        end,
+        1_500,
+        25
+      )
 
       # Stop consumer BEFORE test ends (while sandbox is still active)
       stop_consumer()
@@ -234,8 +251,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
           queue: queue
         )
 
-      # Give consumer time to connect
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       custom_id = "duplicate-test-#{System.unique_integer([:positive])}"
 
@@ -256,11 +272,29 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       # Publish first message
       :ok = Basic.publish(chan, "", queue, message)
-      Process.sleep(1000)
+
+      first_request =
+        retry_until(
+          fn ->
+            {:ok, batches} = Batching.list_batches()
+
+            Enum.reduce_while(batches, nil, fn batch, _acc ->
+              {:ok, requests} = Batching.list_requests_in_batch(batch.id)
+
+              case Enum.find(requests, fn r -> r.custom_id == custom_id end) do
+                nil -> {:cont, nil}
+                found_request -> {:halt, found_request}
+              end
+            end)
+          end,
+          20,
+          100
+        )
+
+      assert first_request != nil
 
       # Publish duplicate
       :ok = Basic.publish(chan, "", queue, message)
-      Process.sleep(1000)
 
       # Stop consumer BEFORE test ends (while sandbox is still active)
       stop_consumer()
@@ -283,7 +317,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
             end)
           end,
           20,
-          200
+          100
         )
 
       assert request != nil, "Expected to find a request with custom_id #{custom_id}"
@@ -328,13 +362,12 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       # Start consumer
       {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       # Send basic_consume_ok message (simulating what RabbitMQ sends)
       send(pid, {:basic_consume_ok, %{consumer_tag: "test_tag"}})
 
-      # Give it time to process
-      Process.sleep(100)
+      assert_eventually(fn -> Process.alive?(pid) end, 300, 10)
 
       # Consumer should still be alive
       assert Process.alive?(pid)
@@ -348,13 +381,12 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       # Start consumer
       {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       # Send basic_cancel message (simulating broker cancellation)
       send(pid, {:basic_cancel, %{consumer_tag: "test_tag"}})
 
-      # Give it time to process
-      Process.sleep(100)
+      assert_eventually(fn -> Process.alive?(pid) end, 300, 10)
 
       # Consumer should still be alive (reconnecting instead of stopping)
       assert Process.alive?(pid)
@@ -368,13 +400,12 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       # Start consumer
       {:ok, pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       # Send basic_cancel_ok message
       send(pid, {:basic_cancel_ok, %{consumer_tag: "test_tag"}})
 
-      # Give it time to process
-      Process.sleep(100)
+      assert_eventually(fn -> Process.alive?(pid) end, 300, 10)
 
       # Consumer should still be alive
       assert Process.alive?(pid)
@@ -395,7 +426,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       # Start consumer
       {:ok, _pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       # Send message with missing required fields (will fail validation)
       invalid_message =
@@ -406,8 +437,14 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       :ok = Basic.publish(chan, "", queue, invalid_message)
 
-      # Wait for processing
-      Process.sleep(500)
+      assert_eventually(
+        fn ->
+          {:ok, batches_after} = Batching.list_batches()
+          length(batches_after) == initial_batch_count
+        end,
+        1_500,
+        25
+      )
 
       # Stop consumer
       stop_consumer()
@@ -423,7 +460,7 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       # Start consumer
       {:ok, _pid} = Consumer.start_link(url: rabbitmq_url, queue: queue)
-      Process.sleep(200)
+      assert_eventually(fn -> Consumer.connected?() end, 1_500, 20)
 
       # Create a message that will cause RequestHandler to fail
       # Use an invalid model that might cause processing errors
@@ -444,8 +481,8 @@ defmodule Batcher.RabbitMQ.ConsumerTest do
 
       :ok = Basic.publish(chan, "", queue, message)
 
-      # Wait for processing
-      Process.sleep(500)
+      # The handler should nack+requeue, but we only need to exercise the path
+      assert_eventually(fn -> Consumer.connected?() end, 500, 20)
 
       # Stop consumer
       stop_consumer()

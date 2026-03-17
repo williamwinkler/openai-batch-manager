@@ -101,6 +101,10 @@ defmodule Batcher.Batching.Actions.DeliverLifecycleTest do
       assert {:ok, first_after} = run_deliver(request)
       assert first_after.state == :delivery_failed
 
+      batch
+      |> Ash.Changeset.for_update(:mark_partially_delivered)
+      |> Ash.update!()
+
       retried =
         first_after
         |> Ash.Changeset.for_update(:retry_delivery)

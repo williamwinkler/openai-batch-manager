@@ -30,6 +30,13 @@ defmodule Batcher.SettingsTest do
       refute Map.has_key?(settings.model_token_overrides, "gpt-4o-mini")
     end
 
+    test "delete_model_override!/1 normalizes model prefix input" do
+      _ = Settings.upsert_model_override!("gpt-4o-mini", 2_500_000)
+      settings = Settings.delete_model_override!(" GPT-4O-MINI ")
+
+      refute Map.has_key?(settings.model_token_overrides, "gpt-4o-mini")
+    end
+
     test "list_model_overrides!/0 returns sorted overrides" do
       _ = Settings.upsert_model_override!("gpt-4o-mini", 2_000_000)
       _ = Settings.upsert_model_override!("gpt-4o", 90_000)

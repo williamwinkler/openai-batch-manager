@@ -64,6 +64,11 @@ defmodule Batcher.Batching.Batch do
       transition :start_downloading, from: :openai_completed, to: :downloading
       transition :finalize_processing, from: [:downloading, :expired], to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
+
+      transition :resume_delivering,
+        from: [:delivered, :partially_delivered, :delivery_failed],
+        to: :delivering
+
       transition :mark_delivered, from: :delivering, to: :delivered
       transition :mark_partially_delivered, from: :delivering, to: :partially_delivered
       transition :mark_delivery_failed, from: :delivering, to: :delivery_failed
@@ -184,6 +189,15 @@ defmodule Batcher.Batching.Batch do
         on_error :handle_download_error
         worker_module_name Batching.Batch.AshOban.Worker.ProcessDownloadedFile
         scheduler_module_name Batching.Batch.AshOban.Scheduler.ProcessDownloadedFile
+      end
+
+      trigger :remediate_stuck_downloads do
+        action :remediate_stuck_downloads
+        scheduler_cron "*/5 * * * *"
+        where expr(state == :downloading)
+        queue :batch_processing
+        worker_module_name Batching.Batch.AshOban.Worker.RemediateStuckDownloads
+        scheduler_module_name Batching.Batch.AshOban.Scheduler.RemediateStuckDownloads
       end
 
       trigger :start_delivering do
@@ -433,6 +447,13 @@ defmodule Batcher.Batching.Batch do
       run Batching.Actions.ProcessDownloadedFile
     end
 
+    action :remediate_stuck_downloads, :struct do
+      description "Watchdog that re-enqueues stale downloading batches or fails timed-out downloads."
+      constraints instance_of: __MODULE__
+      transaction? false
+      run Batching.Actions.RemediateStuckDownloads
+    end
+
     update :handle_download_error do
       description "Safety net for process_downloaded_file on_error — transitions to failed"
       require_atomic? false
@@ -452,6 +473,12 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       change transition_state(:delivering)
       change Batching.Changes.EnqueuePendingDeliveries
+    end
+
+    update :resume_delivering do
+      description "Resume delivery after a batch redelivery request"
+      require_atomic? false
+      change transition_state(:delivering)
     end
 
     update :mark_delivered do

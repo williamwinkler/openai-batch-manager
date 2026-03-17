@@ -1,6 +1,28 @@
 import Config
 import Dotenvy
 
+missing_env? = fn
+  nil -> true
+  value when is_binary(value) -> String.trim(value) == ""
+  _ -> false
+end
+
+halt_for_missing_envs! = fn missing_vars ->
+  case missing_vars do
+    [] ->
+      :ok
+
+    vars ->
+      IO.puts(:stderr, "Startup aborted: missing required environment configuration.")
+
+      Enum.each(vars, fn {var, description} ->
+        IO.puts(:stderr, "  - #{var}: #{description}")
+      end)
+
+      System.halt(1)
+  end
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration
@@ -28,10 +50,37 @@ if config_env() != :test do
         )
   end
 
-  openai_api_key = env!("OPENAI_API_KEY", :string)
+  openai_api_key = env!("OPENAI_API_KEY", :string, nil)
+  database_url = if config_env() == :prod, do: env!("DATABASE_URL", :string, nil), else: nil
   rabbitmq_url = env!("RABBITMQ_URL", :string, nil)
   rabbitmq_input_queue = env!("RABBITMQ_INPUT_QUEUE", :string, nil)
   rabbitmq_publisher_pool_size = 4
+
+  halt_for_missing_envs!.(
+    []
+    |> then(fn missing ->
+      if missing_env?.(openai_api_key) do
+        [
+          {"OPENAI_API_KEY", "required to start the OpenAI client and process batch requests"}
+          | missing
+        ]
+      else
+        missing
+      end
+    end)
+    |> then(fn missing ->
+      if config_env() == :prod and missing_env?.(database_url) do
+        [
+          {"DATABASE_URL",
+           "required in production. Example: ecto://postgres:postgres@postgres:5432/openai_batch_manager"}
+          | missing
+        ]
+      else
+        missing
+      end
+    end)
+    |> Enum.reverse()
+  )
 
   config :batcher, Batcher.Clients.OpenAI.ApiClient, openai_api_key: openai_api_key
 
@@ -96,11 +145,7 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_url = System.get_env("DATABASE_URL")
-
-  if is_nil(database_url) or database_url == "" do
-    raise "DATABASE_URL is missing. Example: ecto://postgres:postgres@postgres:5432/openai_batch_manager"
-  end
+  database_url = env!("DATABASE_URL", :string)
 
   pool_size = 20
 
