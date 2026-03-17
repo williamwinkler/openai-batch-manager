@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.24](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.23...v0.1.24) (2026-03-17)
+
+
+### Bug Fixes
+
+* add watchdog to restart delivery if node sleeps ([#59](https://github.com/williamwinkler/openai-batch-manager/issues/59)) ([cbc259d](https://github.com/williamwinkler/openai-batch-manager/commit/cbc259d319572e226a45af0aa308ce45161d40b8))
+
 ## [0.1.23](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.22...v0.1.23) (2026-03-10)
 
 
