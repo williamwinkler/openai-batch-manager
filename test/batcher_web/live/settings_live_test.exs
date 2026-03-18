@@ -2,6 +2,7 @@ defmodule BatcherWeb.SettingsLiveTest do
   use BatcherWeb.LiveViewCase, async: false
 
   alias Batcher.Settings
+  alias BatcherWeb.SettingsLive
 
   describe "settings page" do
     test "renders page and navigation link", %{conn: conn} do
@@ -92,16 +93,36 @@ defmodule BatcherWeb.SettingsLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/settings")
 
+      button_id = SettingsLive.override_button_id("gpt-4o-mini")
+
       view
-      |> element("button#delete-override-gpt-4o-mini")
+      |> element("button##{button_id}")
       |> render_click()
 
-      assert has_element?(view, "button#delete-override-gpt-4o-mini[disabled]", "Resetting...")
+      assert has_element?(view, "button##{button_id}[disabled]", "Resetting...")
       :timer.sleep(300)
       html = render(view)
       assert html =~ "Override removed"
       assert html =~ "No model-specific overrides configured."
       assert Settings.list_model_overrides!() == []
+    end
+
+    test "deletes override for dotted model names", %{conn: conn} do
+      _ = Settings.upsert_model_override!("gpt-4.1-mini", 123_456)
+
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      button_id = SettingsLive.override_button_id("gpt-4.1-mini")
+
+      view
+      |> element("button##{button_id}")
+      |> render_click()
+
+      wait_for(fn -> Settings.list_model_overrides!() == [] end)
+
+      html = render(view)
+      assert html =~ "Override removed"
+      assert html =~ "No model-specific overrides configured."
     end
 
     test "shows validation feedback for invalid inputs", %{conn: conn} do

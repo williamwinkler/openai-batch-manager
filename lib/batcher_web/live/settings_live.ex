@@ -187,6 +187,11 @@ defmodule BatcherWeb.SettingsLive do
     "#{format_with_delimiters(token_limit)} (#{Format.compact_number(token_limit)})"
   end
 
+  def override_button_id(model_prefix) when is_binary(model_prefix) do
+    encoded_prefix = Base.url_encode64(model_prefix, padding: false)
+    "delete-override-#{encoded_prefix}"
+  end
+
   defp format_with_delimiters(number) do
     number
     |> Integer.to_string()
