@@ -107,13 +107,14 @@
                 <td class="font-mono">{override.model_prefix}</td>
                 <td class="text-right font-mono">{format_token_cap(override.token_limit)}</td>
                 <td class="text-right">
+                  <% button_id = override_button_id(override.model_prefix) %>
                   <button
-                    id={"delete-override-#{override.model_prefix}"}
+                    id={button_id}
                     class="btn btn-xs btn-ghost text-warning"
                     phx-click={
                       JS.push("delete_override",
                         value: %{model_prefix: override.model_prefix},
-                        loading: "#delete-override-#{override.model_prefix}"
+                        loading: "##{button_id}"
                       )
                     }
                     disabled={
