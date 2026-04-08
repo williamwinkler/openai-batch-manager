@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.26](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.25...v0.1.26) (2026-04-08)
+
+
+### Features
+
+* add redeliver failed button on /batches ([#63](https://github.com/williamwinkler/openai-batch-manager/issues/63)) ([a41d325](https://github.com/williamwinkler/openai-batch-manager/commit/a41d32531acf6a84b240f76190a222503f757947))
+
 ## [0.1.25](https://github.com/williamwinkler/openai-batch-manager/compare/v0.1.24...v0.1.25) (2026-03-18)
 
 
