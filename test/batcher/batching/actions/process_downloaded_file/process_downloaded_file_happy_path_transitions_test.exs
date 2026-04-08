@@ -86,6 +86,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileHappyPathTransitionsTest
         assert Map.has_key?(request.response_payload, "response")
         assert Map.has_key?(request.response_payload, "error")
       end
+
+      refute Enum.any?(batch_after.requests, &(&1.state == :openai_processing))
     end
 
     test "handles chunked processing (100 requests at a time)", %{server: server} do
@@ -150,6 +152,8 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileHappyPathTransitionsTest
         assert Map.has_key?(request.response_payload, "id")
         assert Map.has_key?(request.response_payload, "response")
       end
+
+      refute Enum.any?(batch_after.requests, &(&1.state == :openai_processing))
     end
 
     test "transitions to delivering after processing completes", %{server: server} do
@@ -255,6 +259,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileHappyPathTransitionsTest
       assert updated_request.response_payload["custom_id"] == request.custom_id
       assert Map.has_key?(updated_request.response_payload, "id")
       assert Map.has_key?(updated_request.response_payload, "response")
+      refute Enum.any?(batch_after.requests, &(&1.state == :openai_processing))
     end
 
     test "batch with both files processes correctly and transitions to delivering", %{
@@ -346,6 +351,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileHappyPathTransitionsTest
       assert failed_req.state == :failed
       error_data = JSON.decode!(failed_req.error_msg)
       assert error_data["custom_id"] == failed_request.custom_id
+      refute Enum.any?(batch_after.requests, &(&1.state == :openai_processing))
     end
 
     test "batch with all terminal requests and some successes transitions to done", %{

@@ -315,6 +315,8 @@ defmodule Batcher.Batching.BatchOpenaiProcessingTransitionsTest do
         assert request.response_payload != nil
         assert request.state == :openai_processed
       end
+
+      refute Enum.any?(batch_after.requests, &(&1.state == :openai_processing))
     end
   end
 

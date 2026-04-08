@@ -123,6 +123,10 @@ defmodule BatcherWeb.BatchIndexLive do
     do: start_batch_action_async(socket, :cancel, id)
 
   @impl true
+  def handle_event("redeliver_failed_batch", %{"id" => id}, socket),
+    do: start_batch_action_async(socket, :redeliver_failed, id)
+
+  @impl true
   def handle_event("delete_batch", %{"id" => id}, socket),
     do: start_batch_action_async(socket, :delete, id)
 
@@ -433,6 +437,7 @@ defmodule BatcherWeb.BatchIndexLive do
     case action do
       :upload -> perform_upload(batch_id)
       :cancel -> perform_cancel(batch_id)
+      :redeliver_failed -> perform_redeliver_failed(batch_id)
       :delete -> perform_delete(batch_id)
       :restart -> perform_restart(batch_id)
     end
@@ -493,6 +498,16 @@ defmodule BatcherWeb.BatchIndexLive do
       end
     else
       {:error, _} -> {:error, "Batch not found", reload?: false}
+    end
+  end
+
+  defp perform_redeliver_failed(batch_id) do
+    case Batching.redeliver_failed_batch(batch_id) do
+      {:ok, _batch_after} ->
+        {:ok, "Redelivery requested for failed requests", reload?: true}
+
+      {:error, error} ->
+        {:error, format_generic_action_error("Failed to redeliver failed", error), reload?: false}
     end
   end
 

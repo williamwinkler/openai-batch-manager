@@ -58,78 +58,114 @@ defmodule Batcher.Batching.FileProcessing do
   Returns `{:ok, batch}` or `{:error, reason}`.
   """
   def finalize_and_determine_outcome(batch) do
-    {:ok, updated_batch} = ensure_ready_to_deliver(batch)
+    with :ok <- ensure_requests_reconciled(batch),
+         {:ok, updated_batch} <- ensure_ready_to_deliver(batch) do
+      updated_batch = Ash.load!(updated_batch, [:requests_terminal_count, :delivery_stats])
 
-    updated_batch = Ash.load!(updated_batch, [:requests_terminal_count, :delivery_stats])
+      if updated_batch.requests_terminal_count do
+        total_count = updated_batch.request_count
 
-    if updated_batch.requests_terminal_count do
-      total_count = updated_batch.request_count
+        success_states = [:delivered, :delivery_failed, :openai_processed]
 
-      success_states = [:delivered, :delivery_failed, :openai_processed]
+        success_count =
+          Batching.Request
+          |> Ash.Query.filter(batch_id == ^updated_batch.id)
+          |> Ash.Query.filter(state in ^success_states)
+          |> Ash.count!()
 
-      success_count =
-        Batching.Request
-        |> Ash.Query.filter(batch_id == ^updated_batch.id)
-        |> Ash.Query.filter(state in ^success_states)
-        |> Ash.count!()
+        cond do
+          total_count == 0 ->
+            Logger.info("Batch #{batch.id} has no requests, marking as delivered")
 
-      cond do
-        total_count == 0 ->
-          Logger.info("Batch #{batch.id} has no requests, marking as delivered")
+            updated_batch
+            |> Ash.Changeset.for_update(:start_delivering)
+            |> Ash.update!()
+            |> Ash.Changeset.for_update(:mark_delivered)
+            |> Ash.update()
 
-          updated_batch
-          |> Ash.Changeset.for_update(:start_delivering)
-          |> Ash.update!()
-          |> Ash.Changeset.for_update(:mark_delivered)
-          |> Ash.update()
+          success_count > 0 ->
+            %{delivered: delivered_count, failed: failed_count} = updated_batch.delivery_stats
+            openai_failed_count = count_openai_failed_requests(updated_batch.id)
+            total_failed_count = failed_count + openai_failed_count
 
-        success_count > 0 ->
-          %{delivered: delivered_count, failed: failed_count} = updated_batch.delivery_stats
-          openai_failed_count = count_openai_failed_requests(updated_batch.id)
-          total_failed_count = failed_count + openai_failed_count
+            {action, state_name} =
+              cond do
+                delivered_count > 0 and total_failed_count == 0 ->
+                  {:mark_delivered, "delivered"}
 
-          {action, state_name} =
-            cond do
-              delivered_count > 0 and total_failed_count == 0 ->
-                {:mark_delivered, "delivered"}
+                delivered_count == 0 and total_failed_count > 0 ->
+                  {:mark_delivery_failed, "delivery_failed"}
 
-              delivered_count == 0 and total_failed_count > 0 ->
-                {:mark_delivery_failed, "delivery_failed"}
+                delivered_count > 0 and total_failed_count > 0 ->
+                  {:mark_partially_delivered, "partially_delivered"}
 
-              delivered_count > 0 and total_failed_count > 0 ->
-                {:mark_partially_delivered, "partially_delivered"}
+                true ->
+                  {:mark_delivered, "delivered"}
+              end
 
-              true ->
-                {:mark_delivered, "delivered"}
-            end
+            Logger.info(
+              "Batch #{batch.id} has all requests in terminal states, marking as #{state_name}"
+            )
 
-          Logger.info(
-            "Batch #{batch.id} has all requests in terminal states, marking as #{state_name}"
-          )
+            updated_batch
+            |> Ash.Changeset.for_update(:start_delivering)
+            |> Ash.update!()
+            |> Ash.Changeset.for_update(action)
+            |> Ash.update()
 
-          updated_batch
-          |> Ash.Changeset.for_update(:start_delivering)
-          |> Ash.update!()
-          |> Ash.Changeset.for_update(action)
-          |> Ash.update()
+          true ->
+            Logger.info(
+              "Batch #{batch.id} has all requests in terminal states but all failed at OpenAI, marking as failed"
+            )
 
-        true ->
-          Logger.info(
-            "Batch #{batch.id} has all requests in terminal states but all failed at OpenAI, marking as failed"
-          )
+            updated_batch
+            |> Ash.Changeset.for_update(:failed, %{error_msg: "All requests in batch failed"})
+            |> Ash.update()
+        end
+      else
+        Logger.info(
+          "Batch #{batch.id} has fully reconciled requests pending delivery, transitioning to delivering"
+        )
 
-          updated_batch
-          |> Ash.Changeset.for_update(:failed, %{error_msg: "All requests in batch failed"})
-          |> Ash.update()
+        updated_batch
+        |> Ash.Changeset.for_update(:start_delivering)
+        |> Ash.update()
       end
-    else
-      # Requests still need delivery — transition to delivering now
-      # so concurrent delivery jobs don't each race to call start_delivering
-      Logger.info("Batch #{batch.id} has requests pending delivery, transitioning to delivering")
+    end
+  end
 
-      updated_batch
-      |> Ash.Changeset.for_update(:start_delivering)
-      |> Ash.update()
+  defp ensure_requests_reconciled(batch) do
+    reconciliation = reconciliation_status(batch.id)
+    expected_openai_processed_count = expected_openai_processed_count(batch)
+
+    cond do
+      reconciliation.openai_processing_count > 0 ->
+        log_incomplete_reconciliation(batch.id, reconciliation, expected_openai_processed_count)
+
+        {:error,
+         {:incomplete_reconciliation,
+          %{
+            batch_id: batch.id,
+            openai_processing_count: reconciliation.openai_processing_count,
+            local_reconciled_count: reconciliation.local_reconciled_count,
+            expected_openai_processed_count: expected_openai_processed_count
+          }}}
+
+      expected_openai_processed_count > 0 and
+          reconciliation.local_reconciled_count < expected_openai_processed_count ->
+        log_reconciliation_mismatch(batch.id, reconciliation, expected_openai_processed_count)
+
+        {:error,
+         {:reconciliation_mismatch,
+          %{
+            batch_id: batch.id,
+            openai_processing_count: reconciliation.openai_processing_count,
+            local_reconciled_count: reconciliation.local_reconciled_count,
+            expected_openai_processed_count: expected_openai_processed_count
+          }}}
+
+      true ->
+        :ok
     end
   end
 
@@ -386,5 +422,44 @@ defmodule Batcher.Batching.FileProcessing do
 
         {:ok, latest_batch}
     end
+  end
+
+  defp reconciliation_status(batch_id) do
+    openai_processing_count =
+      Batching.Request
+      |> Ash.Query.filter(batch_id == ^batch_id and state == :openai_processing)
+      |> Ash.count!()
+
+    local_reconciled_count =
+      Batching.Request
+      |> Ash.Query.filter(batch_id == ^batch_id and state in [:openai_processed, :failed])
+      |> Ash.count!()
+
+    %{
+      openai_processing_count: openai_processing_count,
+      local_reconciled_count: local_reconciled_count
+    }
+  end
+
+  defp expected_openai_processed_count(batch) do
+    (batch.openai_requests_completed || 0) + (batch.openai_requests_failed || 0)
+  end
+
+  defp log_incomplete_reconciliation(batch_id, reconciliation, expected_openai_processed_count) do
+    Logger.warning(
+      "Batch #{batch_id} still has unreconciled OpenAI results: " <>
+        "openai_processing_count=#{reconciliation.openai_processing_count}, " <>
+        "local_reconciled_count=#{reconciliation.local_reconciled_count}, " <>
+        "expected_openai_processed_count=#{expected_openai_processed_count}"
+    )
+  end
+
+  defp log_reconciliation_mismatch(batch_id, reconciliation, expected_openai_processed_count) do
+    Logger.warning(
+      "Batch #{batch_id} reconciliation count mismatch after file processing: " <>
+        "openai_processing_count=#{reconciliation.openai_processing_count}, " <>
+        "local_reconciled_count=#{reconciliation.local_reconciled_count}, " <>
+        "expected_openai_processed_count=#{expected_openai_processed_count}"
+    )
   end
 end

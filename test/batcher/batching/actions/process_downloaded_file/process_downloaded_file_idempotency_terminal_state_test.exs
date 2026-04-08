@@ -253,5 +253,80 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileIdempotencyTerminalState
         assert processed_request.response_payload["id"] == "old_id"
       end)
     end
+
+    test "returns an error and stays downloading when requests remain openai_processing", %{
+      server: server
+    } do
+      output_file_id = "file-incomplete-reconciliation123"
+
+      batch_before =
+        seeded_batch(
+          state: :downloading,
+          openai_output_file_id: output_file_id,
+          openai_requests_completed: 2,
+          openai_requests_failed: 0
+        )
+        |> generate()
+
+      processed_request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processing,
+            custom_id: "processed_req"
+          )
+        )
+
+      _missing_request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processing,
+            custom_id: "missing_req"
+          )
+        )
+
+      body = """
+      {"id": "req_1", "custom_id": "#{processed_request.custom_id}", "response": {"status_code": 200, "body": {"output": "result"}}, "error": null}
+      """
+
+      TestServer.add(server, "/v1/files/#{output_file_id}/content",
+        via: :get,
+        to: fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/octet-stream")
+          |> Plug.Conn.send_resp(200, body)
+        end
+      )
+
+      assert {:error,
+              %Ash.Error.Unknown{
+                errors: [
+                  %Ash.Error.Unknown.UnknownError{value: [incomplete_reconciliation: details]}
+                ]
+              }} =
+               Batching.Batch
+               |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
+               |> Map.put(:subject, batch_before)
+               |> Ash.run_action()
+
+      assert details.batch_id == batch_before.id
+      assert details.openai_processing_count == 1
+      assert details.local_reconciled_count == 1
+      assert details.expected_openai_processed_count == 2
+
+      batch_after = Batching.get_batch_by_id!(batch_before.id, load: [:requests])
+
+      assert batch_after.state == :downloading
+
+      openai_processing_requests =
+        Enum.filter(batch_after.requests, &(&1.state == :openai_processing))
+
+      assert length(openai_processing_requests) == 1
+    end
   end
 end
