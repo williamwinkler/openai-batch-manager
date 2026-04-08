@@ -111,6 +111,8 @@
                   <% upload_pending = pending_action?(@pending_actions, :upload, batch.id) %>
                   <% restart_pending = pending_action?(@pending_actions, :restart, batch.id) %>
                   <% cancel_pending = pending_action?(@pending_actions, :cancel, batch.id) %>
+                  <% redeliver_failed_pending =
+                    pending_action?(@pending_actions, :redeliver_failed, batch.id) %>
                   <% delete_pending = pending_action?(@pending_actions, :delete, batch.id) %>
                   <button
                     :if={batch.state == :building and batch.request_count > 0}
@@ -163,6 +165,27 @@
                       <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Cancelling...
                     <% else %>
                       <.icon name="hero-x-circle" class="w-4 h-4" /> Cancel
+                    <% end %>
+                  </button>
+                  <button
+                    :if={batch.state == :partially_delivered}
+                    id={"redeliver-failed-batch-#{batch.id}"}
+                    phx-click={
+                      JS.push(
+                        "redeliver_failed_batch",
+                        loading: "#redeliver-failed-batch-#{batch.id}"
+                      )
+                    }
+                    phx-value-id={batch.id}
+                    class="btn btn-sm !border-white !bg-white !text-neutral-900 shadow-sm hover:!border-neutral-200 hover:!bg-neutral-100 disabled:!border-neutral-200 disabled:!bg-white disabled:!text-neutral-400 disabled:!opacity-100 phx-click-loading:!border-neutral-200 phx-click-loading:!bg-white phx-click-loading:!text-neutral-400 phx-click-loading:!opacity-100"
+                    data-confirm="Redeliver failed requests in this batch?"
+                    disabled={redeliver_failed_pending}
+                  >
+                    <%= if redeliver_failed_pending do %>
+                      <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
+                      Redelivering...
+                    <% else %>
+                      <.icon name="hero-exclamation-triangle" class="w-4 h-4" /> Redeliver failed
                     <% end %>
                   </button>
                   <.delete_batch_button

@@ -220,6 +220,86 @@ defmodule BatcherWeb.BatchIndexRenderingActionsProgressLiveTest do
     end
   end
 
+  describe "redeliver failed batch action" do
+    test "redeliver failed button is visible only for partially delivered batches", %{
+      conn: conn
+    } do
+      partial_batch = generate(seeded_batch(state: :partially_delivered))
+      delivered_batch = generate(seeded_batch(state: :delivered))
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(view, "#redeliver-failed-batch-#{partial_batch.id}")
+      refute has_element?(view, "#redeliver-failed-batch-#{delivered_batch.id}")
+    end
+
+    test "clicking redeliver failed triggers redelivery", %{conn: conn} do
+      batch = generate(seeded_batch(state: :partially_delivered))
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          state: :delivery_failed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "response"}
+        )
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      render_click(view, "redeliver_failed_batch", %{"id" => Integer.to_string(batch.id)})
+
+      wait_for(fn ->
+        html = render(view)
+
+        html =~ "Redelivery requested for failed requests" and
+          (html =~ "Delivering" or html =~ "Partially delivered")
+      end)
+    end
+
+    test "shows spinner and disables redeliver failed while action is pending", %{conn: conn} do
+      batch = generate(seeded_batch(state: :partially_delivered))
+
+      generate(
+        seeded_request(
+          batch_id: batch.id,
+          state: :delivery_failed,
+          delivery_config: %{"type" => "webhook", "webhook_url" => "https://example.com/webhook"},
+          response_payload: %{"output" => "response"}
+        )
+      )
+
+      original_delay = Application.get_env(:batcher, :batch_action_test_delay_ms, 0)
+      Application.put_env(:batcher, :batch_action_test_delay_ms, 250)
+
+      on_exit(fn ->
+        Application.put_env(:batcher, :batch_action_test_delay_ms, original_delay)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      view
+      |> element("#redeliver-failed-batch-#{batch.id}")
+      |> render_click()
+
+      wait_for(fn ->
+        has_element?(
+          view,
+          "button#redeliver-failed-batch-#{batch.id}[disabled]",
+          "Redelivering..."
+        )
+      end)
+
+      wait_for(
+        fn ->
+          not has_element?(view, "button#redeliver-failed-batch-#{batch.id}[disabled]")
+        end,
+        40,
+        25
+      )
+    end
+  end
+
   describe "delete batch action" do
     test "delete button is visible for cancelled batches", %{conn: conn} do
       generate(seeded_batch(state: :cancelled))

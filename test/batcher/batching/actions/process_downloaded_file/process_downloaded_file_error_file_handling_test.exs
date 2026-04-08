@@ -212,7 +212,7 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileErrorFileHandlingTest do
         )
         |> generate()
 
-      request =
+      successful_request =
         generate(
           seeded_request(
             batch_id: batch_before.id,
@@ -223,9 +223,20 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileErrorFileHandlingTest do
           )
         )
 
+      _failed_request =
+        generate(
+          seeded_request(
+            batch_id: batch_before.id,
+            url: batch_before.url,
+            model: batch_before.model,
+            state: :openai_processing,
+            custom_id: "failed_req"
+          )
+        )
+
       # Mock successful output file
       output_body = """
-      {"id": "req_1", "custom_id": "#{request.custom_id}", "response": {"status_code": 200, "body": {"output": "result"}, "error": null}, "error": null}
+      {"id": "req_1", "custom_id": "#{successful_request.custom_id}", "response": {"status_code": 200, "body": {"output": "result"}, "error": null}, "error": null}
       """
 
       TestServer.add(server, "/v1/files/#{output_file_id}/content",
@@ -249,15 +260,23 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFileErrorFileHandlingTest do
         end
       )
 
-      # Should handle malformed JSON gracefully (skip malformed lines)
-      {:ok, batch_after} =
-        Batching.Batch
-        |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
-        |> Map.put(:subject, batch_before)
-        |> Ash.run_action()
+      assert {:error,
+              %Ash.Error.Unknown{
+                errors: [
+                  %Ash.Error.Unknown.UnknownError{value: [incomplete_reconciliation: details]}
+                ]
+              }} =
+               Batching.Batch
+               |> Ash.ActionInput.for_action(:process_downloaded_file, %{})
+               |> Map.put(:subject, batch_before)
+               |> Ash.run_action()
 
-      # Should still process successfully, skipping malformed lines
-      assert batch_after.state == :delivering
+      assert details.batch_id == batch_before.id
+      assert details.openai_processing_count == 1
+
+      batch_after = Batching.get_batch_by_id!(batch_before.id, load: [:requests])
+      assert batch_after.state == :downloading
+      assert Enum.any?(batch_after.requests, &(&1.state == :openai_processing))
     end
 
     test "handles batch with only error file (all requests failed)", %{server: server} do
