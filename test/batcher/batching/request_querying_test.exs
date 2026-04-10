@@ -223,5 +223,64 @@ defmodule Batcher.Batching.RequestQueryingTest do
       refute newer_request.id in ids
       assert count_page.count == 1
     end
+
+    test "supports failed_any filtering consistently for search and count" do
+      batch = generate(batch())
+
+      openai_failed =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            custom_id: "failed-any-openai",
+            url: batch.url,
+            model: batch.model,
+            state: :failed
+          )
+        )
+
+      delivery_failed =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            custom_id: "failed-any-delivery",
+            url: batch.url,
+            model: batch.model,
+            state: :delivery_failed,
+            response_payload: %{"ok" => true}
+          )
+        )
+
+      _delivered =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            custom_id: "failed-any-delivered",
+            url: batch.url,
+            model: batch.model,
+            state: :delivered,
+            response_payload: %{"ok" => true}
+          )
+        )
+
+      {:ok, page} =
+        Batching.search_requests(
+          "failed-any-",
+          %{state_filter: "failed_any", sort_input: "-created_at"},
+          page: [limit: 10, count: true]
+        )
+
+      {:ok, count_page} =
+        Batching.count_requests_for_search(
+          "failed-any-",
+          %{state_filter: "failed_any"},
+          page: [limit: 1, count: true]
+        )
+
+      ids = Enum.map(page.results, & &1.id)
+
+      assert openai_failed.id in ids
+      assert delivery_failed.id in ids
+      assert count_page.count == 2
+    end
   end
 end

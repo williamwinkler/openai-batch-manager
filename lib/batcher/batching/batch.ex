@@ -25,6 +25,22 @@ defmodule Batcher.Batching.Batch do
                            "*/1 * * * *"
                          )
 
+  def recoverable_failed_download?(%{state: :failed} = batch) do
+    String.contains?(batch.error_msg || "", "Download watchdog timeout") or
+      not is_nil(batch.last_download_error) or
+      not is_nil(batch.openai_output_file_id) or
+      not is_nil(batch.openai_error_file_id) or
+      (batch.openai_requests_completed || 0) > 0 or
+      (batch.openai_requests_failed || 0) > 0
+  end
+
+  def recoverable_failed_download?(_batch), do: false
+
+  def funding_blocked_submission?(%{last_submission_error_code: "openai_billing_limit_reached"}),
+    do: true
+
+  def funding_blocked_submission?(_batch), do: false
+
   postgres do
     table "batches"
     repo Batcher.Repo
@@ -64,6 +80,7 @@ defmodule Batcher.Batching.Batch do
       transition :start_downloading, from: :openai_completed, to: :downloading
       transition :finalize_processing, from: [:downloading, :expired], to: :ready_to_deliver
       transition :start_delivering, from: :ready_to_deliver, to: :delivering
+      transition :recover_failed_download, from: :failed, to: :ready_to_deliver
 
       transition :resume_delivering,
         from: [:delivered, :partially_delivered, :delivery_failed],
@@ -322,6 +339,8 @@ defmodule Batcher.Batching.Batch do
       description "Create batch on OpenAI platform for processing"
       require_atomic? false
       change Batching.Changes.CreateOpenaiBatch
+      change set_attribute(:last_submission_error, nil)
+      change set_attribute(:last_submission_error_code, nil)
       change transition_state(:openai_processing)
       change run_oban_trigger(:check_batch_status)
     end
@@ -360,6 +379,16 @@ defmodule Batcher.Batching.Batch do
     update :set_openai_status_last_checked do
       require_atomic? false
       change set_attribute(:openai_status_last_checked_at, &DateTime.utc_now/0)
+    end
+
+    update :record_submission_error do
+      require_atomic? false
+      accept [:last_submission_error, :last_submission_error_code]
+    end
+
+    update :record_download_error do
+      require_atomic? false
+      accept [:last_download_error]
     end
 
     update :record_openai_progress do
@@ -459,6 +488,7 @@ defmodule Batcher.Batching.Batch do
       require_atomic? false
       argument :error, :string, allow_nil?: true
       change set_attribute(:error_msg, "Failed while processing downloaded batch files")
+      change set_attribute(:last_download_error, arg(:error))
       change transition_state(:failed)
     end
 
@@ -522,6 +552,9 @@ defmodule Batcher.Batching.Batch do
       change Batching.Changes.DeleteOpenaiFilesForRestart
       change Batching.Changes.ResetRequestsForRestart
       change set_attribute(:error_msg, nil)
+      change set_attribute(:last_submission_error, nil)
+      change set_attribute(:last_submission_error_code, nil)
+      change set_attribute(:last_download_error, nil)
       change set_attribute(:openai_batch_id, nil)
       change set_attribute(:openai_output_file_id, nil)
       change set_attribute(:openai_error_file_id, nil)
@@ -542,6 +575,15 @@ defmodule Batcher.Batching.Batch do
       change set_attribute(:expires_at, nil)
       change transition_state(:waiting_for_capacity)
       change run_oban_trigger(:dispatch_waiting_for_capacity)
+    end
+
+    update :recover_failed_download do
+      description "Recover a failed download while preserving delivered requests"
+      require_atomic? false
+      change Batching.Changes.RecoverFailedDownload
+      change set_attribute(:error_msg, nil)
+      change set_attribute(:last_download_error, nil)
+      change transition_state(:ready_to_deliver)
     end
 
     action :expire_stale_building_batch, :struct do
@@ -735,6 +777,18 @@ defmodule Batcher.Batching.Batch do
 
     attribute :capacity_wait_reason, :string do
       description "Reason why the batch is waiting for capacity"
+    end
+
+    attribute :last_submission_error, :string do
+      description "Last non-terminal OpenAI batch submission error"
+    end
+
+    attribute :last_submission_error_code, :string do
+      description "Machine-readable code for the last non-terminal OpenAI batch submission error"
+    end
+
+    attribute :last_download_error, :string do
+      description "Last non-terminal batch download or file-processing error"
     end
 
     attribute :waiting_for_capacity_since_at, :utc_datetime do

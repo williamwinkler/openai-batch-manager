@@ -313,4 +313,57 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacityTest do
     assert ready_after.token_limit_retry_attempts == 0
     assert ready_after.token_limit_retry_next_at == nil
   end
+
+  test "continues dispatching after an older waiting batch fails submission", %{server: server} do
+    expect_json_response(
+      server,
+      :post,
+      "/v1/batches",
+      %{"error" => %{"message" => "transient upstream error", "type" => "server_error"}},
+      500
+    )
+
+    expect_json_response(
+      server,
+      :post,
+      "/v1/batches",
+      %{"id" => "batch_after_failure", "status" => "validating"},
+      200
+    )
+
+    model = "gpt-4o-mini"
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    failing =
+      generate(
+        seeded_batch(
+          model: model,
+          state: :waiting_for_capacity,
+          openai_input_file_id: "file-failing",
+          estimated_request_input_tokens_total: 100_000,
+          waiting_for_capacity_since_at: DateTime.add(now, -120, :second)
+        )
+      )
+
+    succeeding =
+      generate(
+        seeded_batch(
+          model: model,
+          state: :waiting_for_capacity,
+          openai_input_file_id: "file-succeeding",
+          estimated_request_input_tokens_total: 100_000,
+          waiting_for_capacity_since_at: DateTime.add(now, -60, :second)
+        )
+      )
+
+    assert {:ok, _} = DispatchWaitingForCapacity.run(%{subject: failing}, [], %{})
+
+    failing_after = Batching.get_batch_by_id!(failing.id)
+    succeeding_after = Batching.get_batch_by_id!(succeeding.id)
+
+    assert failing_after.state == :waiting_for_capacity
+    assert failing_after.last_submission_error =~ "server_error"
+    assert succeeding_after.state == :openai_processing
+    assert succeeding_after.openai_batch_id == "batch_after_failure"
+  end
 end

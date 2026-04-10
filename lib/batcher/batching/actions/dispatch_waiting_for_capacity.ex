@@ -44,7 +44,20 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacity do
       {:ok, batch} when batch.state in [:uploaded, :expired] ->
         case CapacityControl.decision(batch) do
           {:admit, _ctx} ->
-            _ = batch |> Ash.Changeset.for_update(:create_openai_batch, %{}) |> Ash.update()
+            case batch
+                 |> Ash.Changeset.for_update(:create_openai_batch, %{})
+                 |> Ash.update() do
+              {:ok, _updated_batch} ->
+                :ok
+
+              {:error, error} ->
+                Logger.error(
+                  "Failed to dispatch uploaded batch #{batch.id} for model #{batch.model}: #{inspect(error)}"
+                )
+
+                :ok
+            end
+
             :ok
 
           {:wait_capacity_blocked, _ctx} ->
@@ -87,7 +100,8 @@ defmodule Batcher.Batching.Actions.DispatchWaitingForCapacity do
               "Failed to dispatch waiting batch #{batch.id} for model #{batch.model}: #{inspect(error)}"
             )
 
-            :ok
+            remaining = Enum.reject(waiting_batches, &(&1.id == batch.id))
+            dispatch_fittable_waiting_batches(remaining)
         end
     end
   end

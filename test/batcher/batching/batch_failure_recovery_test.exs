@@ -314,6 +314,67 @@ defmodule Batcher.Batching.BatchFailureRecoveryTest do
     end
   end
 
+  describe "Batcher.Batching.Batch.recover_failed_download" do
+    test "preserves delivered requests and requeues unresolved work into a successor batch" do
+      batch =
+        seeded_batch(
+          state: :failed,
+          error_msg: "Download watchdog timeout after 60 minutes in downloading state",
+          last_download_error: "socket closed",
+          openai_output_file_id: "file-output-123"
+        )
+        |> generate()
+
+      delivered_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :delivered,
+            response_payload: %{"ok" => true}
+          )
+        )
+
+      failed_request =
+        generate(
+          seeded_request(
+            batch_id: batch.id,
+            url: batch.url,
+            model: batch.model,
+            state: :failed,
+            error_msg:
+              JSON.encode!(%{
+                "custom_id" => "retryable",
+                "response" => %{
+                  "status_code" => 500,
+                  "body" => %{"error" => %{"message" => "server error"}}
+                }
+              })
+          )
+        )
+
+      batch_after =
+        batch
+        |> Ash.Changeset.for_update(:recover_failed_download)
+        |> Ash.update!()
+
+      assert batch_after.state == :delivered
+      assert batch_after.error_msg == nil
+      assert batch_after.last_download_error == nil
+
+      delivered_request_after = Ash.get!(Batching.Request, delivered_request.id)
+      failed_request_after = Ash.get!(Batching.Request, failed_request.id)
+
+      assert delivered_request_after.batch_id == batch.id
+      assert delivered_request_after.state == :delivered
+      assert failed_request_after.batch_id != batch.id
+      assert failed_request_after.state == :pending
+      assert failed_request_after.error_msg == nil
+      assert failed_request_after.response_payload == nil
+    end
+  end
+
   describe "Batcher.Batching.Batch.handle_download_error" do
     test "transitions batch from downloading to failed" do
       batch_before =

@@ -27,6 +27,7 @@ defmodule Batcher.Batching do
 
       define :cancel_batch, action: :cancel
       define :restart_batch, action: :restart
+      define :recover_failed_download_batch, action: :recover_failed_download
       define :handle_batch_token_limit_exceeded, action: :handle_token_limit_exceeded
       define :fail_batch_token_limit_exhausted, action: :fail_token_limit_exhausted
       define :destroy_batch, action: :destroy

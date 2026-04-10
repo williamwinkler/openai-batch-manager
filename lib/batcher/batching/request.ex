@@ -383,7 +383,7 @@ defmodule Batcher.Batching.Request do
         description "Filter requests by batch ID"
       end
 
-      argument :state_filter, Batching.Types.RequestStatus do
+      argument :state_filter, :string do
         description "Filter requests by an exact state"
       end
 
@@ -426,7 +426,7 @@ defmodule Batcher.Batching.Request do
         description "Filter requests by batch ID"
       end
 
-      argument :state_filter, Batching.Types.RequestStatus do
+      argument :state_filter, :string do
         description "Filter requests by an exact state"
       end
 
@@ -698,11 +698,42 @@ defmodule Batcher.Batching.Request do
   defp apply_state_filter(query) do
     state_filter = Ash.Query.get_argument(query, :state_filter)
 
-    if state_filter do
-      Ash.Query.filter(query, state == ^state_filter)
-    else
-      query
+    case normalize_state_filter(state_filter) do
+      nil ->
+        query
+
+      :failed_any ->
+        Ash.Query.filter(query, state in [:failed, :delivery_failed])
+
+      state ->
+        Ash.Query.filter(query, state == ^state)
     end
+  end
+
+  defp normalize_state_filter(nil), do: nil
+  defp normalize_state_filter(""), do: nil
+  defp normalize_state_filter(:failed_any), do: :failed_any
+
+  defp normalize_state_filter(state) when is_atom(state) do
+    if state in Batching.Types.RequestStatus.values() do
+      state
+    else
+      nil
+    end
+  end
+
+  defp normalize_state_filter("failed_any"), do: :failed_any
+
+  defp normalize_state_filter(state) when is_binary(state) do
+    atom_state = String.to_existing_atom(state)
+
+    if atom_state in Batching.Types.RequestStatus.values() do
+      atom_state
+    else
+      nil
+    end
+  rescue
+    ArgumentError -> nil
   end
 
   defp apply_query_filter(query) do

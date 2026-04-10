@@ -538,7 +538,7 @@ defmodule BatcherWeb.BatchShowLive do
             end
 
           :restart ->
-            case Batching.restart_batch(batch) do
+            case restart_batch(batch) do
               {:ok, _} ->
                 {:ok, action, "Batch restart initiated successfully"}
 
@@ -583,6 +583,14 @@ defmodule BatcherWeb.BatchShowLive do
     can_redeliver_batch?(batch) and Map.get(delivery_stats || %{}, :failed, 0) > 0
   end
 
+  defp restart_batch(batch) do
+    if Batching.Batch.recoverable_failed_download?(batch) do
+      Batching.recover_failed_download_batch(batch)
+    else
+      Batching.restart_batch(batch)
+    end
+  end
+
   defp start_section_loads(socket, batch_id) do
     socket
     |> start_timeline_load(batch_id)
@@ -623,6 +631,7 @@ defmodule BatcherWeb.BatchShowLive do
     batch = socket.assigns.batch
 
     if socket.assigns.batch.state == :waiting_for_capacity and
+         not funding_blocked_submission?(batch) and
          (is_nil(socket.assigns.capacity_info) or socket.assigns.capacity_info_stale) do
       socket
       |> assign(
@@ -676,6 +685,23 @@ defmodule BatcherWeb.BatchShowLive do
 
   defp format_wait_reason(nil), do: "Waiting for queue capacity"
   defp format_wait_reason(other), do: other
+
+  def funding_blocked_submission?(batch), do: Batching.Batch.funding_blocked_submission?(batch)
+
+  def funding_provider_response(nil), do: nil
+
+  def funding_provider_response(message) when is_binary(message) do
+    marker = "Provider response:"
+
+    case String.split(message, marker, parts: 2) do
+      [_prefix, provider_message] ->
+        provider_message = String.trim(provider_message)
+        if provider_message == "", do: nil, else: provider_message
+
+      _ ->
+        nil
+    end
+  end
 
   defp format_cancel_error(error) do
     case error do

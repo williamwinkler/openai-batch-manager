@@ -297,6 +297,25 @@ defmodule BatcherWeb.BatchIndexRenderingActionsProgressLiveTest do
       assert has_element?(view, "#batches-row-#{backoff_batch.id}", "Backoff 2/5")
       refute has_element?(view, "#batches-row-#{normal_waiting.id}", "Backoff")
     end
+
+    test "shows billing-blocked badge for funding-limited batches", %{conn: conn} do
+      blocked_batch =
+        generate(
+          seeded_batch(
+            state: :uploaded,
+            last_submission_error_code: "openai_billing_limit_reached",
+            last_submission_error:
+              "OpenAI account has insufficient funds or its billing hard limit has been reached."
+          )
+        )
+
+      normal_batch = generate(seeded_batch(state: :uploaded))
+
+      {:ok, view, _html} = live(conn, ~p"/batches")
+
+      assert has_element?(view, "#batches-row-#{blocked_batch.id} [title='Billing issues']")
+      refute has_element?(view, "#batches-row-#{normal_batch.id} [title='Billing issues']")
+    end
   end
 
   describe "async action UX" do

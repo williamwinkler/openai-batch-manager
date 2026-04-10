@@ -256,6 +256,32 @@ defmodule BatcherWeb.BatchShowLiveTest do
       assert html =~ "starting it now would exceed the rate limit and cause errors"
       refute html =~ "Older waiting batch has priority (FIFO)"
     end
+
+    test "renders funding-blocked message instead of capacity explanation", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            capacity_wait_reason: "insufficient_headroom",
+            last_submission_error_code: "openai_billing_limit_reached",
+            last_submission_error:
+              "OpenAI account has insufficient funds or its billing hard limit has been reached.\n\nProvider response: Billing hard limit has been reached"
+          )
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/batches/#{batch.id}")
+
+      view
+      |> element("button[phx-click='open_capacity_modal']")
+      |> render_click()
+
+      html = render(view)
+
+      assert html =~ "Why This Batch Is Waiting"
+      assert html =~ "OpenAI account billing state"
+      assert html =~ "Billing hard limit has been reached"
+      refute html =~ "starting it now would exceed the rate limit and cause errors"
+    end
   end
 
   describe "restart batch action" do
@@ -281,6 +307,54 @@ defmodule BatcherWeb.BatchShowLiveTest do
       html = render(view)
       assert html =~ "Batch restart initiated successfully"
       assert html =~ "Waiting for capacity" or html =~ "OpenAI processing"
+    end
+
+    test "partial batches link failed view to the grouped failed filter", %{conn: conn} do
+      partial_batch = generate(seeded_batch(state: :partially_delivered))
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{partial_batch.id}")
+
+      assert html =~ "/requests?batch_id=#{partial_batch.id}&amp;state=failed_any"
+    end
+
+    test "shows latest submission and download diagnostics when present", %{conn: conn} do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            last_submission_error: "submission exploded",
+            last_download_error: "download exploded"
+          )
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+
+      assert html =~ "Latest Submission Error"
+      assert html =~ "submission exploded"
+      assert html =~ "Latest Download Error"
+      assert html =~ "download exploded"
+    end
+
+    test "shows funding-blocked badge and warning card when submission is blocked by billing", %{
+      conn: conn
+    } do
+      batch =
+        generate(
+          seeded_batch(
+            state: :uploaded,
+            last_submission_error_code: "openai_billing_limit_reached",
+            last_submission_error:
+              "OpenAI account has insufficient funds or its billing hard limit has been reached.\n\nProvider response: Billing hard limit has been reached"
+          )
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/batches/#{batch.id}")
+
+      assert html =~ "Billing blocked"
+      assert html =~ "OpenAI Funding Block"
+      refute html =~ "Latest Submission Error"
+      assert html =~ "Provider response"
+      assert html =~ "Billing hard limit has been reached"
     end
   end
 

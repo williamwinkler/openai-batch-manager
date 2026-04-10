@@ -498,7 +498,7 @@ defmodule BatcherWeb.BatchIndexLive do
 
   defp perform_restart(batch_id) do
     with {:ok, batch} <- Batching.get_batch_by_id(batch_id) do
-      case Batching.restart_batch(batch) do
+      case restart_batch(batch) do
         {:ok, _} ->
           {:ok, "Batch restart initiated successfully", reload?: true}
 
@@ -515,10 +515,20 @@ defmodule BatcherWeb.BatchIndexLive do
 
   defp maybe_reload(socket, false), do: socket
 
+  defp restart_batch(batch) do
+    if Batching.Batch.recoverable_failed_download?(batch) do
+      Batching.recover_failed_download_batch(batch)
+    else
+      Batching.restart_batch(batch)
+    end
+  end
+
   def pending_action?(pending_actions, action, batch_id) do
     key = {:batch_action, action, batch_id}
     AsyncActions.pending?(pending_actions, key) or ActionActivity.active?(key)
   end
+
+  def funding_blocked_submission?(batch), do: Batching.Batch.funding_blocked_submission?(batch)
 
   defp parse_batch_id(raw_id) when is_binary(raw_id) do
     case Integer.parse(raw_id) do
@@ -921,12 +931,12 @@ defmodule BatcherWeb.BatchIndexLive do
     assigns = assign(assigns, :options, sort_options())
 
     ~H"""
-    <form phx-change="change-sort" class="flex items-center gap-2">
+    <form id="batch-sort-form" phx-change="change-sort" class="flex items-center gap-2">
       <label for="sort_by" class="text-sm text-base-content/70 whitespace-nowrap">Sort by:</label>
       <select
         id="sort_by"
         name="sort_by"
-        class="select select-bordered w-auto min-w-[180px] text-sm bg-base-200 border-base-300"
+        class="select select-md w-auto min-w-[180px]"
       >
         {Phoenix.HTML.Form.options_for_select(@options, @selected)}
       </select>

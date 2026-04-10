@@ -10,6 +10,13 @@
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-semibold">Batch {@batch.id}</h1>
         <.status_badge status={@batch.state} />
+        <span
+          :if={funding_blocked_submission?(@batch)}
+          class="badge badge-error badge-outline"
+          title={@batch.last_submission_error}
+        >
+          Billing blocked
+        </span>
         <button
           :if={@batch.state == :waiting_for_capacity}
           type="button"
@@ -33,7 +40,7 @@
         <.link
           :if={@batch.state in [:partially_delivered, :delivery_failed, :failed]}
           navigate={
-            ~p"/requests?batch_id=#{@batch.id}&state=#{if @batch.state == :failed, do: "failed", else: "delivery_failed"}"
+            ~p"/requests?batch_id=#{@batch.id}&state=#{if @batch.state == :partially_delivered, do: "failed_any", else: if(@batch.state == :failed, do: "failed", else: "delivery_failed")}"
           }
           class="btn btn-sm btn-ghost"
         >
@@ -195,7 +202,7 @@
       </div>
 
       <div
-        :if={@batch.error_msg}
+        :if={not is_nil(@batch.error_msg) and not funding_blocked_submission?(@batch)}
         class="border border-error/30 rounded-lg overflow-hidden cursor-pointer hover:border-error/60 transition-colors"
         phx-click="show_batch_error"
       >
@@ -206,6 +213,55 @@
         <div class="p-4">
           <pre class="text-xs font-mono leading-relaxed overflow-hidden max-h-24 whitespace-pre-wrap break-all text-error/90">{@batch.error_msg}</pre>
           <div class="mt-2 text-xs text-error/80">Click to expand</div>
+        </div>
+      </div>
+
+      <div
+        :if={funding_blocked_submission?(@batch)}
+        class="border border-error/30 rounded-lg overflow-hidden"
+      >
+        <div class="px-4 py-3 border-b border-error/20 bg-error/10 flex items-center gap-2">
+          <.icon name="hero-exclamation-triangle" class="w-4 h-4 text-error" />
+          <span class="font-medium text-error">OpenAI Funding Block</span>
+        </div>
+        <div class="p-4 space-y-2 text-sm">
+          <p class="text-error/90">
+            OpenAI account has insufficient funds or its billing hard limit has been reached.
+          </p>
+          <p class="text-base-content/70">
+            Add funds or raise the OpenAI billing limit before more batches can start.
+          </p>
+          <div
+            :if={not is_nil(funding_provider_response(@batch.last_submission_error))}
+            class="pt-2"
+          >
+            <div class="text-xs text-base-content/60 mb-1">Provider response</div>
+            <pre class="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all text-error/90">{funding_provider_response(@batch.last_submission_error)}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div
+        :if={not is_nil(@batch.last_submission_error) and not funding_blocked_submission?(@batch)}
+        class="border border-warning/30 rounded-lg overflow-hidden"
+      >
+        <div class="px-4 py-3 border-b border-warning/20 bg-warning/10">
+          <span class="font-medium text-warning-content">Latest Submission Error</span>
+        </div>
+        <div class="p-4">
+          <pre class="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all text-warning-content/90">{@batch.last_submission_error}</pre>
+        </div>
+      </div>
+
+      <div
+        :if={@batch.last_download_error}
+        class="border border-warning/30 rounded-lg overflow-hidden"
+      >
+        <div class="px-4 py-3 border-b border-warning/20 bg-warning/10">
+          <span class="font-medium text-warning-content">Latest Download Error</span>
+        </div>
+        <div class="p-4">
+          <pre class="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all text-warning-content/90">{@batch.last_download_error}</pre>
         </div>
       </div>
 
@@ -699,56 +755,68 @@
       </div>
 
       <div class="p-5 space-y-4">
-        <%= if @batch.capacity_wait_reason == "token_limit_exceeded_backoff" do %>
-          <div class="space-y-2 text-sm leading-6">
-            <p>
-              OpenAI reported <span class="font-semibold">token limit exceeded</span>
-              for this model.
-              We are applying an automatic cooldown before trying again.
-            </p>
-            <p>
-              Retry attempt: <span class="font-semibold">{@batch.token_limit_retry_attempts || 0}/5</span>.
-            </p>
-            <p>
-              Next retry in <span class="font-semibold">
+        <%= cond do %>
+          <% funding_blocked_submission?(@batch) -> %>
+            <div class="space-y-3 text-sm leading-6">
+              <p>
+                This batch is currently blocked by the <span class="font-semibold">OpenAI account billing state</span>,
+                not by local queue headroom.
+              </p>
+              <div class="rounded-lg border border-error/30 bg-error/10 p-4">
+                <pre class="text-xs font-mono leading-relaxed whitespace-pre-wrap break-all text-error/90">{@batch.last_submission_error}</pre>
+              </div>
+            </div>
+          <% @batch.capacity_wait_reason == "token_limit_exceeded_backoff" -> %>
+            <div class="space-y-2 text-sm leading-6">
+              <p>
+                OpenAI reported <span class="font-semibold">token limit exceeded</span>
+                for this model.
+                We are applying an automatic cooldown before trying again.
+              </p>
+              <p>
+                Retry attempt: <span class="font-semibold">{@batch.token_limit_retry_attempts || 0}/5</span>.
+              </p>
+              <p>
+                Next retry in <span class="font-semibold">
                 {token_limit_retry_time_remaining(@batch.token_limit_retry_next_at)}
               </span>.
-            </p>
-          </div>
-        <% else %>
-          <div
-            :if={@capacity_info_status == :loading_initial and is_nil(@capacity_info)}
-            class="text-sm text-base-content/60 flex items-center gap-2"
-          >
-            <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" /> Loading capacity info...
-          </div>
-          <div
-            :if={@capacity_info_status != :loading_initial or @capacity_info}
-            class="space-y-2 text-sm leading-6"
-          >
-            <p>
-              Right now, we already have
-              <span class="font-semibold">
-                {Format.compact_number((@capacity_info && @capacity_info.reserved_other) || 0)} tokens
-              </span>
-              queued/processing on OpenAI for model <span class="font-semibold">{(@capacity_info && @capacity_info.model) || @batch.model}</span>.
-            </p>
+              </p>
+            </div>
+          <% true -> %>
+            <div
+              :if={@capacity_info_status == :loading_initial and is_nil(@capacity_info)}
+              class="text-sm text-base-content/60 flex items-center gap-2"
+            >
+              <.icon name="hero-arrow-path" class="w-4 h-4 animate-spin" />
+              Loading capacity info...
+            </div>
+            <div
+              :if={@capacity_info_status != :loading_initial or @capacity_info}
+              class="space-y-2 text-sm leading-6"
+            >
+              <p>
+                Right now, we already have
+                <span class="font-semibold">
+                  {Format.compact_number((@capacity_info && @capacity_info.reserved_other) || 0)} tokens
+                </span>
+                queued/processing on OpenAI for model <span class="font-semibold">{(@capacity_info && @capacity_info.model) || @batch.model}</span>.
+              </p>
 
-            <p>
-              To avoid rate-limit errors, we keep total queued tokens below <span class="font-semibold">
+              <p>
+                To avoid rate-limit errors, we keep total queued tokens below <span class="font-semibold">
                 {Format.compact_number((@capacity_info && @capacity_info.limit) || 0)} tokens</span>.
-              You can adjust model-specific caps on the <.link
-                navigate={~p"/settings"}
-                class="link link-primary"
-              >Settings page</.link>.
-            </p>
+                You can adjust model-specific caps on the <.link
+                  navigate={~p"/settings"}
+                  class="link link-primary"
+                >Settings page</.link>.
+              </p>
 
-            <p>
-              This batch is estimated at <span class="font-semibold">
+              <p>
+                This batch is estimated at <span class="font-semibold">
                 {Format.compact_number((@capacity_info && @capacity_info.estimated_tokens) || 0)} tokens
               </span>, therefore starting it now would exceed the rate limit and cause errors.
-            </p>
-          </div>
+              </p>
+            </div>
         <% end %>
       </div>
     </div>

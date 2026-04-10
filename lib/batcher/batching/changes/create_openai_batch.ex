@@ -8,6 +8,9 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
   alias Batcher.Batching
   alias Batcher.Batching.CapacityControl
 
+  @funding_blocked_error_code "openai_billing_limit_reached"
+  @funding_blocked_message "OpenAI account has insufficient funds or its billing hard limit has been reached. Add funds or raise the OpenAI billing limit before more batches can start."
+
   @impl true
   @doc false
   def change(changeset, _opts, _context) do
@@ -56,6 +59,8 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
                     DateTime.utc_now()
                   )
                   |> Ash.Changeset.force_change_attribute(:capacity_wait_reason, nil)
+                  |> Ash.Changeset.force_change_attribute(:last_submission_error, nil)
+                  |> Ash.Changeset.force_change_attribute(:last_submission_error_code, nil)
                   |> Ash.Changeset.force_change_attribute(:token_limit_retry_attempts, 0)
                   |> Ash.Changeset.force_change_attribute(:token_limit_retry_next_at, nil)
                   |> Ash.Changeset.force_change_attribute(:token_limit_retry_last_error, nil)
@@ -63,14 +68,37 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
                 {:error, {:bad_request, body}} ->
                   if token_limit_exceeded?(body) do
                     move_to_waiting(latest_batch, "token_limit_exceeded")
+                    persist_submission_error(latest_batch, nil, nil)
 
                     Ash.Changeset.add_error(
                       changeset,
                       "Batch #{batch.id} is waiting for OpenAI queue headroom"
                     )
                   else
-                    message = Map.get(body, "error", %{}) |> Map.get("message", "Bad request")
-                    Ash.Changeset.add_error(changeset, "OpenAI batch creation failed: #{message}")
+                    case funding_blocked_error(body) do
+                      {:ok, normalized_message} ->
+                        persist_submission_error(
+                          latest_batch,
+                          normalized_message,
+                          @funding_blocked_error_code
+                        )
+
+                        Ash.Changeset.add_error(changeset, normalized_message)
+
+                      :error ->
+                        message = Map.get(body, "error", %{}) |> Map.get("message", "Bad request")
+
+                        persist_submission_error(
+                          latest_batch,
+                          "OpenAI batch creation failed: #{message}",
+                          nil
+                        )
+
+                        Ash.Changeset.add_error(
+                          changeset,
+                          "OpenAI batch creation failed: #{message}"
+                        )
+                    end
                   end
 
                 {:error, reason} ->
@@ -80,11 +108,13 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
                       other -> "OpenAI batch creation failed: #{inspect(other)}"
                     end
 
+                  persist_submission_error(latest_batch, error_msg, nil)
                   Ash.Changeset.add_error(changeset, error_msg)
               end
 
             {:wait_capacity_blocked, _ctx} ->
               move_to_waiting(latest_batch, "insufficient_headroom")
+              persist_submission_error(latest_batch, nil, nil)
               Ash.Changeset.add_error(changeset, "Batch waiting for capacity")
           end
       end
@@ -113,6 +143,60 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatch do
       _ = Batching.touch_waiting_for_capacity(batch, %{capacity_wait_reason: reason})
     end
   end
+
+  defp persist_submission_error(batch, error_message, error_code) do
+    _ =
+      batch
+      |> Ash.Changeset.for_update(:record_submission_error, %{
+        last_submission_error: error_message,
+        last_submission_error_code: error_code
+      })
+      |> Ash.update()
+
+    :ok
+  end
+
+  defp funding_blocked_error(body) when is_map(body) do
+    error = body["error"] || %{}
+    code = error["code"]
+    message = error["message"]
+    normalized_message = normalize_funding_blocked_message(message)
+
+    if funding_blocked_code?(code) or funding_blocked_message?(message) do
+      {:ok, normalized_message}
+    else
+      :error
+    end
+  end
+
+  defp funding_blocked_error(_), do: :error
+
+  defp normalize_funding_blocked_message(provider_message) do
+    provider_message =
+      case provider_message do
+        message when is_binary(message) and byte_size(message) > 0 -> message
+        _ -> nil
+      end
+
+    if provider_message do
+      @funding_blocked_message <> "\n\nProvider response: " <> provider_message
+    else
+      @funding_blocked_message
+    end
+  end
+
+  defp funding_blocked_code?(code),
+    do: code in ["billing_hard_limit_reached", "insufficient_quota"]
+
+  defp funding_blocked_message?(message) when is_binary(message) do
+    normalized_message = String.downcase(message)
+
+    String.contains?(normalized_message, "billing hard limit") or
+      String.contains?(normalized_message, "insufficient quota") or
+      String.contains?(normalized_message, "insufficient funds")
+  end
+
+  defp funding_blocked_message?(_), do: false
 
   defp token_limit_exceeded?(body) when is_map(body) do
     errors = get_in(body, ["errors", "data"]) || []

@@ -21,6 +21,8 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
           seeded_batch(
             state: :uploaded,
             openai_input_file_id: "file-123",
+            last_submission_error: "old submission issue",
+            last_submission_error_code: "openai_billing_limit_reached",
             token_limit_retry_attempts: 3,
             token_limit_retry_next_at: DateTime.add(DateTime.utc_now(), 300, :second),
             token_limit_retry_last_error: ~s({"code":"token_limit_exceeded"}),
@@ -44,6 +46,8 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
       assert updated_batch.openai_batch_id == "batch_abc123"
       assert updated_batch.state == :openai_processing
       assert updated_batch.capacity_wait_reason == nil
+      assert updated_batch.last_submission_error == nil
+      assert updated_batch.last_submission_error_code == nil
       assert updated_batch.token_limit_retry_attempts == 0
       assert updated_batch.token_limit_retry_next_at == nil
       assert updated_batch.token_limit_retry_last_error == nil
@@ -176,6 +180,77 @@ defmodule Batcher.Batching.Changes.CreateOpenaiBatchTest do
 
       # Should fail with an error
       assert {:error, %Ash.Error.Invalid{}} = result
+    end
+
+    test "persists funding-blocked submission details for billing hard limit errors", %{
+      server: server
+    } do
+      batch = generate(seeded_batch(state: :uploaded, openai_input_file_id: "file-123"))
+
+      error_response = %{
+        "error" => %{
+          "message" => "Billing hard limit has been reached",
+          "type" => "invalid_request_error",
+          "code" => "billing_hard_limit_reached"
+        }
+      }
+
+      expect_json_response(server, :post, "/v1/batches", error_response, 400)
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+
+      updated_batch = Batching.get_batch_by_id!(batch.id)
+      assert updated_batch.state == :uploaded
+      assert updated_batch.last_submission_error_code == "openai_billing_limit_reached"
+
+      assert updated_batch.last_submission_error =~
+               "OpenAI account has insufficient funds or its billing hard limit has been reached"
+
+      assert updated_batch.last_submission_error =~
+               "Provider response: Billing hard limit has been reached"
+    end
+
+    test "persists funding-blocked submission details for insufficient_quota errors", %{
+      server: server
+    } do
+      batch =
+        generate(
+          seeded_batch(
+            state: :waiting_for_capacity,
+            openai_input_file_id: "file-123",
+            capacity_wait_reason: "insufficient_headroom"
+          )
+        )
+
+      error_response = %{
+        "error" => %{
+          "message" =>
+            "You exceeded your current quota, please check your plan and billing details",
+          "type" => "invalid_request_error",
+          "code" => "insufficient_quota"
+        }
+      }
+
+      expect_json_response(server, :post, "/v1/batches", error_response, 400)
+
+      result =
+        batch
+        |> Ash.Changeset.for_update(:create_openai_batch)
+        |> Ash.update()
+
+      assert {:error, %Ash.Error.Invalid{}} = result
+
+      updated_batch = Batching.get_batch_by_id!(batch.id)
+      assert updated_batch.state == :waiting_for_capacity
+      assert updated_batch.last_submission_error_code == "openai_billing_limit_reached"
+
+      assert updated_batch.last_submission_error =~
+               "OpenAI account has insufficient funds or its billing hard limit has been reached"
     end
 
     test "moves to waiting_for_capacity with insufficient_headroom when capacity is exhausted" do

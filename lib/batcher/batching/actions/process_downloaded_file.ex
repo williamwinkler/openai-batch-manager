@@ -50,20 +50,55 @@ defmodule Batcher.Batching.Actions.ProcessDownloadedFile do
           "Batch #{batch.id} has no output file but has error file - all requests failed, transitioning to failed"
         )
 
-        batch
-        |> Ash.Changeset.for_update(:failed, %{error_msg: "All requests in batch failed"})
-        |> Ash.update()
+        case batch
+             |> Ash.Changeset.for_update(:failed, %{error_msg: "All requests in batch failed"})
+             |> Ash.update() do
+          {:ok, failed_batch} = result ->
+            persist_download_error(failed_batch, nil)
+            result
+
+          {:error, reason} = error ->
+            persist_download_error(
+              batch,
+              "Failed to finalize fully failed batch: #{inspect(reason)}"
+            )
+
+            error
+        end
 
       {:ok, :ok, _, _} ->
-        FileProcessing.finalize_and_determine_outcome(batch)
+        case FileProcessing.finalize_and_determine_outcome(batch) do
+          {:ok, final_batch} = result ->
+            persist_download_error(final_batch, nil)
+            result
+
+          {:error, reason} = error ->
+            persist_download_error(
+              batch,
+              "Failed to finalize processed download: #{inspect(reason)}"
+            )
+
+            error
+        end
 
       {{:error, reason}, _, _, _} ->
         Logger.error("Batch #{batch.id} failed to process output file: #{inspect(reason)}")
+        persist_download_error(batch, "Output file processing failed: #{inspect(reason)}")
         {:error, reason}
 
       {_, {:error, reason}, _, _} ->
         Logger.error("Batch #{batch.id} failed to process error file: #{inspect(reason)}")
+        persist_download_error(batch, "Error file processing failed: #{inspect(reason)}")
         {:error, reason}
     end
+  end
+
+  defp persist_download_error(batch, error_message) do
+    _ =
+      batch
+      |> Ash.Changeset.for_update(:record_download_error, %{last_download_error: error_message})
+      |> Ash.update()
+
+    :ok
   end
 end

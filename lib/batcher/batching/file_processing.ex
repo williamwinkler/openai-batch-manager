@@ -271,7 +271,7 @@ defmodule Batcher.Batching.FileProcessing do
 
             []
 
-          openai_server_error?(row_data) ->
+          retryable_openai_failure?(row_data) ->
             reschedule_request_with_notifications(request, row_data)
 
           file_type == "error" ->
@@ -350,13 +350,14 @@ defmodule Batcher.Batching.FileProcessing do
     end
   end
 
-  defp openai_server_error?(row_data) do
+  def retryable_openai_failure?(row_data) when is_map(row_data) do
     status_code = get_in(row_data, ["response", "status_code"])
     error = get_in(row_data, ["response", "body", "error"])
 
-    is_map(error) and is_integer(status_code) and status_code >= 500 and
-      (Map.get(error, "code") == "server_error" or Map.get(error, "type") == "server_error")
+    is_integer(status_code) and status_code >= 500 and not is_nil(error)
   end
+
+  def retryable_openai_failure?(_row_data), do: false
 
   defp ensure_ready_to_deliver(batch) do
     latest_batch = Batching.get_batch_by_id!(batch.id)

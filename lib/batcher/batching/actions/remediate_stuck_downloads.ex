@@ -5,6 +5,7 @@ defmodule Batcher.Batching.Actions.RemediateStuckDownloads do
   require Logger
 
   alias Batcher.Batching
+  alias Batcher.Batching.DownloadRecovery
   alias Batcher.Batching.Utils
 
   @stale_after_seconds 15 * 60
@@ -31,16 +32,24 @@ defmodule Batcher.Batching.Actions.RemediateStuckDownloads do
       downloading_age_seconds >= @hard_timeout_seconds ->
         timeout_minutes = div(@hard_timeout_seconds, 60)
 
-        Logger.error(
-          "Batch #{batch.id} watchdog timeout after #{timeout_minutes} minutes in downloading; transitioning to failed"
-        )
+        if DownloadRecovery.recoverable?(batch) do
+          Logger.error(
+            "Batch #{batch.id} watchdog timeout after #{timeout_minutes} minutes in downloading; recovering instead of failing"
+          )
 
-        batch
-        |> Ash.Changeset.for_update(:failed, %{
-          error_msg:
-            "Download watchdog timeout after #{timeout_minutes} minutes in downloading state"
-        })
-        |> Ash.update()
+          DownloadRecovery.recover_downloading_batch(batch)
+        else
+          Logger.error(
+            "Batch #{batch.id} watchdog timeout after #{timeout_minutes} minutes in downloading; transitioning to failed"
+          )
+
+          batch
+          |> Ash.Changeset.for_update(:failed, %{
+            error_msg:
+              "Download watchdog timeout after #{timeout_minutes} minutes in downloading state"
+          })
+          |> Ash.update()
+        end
 
       downloading_age_seconds >= @stale_after_seconds ->
         stale_minutes = div(@stale_after_seconds, 60)

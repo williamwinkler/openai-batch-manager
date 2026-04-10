@@ -480,17 +480,6 @@ defmodule BatcherWeb.RequestIndexLive do
   defp parse_state_filter(""), do: nil
 
   defp parse_state_filter(state) when is_binary(state) do
-    valid_states =
-      Enum.map(state_filter_options(), fn {_label, value} -> Atom.to_string(value) end)
-
-    if state in valid_states do
-      String.to_existing_atom(state)
-    else
-      nil
-    end
-  end
-
-  defp parse_state_filter(state) when is_atom(state) do
     valid_states = Enum.map(state_filter_options(), &elem(&1, 1))
 
     if state in valid_states do
@@ -500,9 +489,21 @@ defmodule BatcherWeb.RequestIndexLive do
     end
   end
 
+  defp parse_state_filter(state) when is_atom(state) do
+    state_string = Atom.to_string(state)
+    valid_states = Enum.map(state_filter_options(), &elem(&1, 1))
+
+    if state_string in valid_states do
+      state_string
+    else
+      nil
+    end
+  end
+
   defp parse_state_filter(_), do: nil
 
   defp state_filter_param(nil), do: nil
+  defp state_filter_param(state) when is_binary(state), do: state
   defp state_filter_param(state) when is_atom(state), do: Atom.to_string(state)
 
   defp sort_options do
@@ -518,15 +519,16 @@ defmodule BatcherWeb.RequestIndexLive do
 
   defp state_filter_options do
     [
-      {"Pending", :pending},
-      {"OpenAI processing", :openai_processing},
-      {"OpenAI processed", :openai_processed},
-      {"Delivering", :delivering},
-      {"Delivered", :delivered},
-      {"Failed (OpenAI)", :failed},
-      {"Delivery failed", :delivery_failed},
-      {"Expired", :expired},
-      {"Cancelled", :cancelled}
+      {"Pending", "pending"},
+      {"OpenAI processing", "openai_processing"},
+      {"OpenAI processed", "openai_processed"},
+      {"Delivering", "delivering"},
+      {"Delivered", "delivered"},
+      {"Failed (any)", "failed_any"},
+      {"Failed (OpenAI)", "failed"},
+      {"Delivery failed", "delivery_failed"},
+      {"Expired", "expired"},
+      {"Cancelled", "cancelled"}
     ]
   end
 
@@ -562,12 +564,12 @@ defmodule BatcherWeb.RequestIndexLive do
       |> assign(:batch_id_value, assigns[:batch_id] || "")
 
     ~H"""
-    <form phx-change="change-sort" class="flex items-center gap-2">
+    <form id="request-sort-form" phx-change="change-sort" class="flex items-center gap-2">
       <label for="sort_by" class="text-sm text-base-content/70 whitespace-nowrap">Sort by:</label>
       <select
         id="sort_by"
         name="sort_by"
-        class="select select-bordered w-auto min-w-[180px] text-sm bg-base-200 border-base-300"
+        class="select select-md w-auto min-w-[180px]"
       >
         {Phoenix.HTML.Form.options_for_select(@options, @selected)}
       </select>
@@ -593,7 +595,7 @@ defmodule BatcherWeb.RequestIndexLive do
   defp state_filter_changer(assigns) do
     options =
       [{"All states", ""}] ++
-        Enum.map(state_filter_options(), fn {label, value} -> {label, Atom.to_string(value)} end)
+        state_filter_options()
 
     selected = state_filter_param(assigns[:state_filter]) || ""
 
@@ -603,14 +605,18 @@ defmodule BatcherWeb.RequestIndexLive do
       |> assign(:selected, selected)
 
     ~H"""
-    <form phx-change="change-state-filter" class="flex items-center gap-2">
+    <form
+      id="request-state-filter-form"
+      phx-change="change-state-filter"
+      class="flex items-center gap-2"
+    >
       <label for="state_filter" class="text-sm text-base-content/70 whitespace-nowrap">
         State:
       </label>
       <select
         id="state_filter"
         name="state"
-        class="select select-bordered w-auto min-w-[180px] text-sm bg-base-200 border-base-300"
+        class="select select-md w-auto min-w-[180px]"
       >
         {Phoenix.HTML.Form.options_for_select(@options, @selected)}
       </select>
